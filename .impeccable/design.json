@@ -1,0 +1,42 @@
+{
+  "version": "2.0",
+  "mode": "Operate",
+  "world": "Precision Telemetry Ledger",
+  "typography": {
+    "sans": "Albert Sans",
+    "mono": "JetBrains Mono",
+    "scaleRatio": 1.15,
+    "tabularNums": true
+  },
+  "color": {
+    "space": "oklch",
+    "daylight": {
+      "canvas": "oklch(97.8% 0.007 80)",
+      "surface": "oklch(99.3% 0.004 80)",
+      "subtle": "oklch(95.2% 0.010 80)",
+      "ink": "oklch(19.5% 0.016 255)",
+      "border": "oklch(87.5% 0.014 80)"
+    },
+    "carbon": {
+      "canvas": "oklch(14.5% 0.012 250)",
+      "surface": "oklch(17.5% 0.014 250)",
+      "subtle": "oklch(20.5% 0.016 250)",
+      "ink": "oklch(95.5% 0.008 80)",
+      "border": "oklch(27.5% 0.016 250)"
+    },
+    "accent": "oklch(52.0% 0.165 245)",
+    "semantic": {
+      "pass": "oklch(52.0% 0.145 155)",
+      "warn": "oklch(58.0% 0.155 68)",
+      "gap": "oklch(53.0% 0.185 28)"
+    }
+  },
+  "craftFloor": {
+    "noEyebrowKickers": true,
+    "noNestedCards": true,
+    "noFourEqualHeroCards": true,
+    "noSideTabBorder": true,
+    "noEmojiIcons": true,
+    "themedBrowserSurfaces": true
+  }
+}
