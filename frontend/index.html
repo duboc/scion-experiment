@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <title>Incident Status Dashboard</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="banner" data-testid="status-banner" data-status="loading">
+    <div class="banner-inner">
+      <h1>Incident Status</h1>
+      <p class="overall" aria-live="polite">
+        <span class="status-icon" aria-hidden="true"></span>
+        <span data-testid="overall-status" data-status="loading">Loading status…</span>
+      </p>
+      <p class="banner-meta">
+        <span data-testid="open-count"></span>
+        <span class="sep" aria-hidden="true">·</span>
+        <span data-testid="last-updated"></span>
+      </p>
+    </div>
+  </header>
+
+  <div class="connection-error" data-testid="connection-error" role="alert" hidden></div>
+  <div class="visually-hidden" data-testid="announcer" role="status" aria-live="polite"></div>
+
+  <main id="main" class="layout">
+    <div class="primary">
+      <section aria-labelledby="services-heading">
+        <h2 id="services-heading">Services</h2>
+        <ul class="services" data-testid="services"></ul>
+      </section>
+
+      <section aria-labelledby="open-heading">
+        <h2 id="open-heading">Open incidents <span class="count" data-testid="open-heading-count"></span></h2>
+        <p class="empty" data-testid="open-empty" hidden>No open incidents. All quiet.</p>
+        <ol class="incidents" data-testid="open-incidents"></ol>
+      </section>
+
+      <section aria-labelledby="resolved-heading">
+        <h2 id="resolved-heading">Recently resolved <span class="count" data-testid="resolved-heading-count"></span></h2>
+        <p class="empty" data-testid="resolved-empty" hidden>No resolved incidents yet.</p>
+        <ol class="incidents" data-testid="resolved-incidents"></ol>
+      </section>
+    </div>
+
+    <aside class="secondary" aria-labelledby="declare-heading">
+      <section class="panel">
+        <h2 id="declare-heading">Declare an incident</h2>
+        <form data-testid="declare-form" novalidate>
+          <div class="field">
+            <label for="declare-title">Title <span class="req">(required)</span></label>
+            <input id="declare-title" name="title" type="text" maxlength="120" required autocomplete="off"
+                   data-testid="declare-title">
+          </div>
+          <div class="field">
+            <label for="declare-service">Service <span class="req">(required)</span></label>
+            <select id="declare-service" name="service_id" required data-testid="declare-service">
+              <option value="">Select a service…</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="declare-severity">Severity <span class="req">(required)</span></label>
+            <select id="declare-severity" name="severity" required data-testid="declare-severity">
+              <option value="">Select a severity…</option>
+              <option value="sev1">SEV1 · Critical (major outage)</option>
+              <option value="sev2">SEV2 · Major (partial outage)</option>
+              <option value="sev3">SEV3 · Minor (degraded)</option>
+              <option value="sev4">SEV4 · Low (degraded)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="declare-description">Description <span class="opt">(optional)</span></label>
+            <textarea id="declare-description" name="description" rows="4" maxlength="2000"
+                      data-testid="declare-description"></textarea>
+          </div>
+          <p class="form-error" id="declare-error" data-testid="declare-error" role="alert" hidden></p>
+          <p class="form-success" data-testid="declare-success" role="status" hidden></p>
+          <button type="submit" data-testid="declare-submit">Declare incident</button>
+        </form>
+      </section>
+    </aside>
+  </main>
+</body>
+</html>
