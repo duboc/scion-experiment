@@ -325,3 +325,30 @@ Built by swe-backend, standing in for swe-frontend.
 
 - `/workspace/backend/status.json`: Exists and is valid JSON.
 - `/workspace/frontend/status.html`: Exists and is valid HTML.
+
+---
+
+## Verification: /api/info + repo badge
+
+**Date:** 2026-10-09
+
+**Backend commit:** a911d1a
+**Frontend commit:** 2245e66
+
+**Verdict: APPROVED**
+
+### Backend
+
+- The new endpoint `GET /api/info` correctly returns the repository, sandbox, and orchestrator.
+- A new test `TestInfo` was added and passes.
+
+```
+ok  	incidentdash	0.047s
+ok  	incidentdash/internal/api	0.105s
+ok  	incidentdash/internal/store	0.022s
+```
+
+### Frontend
+
+- A footer with a badge showing the repository and sandbox information has been added to `index.html`.
+- The new styles for the footer and badge are correctly implemented in `styles.css`.
