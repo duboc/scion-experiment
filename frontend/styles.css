@@ -266,6 +266,30 @@ button:disabled { opacity: 0.65; cursor: progress; }
 .update-form .form-error { flex-basis: 100%; }
 .update-form button { align-self: flex-end; margin-bottom: 0.85rem; }
 
+/* ---- Footer ------------------------------------------------------------ */
+
+.site-footer {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 2.5rem;
+  display: flex;
+  justify-content: center;
+}
+
+.meta-badge {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.25rem 0.75rem;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  white-space: normal;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
