@@ -1,0 +1,127 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "Product Schema",
+  "description": "Schema for product data",
+  "properties": {
+    "id": { 
+      "type": "string",
+      "description": "Unique identifier for the product"
+    },
+    "name": { 
+      "type": "string",
+      "description": "Product name"
+    },
+    "title": { 
+      "type": "string",
+      "description": "Product title"
+    },
+    "brands": {
+      "type": "array",
+      "description": "List of brands associated with the product",
+      "items": { "type": "string" }
+    },
+    "categories": {
+      "type": "array",
+      "description": "Product categories",
+      "items": { "type": "string" }
+    },
+    "priceInfo": {
+      "type": "object",
+      "description": "Product pricing information",
+      "properties": {
+        "cost": { "type": "number" },
+        "currencyCode": { "type": "string" },
+        "originalPrice": { "type": "number" },
+        "price": { "type": "number" },
+        "priceEffectiveTime": { "type": "string", "format": "date-time" },
+        "priceExpireTime": { "type": "string", "format": "date-time" }
+      },
+      "required": ["cost", "currencyCode", "originalPrice", "price", "priceEffectiveTime", "priceExpireTime"]
+    },
+    "colorInfo": {
+      "type": "object",
+      "description": "Product color information",
+      "properties": {
+        "colorFamilies": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "colors": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "availability": {
+      "type": "string",
+      "description": "Product availability status",
+      "enum": ["IN_STOCK", "OUT_OF_STOCK"]
+    },
+    "availableQuantity": { 
+      "type": "integer",
+      "description": "Number of items available",
+      "minimum": 0
+    },
+    "availableTime": { 
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when the product becomes available"
+    },
+    "images": {
+      "type": "array",
+      "description": "Product images",
+      "items": {
+        "type": "object",
+        "properties": {
+          "height": { "type": "integer" },
+          "width": { "type": "integer" },
+          "uri": { "type": "string" }
+        },
+        "required": ["height", "width", "uri"]
+      }
+    },
+    "sizes": {
+      "type": "array",
+      "description": "Available product sizes",
+      "items": { "type": "string" }
+    },
+    "retrievableFields": {
+      "type": "array",
+      "description": "Fields that can be retrieved",
+      "items": { "type": "string" }
+    },
+    "attributes": {
+      "type": "array",
+      "description": "Additional product attributes",
+      "items": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "value": {
+            "type": "object",
+            "properties": {
+              "indexable": { "type": "boolean" },
+              "searchable": { "type": "boolean" },
+              "text": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "numbers": {
+                "type": "array",
+                "items": { "type": "number" }
+              }
+            }
+          }
+        },
+        "required": ["key", "value"]
+      }
+    },
+    "uri": { 
+      "type": "string",
+      "description": "Product URI"
+    }
+  },
+  "required": ["id", "name", "title", "brands", "categories", "priceInfo", "availability", "retrievableFields", "uri"]
+}
+  

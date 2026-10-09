@@ -1,7 +1,0 @@
-# Only backend/ sources and frontend/ static assets go into the image.
-*
-!backend/
-!frontend/
-backend/**/*_test.go
-frontend/tests/
-**/README.md

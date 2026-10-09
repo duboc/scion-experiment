@@ -1,0 +1,372 @@
+openapi: 3.1.0
+info:
+  title: PSearch Serving API
+  version: v1.0.0
+  description: |
+    API for product search and hybrid query capabilities.
+    This API provides endpoints for performing hybrid searches using text and vector embeddings.
+  contact:
+    name: Google LLC
+    url: https://github.com/google/psearch
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+servers:
+  - url: http://localhost:8080/
+    description: Local development server
+  - url: https://{region}-{projectId}.run.app/
+    description: Cloud Run production server
+    variables:
+      region:
+        default: us-central1
+        description: GCP region
+      projectId:
+        default: my-psearch-project
+        description: GCP project ID
+
+paths:
+  /health:
+    get:
+      summary: Health Check
+      description: Checks the health status of the API service.
+      operationId: healthCheck
+      tags:
+        - General
+      responses:
+        '200':
+          description: Service is healthy and operational
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /search:
+    post:
+      summary: Perform product search
+      description: |
+        Performs a hybrid search using text and vector embeddings.
+        The search combines text-based and semantic similarity to find the most relevant products.
+      operationId: searchProducts
+      tags:
+        - Search
+      requestBody:
+        description: Search query and parameters
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Successful search operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Optional API key authentication for production environments
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Health status of the service
+          example: "healthy"
+      required:
+        - status
+
+    SearchRequest:
+      type: object
+      properties:
+        query:
+          type: string
+          description: The search query string.
+          example: "red running shoes"
+        limit:
+          type: integer
+          format: int32
+          description: |
+            Maximum number of results to return.
+            If not provided, the default value (10) will be used.
+          example: 10
+          nullable: true
+        min_score:
+          type: number
+          format: double
+          description: |
+            Minimum relevance score for results.
+            If not provided, the default value (0.0) will be used.
+          example: 0.5
+          nullable: true
+        alpha:
+          type: number
+          format: double
+          description: |
+            Weighting factor for hybrid search.
+            - 0.0: Pure text search
+            - 1.0: Pure vector/semantic search
+            - Values between 0-1: Hybrid search with specified balance
+            If not provided, the default value (0.5) will be used.
+          example: 0.7
+          minimum: 0.0
+          maximum: 1.0
+          nullable: true
+      required:
+        - query
+
+    SearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+          description: The list of product search results
+        total_found:
+          type: integer
+          format: int32
+          description: Total number of results found.
+          example: 25
+      required:
+        - results
+        - total_found
+
+    SearchResult:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique product identifier
+          example: "product-123"
+        name:
+          type: string
+          description: Short product name
+          example: "Men's Red Running Shoes"
+        title:
+          type: string
+          description: Full product title
+          example: "Comfortable Men's Red Running Shoes for Track and Trail"
+        brands:
+          type: array
+          items:
+            type: string
+          description: List of brands associated with the product
+          example: ["Nike", "RunnerPro"]
+        categories:
+          type: array
+          items:
+            type: string
+          description: Product categories
+          example: ["Footwear", "Running", "Men's Shoes"]
+        priceInfo:
+          $ref: '#/components/schemas/PriceInfo'
+        colorInfo:
+          $ref: '#/components/schemas/ColorInfo'
+          nullable: true
+        availability:
+          type: string
+          description: Current availability status
+          example: "IN_STOCK"
+          enum: ["IN_STOCK", "OUT_OF_STOCK", "PREORDER", "BACKORDER"]
+        availableQuantity:
+          type: integer
+          format: int32
+          nullable: true
+          description: Current available quantity (if applicable)
+          example: 150
+        availableTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the product will be available (for preorders)
+          example: "2025-06-01T10:00:00Z"
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/Image'
+          description: Product images
+        sizes:
+          type: array
+          items:
+            type: string
+          description: Available sizes
+          example: ["9", "9.5", "10", "10.5", "11"]
+        retrievableFields:
+          type: string
+          description: JSON string of additional retrievable fields
+          example: "{\"material\": \"mesh\", \"weight_oz\": 8.5}"
+        attributes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attribute'
+          description: Product attributes and specifications
+        uri:
+          type: string
+          description: URI path to product detail page
+          example: "/products/product-123"
+        score:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+          description: |
+            Map of different relevance scores:
+            - rrf_score: Reciprocal rank fusion score
+            - vector_score: Vector similarity score
+            - text_score: Text match score
+          example: {"rrf_score": 0.85, "vector_score": 0.9, "text_score": 0.75}
+      required:
+        - id
+        - name
+        - title
+        - priceInfo
+        - availability
+        - images
+        - attributes
+        - uri
+        - score
+
+    Image:
+      type: object
+      properties:
+        height:
+          type: string
+          description: Image height in pixels
+          example: "600"
+        width:
+          type: string
+          description: Image width in pixels
+          example: "800"
+        uri:
+          type: string
+          description: Image URI location
+          example: "https://example.com/images/product-123-main.jpg"
+      required:
+        - height
+        - width
+        - uri
+
+    PriceInfo:
+      type: object
+      properties:
+        cost:
+          type: string
+          description: Wholesale cost (if available)
+          example: "45.00"
+        currencyCode:
+          type: string
+          description: ISO currency code
+          example: "USD"
+          enum: ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CNY"]
+        originalPrice:
+          type: string
+          description: Original price before discounts
+          example: "99.99"
+        price:
+          type: string
+          description: Current price
+          example: "79.99"
+        priceEffectiveTime:
+          type: string
+          format: date-time
+          description: When the current price became effective
+          example: "2025-01-01T00:00:00Z"
+        priceExpireTime:
+          type: string
+          format: date-time
+          description: When the current price expires (for sales)
+          example: "2025-12-31T23:59:59Z"
+      required:
+        - currencyCode
+        - price
+
+    ColorInfo:
+      type: object
+      nullable: true
+      properties:
+        colorFamilies:
+          type: array
+          items:
+            type: string
+          description: Color families (broad categories)
+          example: ["Red", "Neutral"]
+        colors:
+          type: array
+          items:
+            type: string
+          description: Specific colors
+          example: ["Crimson Red", "White Accent"]
+
+    AttributeValue:
+      type: object
+      properties:
+        indexable:
+          type: string
+          nullable: true
+          description: Value that is indexed but not directly searchable
+        searchable:
+          type: string
+          nullable: true
+          description: Value that is both indexed and searchable
+        text:
+          type: array
+          items:
+            type: string
+          description: Array of text values
+          example: ["Mesh Upper", "Durable Sole"]
+        numbers:
+          type: array
+          items:
+            type: number
+            format: double
+          description: Array of numeric values (e.g., weight_oz, weight_grams)
+          example: [8.5, 240]
+
+    Attribute:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Attribute name/key
+          example: "material"
+        value:
+          $ref: '#/components/schemas/AttributeValue'
+          description: Attribute value container
+      required:
+        - key
+        - value
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: A message describing the error
+          example: "Invalid request payload"
+      required:
+        - error

@@ -1,19 +1,18 @@
-# syntax=docker/dockerfile:1
-# Incident Status Dashboard: one container serving the API and the static UI.
-# Build context: /workspace (needs both backend/ and frontend/).
-
-FROM golang:1.26 AS build
-WORKDIR /src
-COPY backend/go.mod ./
+FROM golang:1.24-alpine AS builder
+WORKDIR /build
+COPY src/psearch/serving/ ./
 RUN go mod download
-COPY backend/ ./
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/incidentdash .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /psearch-server ./cmd/server
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM alpine:3.20
+RUN apk --no-cache add ca-certificates
 WORKDIR /app
-COPY --from=build /out/incidentdash /app/incidentdash
-COPY frontend/ /app/frontend/
-USER nonroot:nonroot
-# Cloud Run injects PORT (default 8080); the server honours it when -addr is not set.
+COPY --from=builder /psearch-server /app/psearch-server
+ENV PORT=8080
+ENV ENVIRONMENT=production
+ENV PROJECT_ID=riojucu-sandbox
+ENV REGION=us-central1
+ENV SPANNER_INSTANCE_ID=psearch-instance
+ENV SPANNER_DATABASE_ID=psearch-db
 EXPOSE 8080
-ENTRYPOINT ["/app/incidentdash", "-static", "/app/frontend"]
+CMD ["/app/psearch-server"]

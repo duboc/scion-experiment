@@ -1,0 +1,29 @@
+openapi: 3.0.3
+info:
+  title: psearch (Biggy Search Parity / IS 2.0) API
+  version: 2.0.0
+paths:
+  /api/health:
+    get:
+      summary: Cloud Run external health probe
+  /api/info:
+    get:
+      summary: Service, sandbox, Spanner, and active feature metadata
+  /api/search:
+    get:
+      summary: Hybrid + Faceted + Merchandised + Geo/SLA + LTR product search
+    post:
+      summary: Hybrid + Faceted + Merchandised + Geo/SLA + LTR product search
+  /api/autocomplete:
+    get:
+      summary: N-Gram autocomplete suggestions (Issue #9)
+  /api/rules:
+    get:
+      summary: List merchandising rules (Issue #6)
+    post:
+      summary: Create or update merchandising rule (Issue #6)
+  /api/synonyms:
+    get:
+      summary: List tenant search synonyms (Issue #7)
+    post:
+      summary: Upsert tenant search synonym group (Issue #7)
