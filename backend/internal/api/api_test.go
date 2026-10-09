@@ -617,3 +617,20 @@ func TestWriteJSONEncodingFailureIsInternal(t *testing.T) {
 	s.writeJSON(rec, http.StatusOK, map[string]any{"bad": make(chan int)})
 	expectError(t, response{rec.Code, rec.Header(), rec.Body.Bytes()}, http.StatusInternalServerError, "internal", "internal server error")
 }
+
+func TestInfo(t *testing.T) {
+	h := newTestHandler(t)
+	res := do(t, h, http.MethodGet, "/api/info", "")
+	if res.code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.code)
+	}
+	want := map[string]string{
+		"repo":         "duboc/scion-experiment",
+		"sandbox":      "riojucu-sandbox",
+		"orchestrator": "lead",
+	}
+	got := decode[map[string]string](t, res)
+	if got["repo"] != want["repo"] || got["sandbox"] != want["sandbox"] || got["orchestrator"] != want["orchestrator"] || len(got) != len(want) {
+		t.Errorf("body = %v, want %v", got, want)
+	}
+}

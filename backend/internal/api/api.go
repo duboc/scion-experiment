@@ -40,6 +40,7 @@ func New(st *store.Store, staticDir string, logger *slog.Logger) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealthz)
+	mux.HandleFunc("GET /api/info", s.handleInfo)
 	mux.HandleFunc("/api/v1/summary", s.handleSummary)
 	mux.HandleFunc("/api/v1/services", s.handleServices)
 	mux.HandleFunc("/api/v1/incidents", s.handleIncidents)
@@ -58,6 +59,17 @@ func (s *server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *server) handleInfo(w http.ResponseWriter, r *http.Request) {
+	if !allowMethods(w, r, http.MethodGet) {
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]string{
+		"repo":         "duboc/scion-experiment",
+		"sandbox":      "riojucu-sandbox",
+		"orchestrator": "lead",
+	})
 }
 
 func (s *server) handleSummary(w http.ResponseWriter, r *http.Request) {
