@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,8 +21,16 @@ type Controller struct {
 
 func NewController(cfg *config.Config) (*Controller, error) {
 	ctx := context.Background()
-	embeddingSvc, _ := services.NewEmbeddingService(ctx, cfg)
-	spannerSvc, err := services.NewSpannerService(ctx, cfg, embeddingSvc)
+	var embedder services.QueryEmbedder
+	embeddingSvc, err := services.NewEmbeddingService(ctx, cfg)
+	if err != nil {
+		log.Printf("WARN: embedding service unavailable (%v); vector retrieval disabled, lexical search only when ACTIVE_EMBEDDING_VERSION=v2", err)
+		embeddingSvc = nil
+	} else {
+		embedder = embeddingSvc
+		log.Printf("embedding: model=%s location=%s active_version=%s", embeddingSvc.Model(), cfg.GenAILocation, cfg.ActiveEmbeddingVersion)
+	}
+	spannerSvc, err := services.NewSpannerService(ctx, cfg, embedder)
 	if err != nil {
 		return nil, err
 	}

@@ -18,12 +18,12 @@ import (
 type SpannerService struct {
 	client       *spanner.Client
 	config       *config.Config
-	embeddings   *EmbeddingService
+	embeddings   QueryEmbedder
 	seedProducts []models.SearchResult
 	backendMode  string
 }
 
-func NewSpannerService(ctx context.Context, cfg *config.Config, embeddings *EmbeddingService) (*SpannerService, error) {
+func NewSpannerService(ctx context.Context, cfg *config.Config, embeddings QueryEmbedder) (*SpannerService, error) {
 	svc := &SpannerService{
 		config:       cfg,
 		embeddings:   embeddings,
@@ -153,7 +153,8 @@ func (s *SpannerService) HybridSearch(ctx context.Context, query string, limit i
 	}
 
 	if s.client != nil && strings.TrimSpace(query) != "" {
-		if res, err := s.spannerHybridSearch(ctx, query, limit, minScore, alpha); err == nil && len(res) > 0 {
+		plan := s.planVectorQuery(ctx, query)
+		if res, err := s.spannerHybridSearch(ctx, query, limit, minScore, alpha, plan); err == nil && len(res) > 0 {
 			return res, nil
 		} else if err != nil {
 			log.Printf("WARN: Spanner HybridSearch fallback triggered: %v", err)
@@ -163,20 +164,42 @@ func (s *SpannerService) HybridSearch(ctx context.Context, query string, limit i
 	return s.memoryHybridSearch(query, limit, minScore, alpha), nil
 }
 
-func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64) ([]models.SearchResult, error) {
-	queryEmb := DeterministicEmbedding(query, 768)
+// vectorPlan describes how the vector leg of the hybrid query is executed.
+type vectorPlan struct {
+	column      string      // vector column to search ("embedding" for v1, "embedding_v2" for v2)
+	embedding   interface{} // []float64 (v1 deterministic) or []float32 (v2 Gemini)
+	lexicalOnly bool        // true when no usable query embedding exists (degraded mode)
+}
 
-	sql := `
-		WITH ann AS (
-			SELECT offset + 1 AS rank, product_id, title, product_data
-			FROM UNNEST(ARRAY(
-				SELECT AS STRUCT product_id, title, product_data
-				FROM products
-				WHERE embedding IS NOT NULL
-				ORDER BY COSINE_DISTANCE(embedding, @query_embedding)
-				LIMIT @limit
-			)) WITH OFFSET AS offset
-		),
+const (
+	vectorColumnV1 = "embedding"
+	vectorColumnV2 = "embedding_v2"
+)
+
+// planVectorQuery selects the vector column / query embedding for the active
+// embedding version (ADR-001 Blue/Green). v1 keeps the legacy 768-d deterministic
+// embedding; v2 uses gemini-embedding-2 via the Gen AI SDK. Any embedding failure
+// degrades to lexical-only retrieval instead of failing the request (Issue #11).
+func (s *SpannerService) planVectorQuery(ctx context.Context, query string) vectorPlan {
+	if !s.config.UseGeminiEmbeddings() {
+		return vectorPlan{column: vectorColumnV1, embedding: DeterministicEmbedding(query, config.LegacyEmbeddingDimension)}
+	}
+	if s.embeddings == nil {
+		log.Printf("WARN: ACTIVE_EMBEDDING_VERSION=v2 but embedding service is unavailable; lexical-only search")
+		return vectorPlan{column: vectorColumnV2, lexicalOnly: true}
+	}
+	emb, err := s.embeddings.EmbedQuery(ctx, query)
+	if err != nil {
+		log.Printf("WARN: query embedding failed (%v); lexical-only search", err)
+		return vectorPlan{column: vectorColumnV2, lexicalOnly: true}
+	}
+	return vectorPlan{column: vectorColumnV2, embedding: emb}
+}
+
+// buildHybridSQL renders the RRF hybrid query. column is always one of the
+// package constants (never user input).
+func buildHybridSQL(column string, lexicalOnly bool) string {
+	fts := `
 		fts AS (
 			SELECT offset + 1 AS rank, product_id, title, product_data
 			FROM UNNEST(ARRAY(
@@ -186,7 +209,29 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 				ORDER BY (SCORE(title_tokens, @query_text) + SCORE(description_tokens, @query_text)) DESC
 				LIMIT @limit
 			)) WITH OFFSET AS offset
-		)
+		)`
+	ann := `
+		ann AS (
+			SELECT offset + 1 AS rank, product_id, title, product_data
+			FROM UNNEST(ARRAY(
+				SELECT AS STRUCT product_id, title, product_data
+				FROM products
+				WHERE ` + column + ` IS NOT NULL
+				ORDER BY COSINE_DISTANCE(` + column + `, @query_embedding)
+				LIMIT @limit
+			)) WITH OFFSET AS offset
+		),`
+	union := `
+			SELECT 'vector' AS source, @alpha AS weight, rank, product_id, title, product_data FROM ann
+			UNION ALL
+			SELECT 'text' AS source, (1.0 - @alpha) AS weight, rank, product_id, title, product_data FROM fts`
+	if lexicalOnly {
+		ann = ""
+		union = `
+			SELECT 'text' AS source, 1.0 AS weight, rank, product_id, title, product_data FROM fts`
+	}
+	return `
+		WITH` + ann + fts + `
 		SELECT
 			SUM(weight / (60.0 + rank)) AS rrf_score,
 			MAX(IF(source = 'vector', 1.0 / (60.0 + rank), 0.0)) AS vector_score,
@@ -194,25 +239,26 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 			product_id,
 			ANY_VALUE(title) AS title,
 			ANY_VALUE(product_data) AS product_data
-		FROM (
-			SELECT 'vector' AS source, @alpha AS weight, rank, product_id, title, product_data FROM ann
-			UNION ALL
-			SELECT 'text' AS source, (1.0 - @alpha) AS weight, rank, product_id, title, product_data FROM fts
+		FROM (` + union + `
 		)
 		GROUP BY product_id
 		ORDER BY rrf_score DESC
 		LIMIT @limit
 	`
+}
 
-	stmt := spanner.Statement{
-		SQL: sql,
-		Params: map[string]interface{}{
-			"query_embedding": queryEmb,
-			"query_text":      query,
-			"alpha":           alpha,
-			"limit":           int64(limit),
-		},
+func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64, plan vectorPlan) ([]models.SearchResult, error) {
+	sql := buildHybridSQL(plan.column, plan.lexicalOnly)
+	params := map[string]interface{}{
+		"query_text": query,
+		"alpha":      alpha,
+		"limit":      int64(limit),
 	}
+	if !plan.lexicalOnly {
+		params["query_embedding"] = plan.embedding
+	}
+
+	stmt := spanner.Statement{SQL: sql, Params: params}
 
 	iter := s.client.Single().Query(ctx, stmt)
 	defer iter.Stop()
@@ -246,11 +292,15 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		if item.Title == "" {
 			item.Title = title
 		}
+		effAlpha := alpha
+		if plan.lexicalOnly {
+			effAlpha = 0
+		}
 		item.Score = map[string]float64{
 			"hybrid": rrfScore,
 			"vector": vecScore,
 			"text":   txtScore,
-			"alpha":  alpha,
+			"alpha":  effAlpha,
 		}
 		results = append(results, item)
 	}
@@ -263,14 +313,14 @@ func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore fl
 	qVec := DeterministicEmbedding(query, 768)
 
 	type scored struct {
-		prod      models.SearchResult
-		vecSim    float64
-		txtRaw    float64
-		vecRank   int
-		txtRank   int
-		rrfScore  float64
-		vecRRF    float64
-		txtRRF    float64
+		prod     models.SearchResult
+		vecSim   float64
+		txtRaw   float64
+		vecRank  int
+		txtRank  int
+		rrfScore float64
+		vecRRF   float64
+		txtRRF   float64
 	}
 
 	items := make([]scored, len(s.seedProducts))
