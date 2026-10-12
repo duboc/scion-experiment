@@ -41,3 +41,20 @@ Source: `main` @ `1e96a34` (fix `6e4c0fb`, review passed in `1e96a34`). Revision
 | `GET /api/search?q=running+shoes&alpha=0.5` | 200 `total_found=15`, `embedding_version=v1`, `retrieval_mode=hybrid_v1`; top `prod-001` "UltraBoost Pro Running Shoes" (text and vector 0.0164) |
 
 v2 **not** flipped. It is waiting on the `roles/aiplatform.user` grant for `249096448072-compute@developer.gserviceaccount.com`. v2 acceptance: `retrieval_mode=hybrid_v2` (not `lexical_only_degraded` / `memory_fallback`) and no `lexical` / `PERMISSION_DENIED` / 403 in the logs.
+
+## Issue #11: zero-traffic v2 IAM probe and template reset (2026-10-12)
+
+**Probe:** revision `psearch-serving-00006-caw`, same image as `00005-vq7`, `ACTIVE_EMBEDDING_VERSION=v2`, `--no-traffic --tag=v2probe`.
+
+| Check (tag URL `https://v2probe---psearch-serving-mhjw244bgq-uc.a.run.app`) | Result |
+|---|---|
+| `GET /api/info` | 200 `active_embedding_version=v2`, `embedding_dimension=1024` |
+| `GET /api/search?q=running+shoes` | 200 `retrieval_mode=lexical_only_degraded`, `effective_alpha=0`, `total_found=1` (prod-001, vector 0) |
+| `GET /api/search?q=tenis` | 200 `retrieval_mode=lexical_only_degraded`, `total_found=0`, `results=null` (the 6e4c0fb fix means memory fallback no longer masks it) |
+| Revision logs (14:03:06Z, ×2) | `WARN: query embedding failed (embed RETRIEVAL_QUERY (gemini-embedding-2 @ global): Error 403, Message: Permission 'aiplatform.endpoints.predict' denied on resource '//aiplatform.googleapis.com/projects/riojucu-sandbox/locations/global/publishers/google/models/gemini-embedding-2' ... PERMISSION_DENIED` |
+
+Conclusion: `roles/aiplatform.user` is **still missing** for `249096448072-compute@developer.gserviceaccount.com`. Tag `v2probe` removed afterwards.
+
+**Template reset:** revision `psearch-serving-00007-sr9` (Ready, 0% traffic, `--no-traffic`) sets the service template back to `ACTIVE_EMBEDDING_VERSION=v1`, so the next deploy can't ship v2 by accident. Template env: `GCP_PROJECT_ID`, `PROJECT_ID`, `SPANNER_INSTANCE(_ID)`, `SPANNER_DATABASE(_ID)`, `BIGQUERY_DATASET`, `GENAI_LOCATION=global`, `EMBEDDING_MODEL_NAME=gemini-embedding-2`, `EMBEDDING_DIMENSION=1024`, `ACTIVE_EMBEDDING_VERSION=v1`.
+
+**Traffic:** pinned at 100% to `psearch-serving-00005-vq7` (v1, `retrieval_mode=hybrid_v1`). It no longer follows the latest revision, so the next rollout must use `--to-latest` or `gcloud run services update-traffic`.
