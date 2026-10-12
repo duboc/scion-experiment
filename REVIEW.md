@@ -22,3 +22,10 @@
     - `go vet` and `go test`: PASS
     - Search responses now include `embedding_version` and `retrieval_mode`.
     - Degraded v2 searches correctly return `lexical_only_degraded` and do not fall back to the in-memory engine.
+
+### Follow-up: a876979
+- **Date:** 2026-10-12
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test`: PASS
+    - Empty search results are now serialized as `[]` instead of `null`.
