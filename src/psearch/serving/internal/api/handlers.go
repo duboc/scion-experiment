@@ -111,6 +111,9 @@ func (c *Controller) Search(ctx *gin.Context) {
 
 	outcome, err := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), req.Query, limit, minScore, alpha)
 	results := outcome.Results
+	if results == nil {
+		results = []models.SearchResult{} // always serialize as [] (never null)
+	}
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
