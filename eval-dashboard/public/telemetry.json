@@ -1,0 +1,56 @@
+{
+  "timestamp": "2026-10-12T12:44:04.523582+00:00",
+  "project": "psearch",
+  "agents": [
+    {
+      "name": "lead",
+      "role": "Factory Tech Lead & Backlog Orchestrator",
+      "harness": "claude",
+      "activity": "active",
+      "turns": 16,
+      "model_calls": 32,
+      "issue": "#11 Gemini Rollout & Sprint Wave 1",
+      "delegation_bottleneck": "Centralized git commit slot gating and sequential review/deploy handoffs"
+    },
+    {
+      "name": "backend",
+      "role": "Go + Cloud Spanner + BigQuery Engineer",
+      "harness": "opencode",
+      "activity": "active",
+      "turns": 24,
+      "model_calls": 48,
+      "issue": "#11 Gemini 1024-dim Vector & Retrieval Mode",
+      "delegation_bottleneck": "Review loops on ADR-001; in-memory fallback previously masked failed vector retrieval until unmasked in 6e4c0fb"
+    },
+    {
+      "name": "frontend",
+      "role": "Storefront & Search UX Engineer",
+      "harness": "antigravity",
+      "activity": "active",
+      "turns": 12,
+      "model_calls": 24,
+      "issue": "#1 Alpha Controls & Dynamic Facets",
+      "delegation_bottleneck": "Idle handoffs waiting on Spanner schema stability and live backend deployment for end-to-end testing"
+    },
+    {
+      "name": "reviewer",
+      "role": "QA, TDD & Spanner Query Verifier",
+      "harness": "hermes",
+      "activity": "idle",
+      "turns": 10,
+      "model_calls": 20,
+      "issue": "#11 Verification & ADR-001 Re-check",
+      "delegation_bottleneck": "Repeated verification cycles (commits 73a9017, 1e96a34) reviewing file path discrepancies and error unmasking"
+    },
+    {
+      "name": "deployer",
+      "role": "Cloud Run & Spanner Release Engineer",
+      "harness": "claude",
+      "activity": "idle",
+      "turns": 8,
+      "model_calls": 16,
+      "issue": "#11 Gemini Rollout & IAM Rollback",
+      "delegation_bottleneck": "Blocked by IAM 403 PERMISSION_DENIED on Vertex AI predict for default compute SA; rolled back to v1"
+    }
+  ]
+}

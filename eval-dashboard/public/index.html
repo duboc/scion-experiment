@@ -10,23 +10,23 @@
   <link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     :root, [data-theme="daylight"] {
-      --bg-canvas: oklch(96.8% 0.010 240);
-      --bg-surface: oklch(99.2% 0.005 240);
-      --bg-subtle: oklch(94.2% 0.013 240);
-      --bg-elevated: oklch(91.5% 0.018 240);
-      --border-hairline: oklch(86.5% 0.016 240);
-      --border-strong: oklch(74.0% 0.022 240);
+      --bg-canvas: oklch(97.0% 0.008 245);
+      --bg-surface: oklch(99.4% 0.003 245);
+      --bg-subtle: oklch(94.5% 0.010 245);
+      --bg-elevated: oklch(91.5% 0.014 245);
+      --border-hairline: oklch(87.0% 0.012 245);
+      --border-strong: oklch(74.0% 0.018 245);
       --text-primary: oklch(19.5% 0.016 255);
       --text-secondary: oklch(40.0% 0.018 255);
-      --text-muted: oklch(52.0% 0.016 255);
-      --accent-primary: oklch(48.0% 0.165 248);
-      --accent-hover: oklch(42.0% 0.165 248);
-      --accent-tint: oklch(94.0% 0.030 248);
-      --status-pass: oklch(45.0% 0.140 155);
+      --text-muted: oklch(50.0% 0.016 255);
+      --accent-primary: oklch(52.0% 0.165 245);
+      --accent-hover: oklch(46.0% 0.165 245);
+      --accent-tint: oklch(95.0% 0.025 245);
+      --status-pass: oklch(52.0% 0.145 155);
       --status-pass-bg: oklch(94.5% 0.035 155);
-      --status-warn: oklch(50.0% 0.150 68);
-      --status-warn-bg: oklch(95.0% 0.045 75);
-      --status-gap: oklch(48.0% 0.175 28);
+      --status-warn: oklch(58.0% 0.155 68);
+      --status-warn-bg: oklch(95.0% 0.040 75);
+      --status-gap: oklch(53.0% 0.185 28);
       --status-gap-bg: oklch(95.0% 0.035 28);
       --shadow-elevated: 0 6px 20px -4px oklch(20% 0.02 255 / 0.08);
     }
@@ -35,12 +35,12 @@
       --bg-canvas: oklch(14.5% 0.012 250);
       --bg-surface: oklch(17.5% 0.014 250);
       --bg-subtle: oklch(20.5% 0.016 250);
-      --bg-elevated: oklch(24.5% 0.020 250);
+      --bg-elevated: oklch(24.0% 0.020 250);
       --border-hairline: oklch(27.5% 0.016 250);
       --border-strong: oklch(38.0% 0.020 250);
       --text-primary: oklch(95.5% 0.008 80);
-      --text-secondary: oklch(77.0% 0.012 80);
-      --text-muted: oklch(63.0% 0.014 80);
+      --text-secondary: oklch(76.0% 0.012 80);
+      --text-muted: oklch(62.0% 0.014 80);
       --accent-primary: oklch(68.0% 0.155 245);
       --accent-hover: oklch(74.0% 0.155 245);
       --accent-tint: oklch(25.0% 0.045 245);
@@ -776,212 +776,6 @@
     </section>
   </main>
 
-  <script>
-    let cachedEval = null;
-    let cachedAgents = [];
-    let currentAgentFilter = 'all';
-    let currentWaveFilter = 'all';
-
-    function escapeHTML(str) {
-      return String(str ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
-
-    function toggleTheme() {
-      const root = document.documentElement;
-      const next = root.getAttribute('data-theme') === 'carbon' ? 'daylight' : 'carbon';
-      root.setAttribute('data-theme', next);
-      document.getElementById('theme-label').textContent = next === 'carbon' ? 'Daylight Mode' : 'Carbon Mode';
-      if (cachedEval) renderAlphaCurve(cachedEval.alpha_curve || []);
-    }
-
-    function setAgentFilter(filter, btn) {
-      currentAgentFilter = filter;
-      btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.setAttribute('aria-pressed', 'false'));
-      btn.setAttribute('aria-pressed', 'true');
-      renderAgentsTable();
-    }
-
-    function setWaveFilter(wave, btn) {
-      currentWaveFilter = wave;
-      btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.setAttribute('aria-pressed', 'false'));
-      btn.setAttribute('aria-pressed', 'true');
-      if (cachedEval) renderRequirementsTable(cachedEval.requirements || []);
-    }
-
-    function selectAgentNode(project, name, el) {
-      document.querySelectorAll('.topo-node').forEach(n => n.classList.remove('is-active'));
-      if (el) el.classList.add('is-active');
-      const found = cachedAgents.find(a => a.project === project && a.name === name);
-      const box = document.getElementById('node-inspector');
-      if (found) {
-        box.innerHTML = '<span>Selected Agent: <strong class="mono">@' + escapeHTML(found.name) + ' (' + escapeHTML(found.project) + ')</strong> — ' + escapeHTML(found.role || found.template) + '</span>' +
-          '<span class="mono">Harness: ' + escapeHTML(found.harness) + ' · Parent: ' + escapeHTML(found.parent_agent) + ' · Focus: ' + escapeHTML(found.active_issue || 'Standby') + '</span>';
-      }
-      renderAgentsTable(project, name);
-    }
-
-    function renderAlphaCurve(points) {
-      const svg = document.getElementById('svg-alpha-curve');
-      if (!points || points.length === 0) return;
-      const w = 460, h = 118, padL = 34, padR = 16, padT = 14, padB = 24;
-      const plotW = w - padL - padR;
-      const plotH = h - padT - padB;
-      const minY = 0.50, maxY = 1.00;
-
-      const xFor = a => padL + a * plotW;
-      const yFor = v => padT + plotH - ((Math.max(minY, Math.min(maxY, v)) - minY) / (maxY - minY)) * plotH;
-
-      let dNDCG = '', dMRR = '', dots = '', labels = '';
-      points.forEach((pt, idx) => {
-        const x = xFor(pt.alpha);
-        const yn = yFor(pt.ndcg);
-        const ym = yFor(pt.mrr);
-        dNDCG += (idx === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + yn.toFixed(1) + ' ';
-        dMRR += (idx === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + ym.toFixed(1) + ' ';
-        dots += '<circle cx="' + x.toFixed(1) + '" cy="' + yn.toFixed(1) + '" r="3.5" fill="var(--accent-primary)" />' +
-                '<text x="' + x.toFixed(1) + '" y="' + (yn - 7).toFixed(1) + '" text-anchor="middle" fill="var(--text-primary)" font-family="JetBrains Mono, monospace" font-size="12" font-weight="600">' + pt.ndcg.toFixed(2) + '</text>' +
-                '<text x="' + x.toFixed(1) + '" y="' + (h - 6) + '" text-anchor="middle" fill="var(--text-muted)" font-family="JetBrains Mono, monospace" font-size="12">&alpha;=' + pt.alpha.toFixed(2) + '</text>';
-      });
-
-      svg.innerHTML =
-        '<line x1="' + padL + '" y1="' + padT + '" x2="' + (w - padR) + '" y2="' + padT + '" stroke="var(--border-hairline)" stroke-dasharray="2 2" />' +
-        '<line x1="' + padL + '" y1="' + (padT + plotH / 2) + '" x2="' + (w - padR) + '" y2="' + (padT + plotH / 2) + '" stroke="var(--border-hairline)" stroke-dasharray="2 2" />' +
-        '<line x1="' + padL + '" y1="' + (padT + plotH) + '" x2="' + (w - padR) + '" y2="' + (padT + plotH) + '" stroke="var(--border-strong)" />' +
-        '<text x="2" y="' + (padT + 4) + '" fill="var(--text-muted)" font-family="JetBrains Mono, monospace" font-size="12">1.00</text>' +
-        '<text x="2" y="' + (padT + plotH / 2 + 3) + '" fill="var(--text-muted)" font-family="JetBrains Mono, monospace" font-size="12">0.75</text>' +
-        '<text x="2" y="' + (padT + plotH + 3) + '" fill="var(--text-muted)" font-family="JetBrains Mono, monospace" font-size="12">0.50</text>' +
-        '<path d="' + dMRR + '" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-dasharray="4 3" />' +
-        '<path d="' + dNDCG + '" fill="none" stroke="var(--accent-primary)" stroke-width="2.25" />' +
-        dots;
-    }
-
-    function renderAgentsTable(selProj, selName) {
-      const rows = cachedAgents.filter(a => currentAgentFilter === 'all' || a.project === currentAgentFilter);
-      document.getElementById('tbody-agents').innerHTML = rows.map(a => {
-        const isSel = a.project === selProj && a.name === selName;
-        const badgeClass = a.phase === 'running' ? 'badge--running' : 'badge--pending';
-        return '<tr class="' + (isSel ? 'is-selected' : '') + '">' +
-          '<td><strong>' + escapeHTML(a.project) + '</strong></td>' +
-          '<td class="mono">@' + escapeHTML(a.name) + '</td>' +
-          '<td>' + escapeHTML(a.role || a.template) + '</td>' +
-          '<td class="mono">' + escapeHTML(a.harness) + '</td>' +
-          '<td class="mono">' + escapeHTML(a.active_issue || 'Standby') + '</td>' +
-          '<td class="mono num">' + (a.current_turns || 0) + ' / ' + (a.model_calls || 0) + '</td>' +
-          '<td><span class="badge ' + badgeClass + '"><span class="badge-dot"></span>' + escapeHTML(a.phase) + ' (' + escapeHTML(a.activity || 'idle') + ')</span></td>' +
-        '</tr>';
-      }).join('');
-    }
-
-    function renderRequirementsTable(reqs) {
-      const filtered = reqs.filter(r => currentWaveFilter === 'all' || r.wave === currentWaveFilter);
-      document.getElementById('tbody-reqs').innerHTML = filtered.map(r => {
-        const bClass = r.status === 'PASS' ? 'badge--pass' : (r.status === 'PARTIAL' ? 'badge--partial' : 'badge--pending');
-        return '<tr>' +
-          '<td class="mono num"><a href="https://github.com/duboc/scion-experiment/issues/' + r.issue_number + '" target="_blank">#' + r.issue_number + '</a></td>' +
-          '<td><strong>' + escapeHTML(r.code) + '</strong> ' + escapeHTML(r.title) + '</td>' +
-          '<td class="mono">' + escapeHTML(r.wave) + '</td>' +
-          '<td class="mono">' + escapeHTML(r.owner_agent || '@backend') + '</td>' +
-          '<td><span class="badge ' + bClass + '"><span class="badge-dot"></span>' + escapeHTML(r.status) + '</span></td>' +
-          '<td style="color:var(--text-secondary);">' + escapeHTML(r.evidence) + '</td>' +
-        '</tr>';
-      }).join('');
-    }
-
-    async function runWorkbenchQuery(ev) {
-      if (ev) ev.preventDefault();
-      const q = document.getElementById('wb-query').value || 'running shoes';
-      const alpha = document.getElementById('wb-alpha').value || '0.65';
-      const locale = document.getElementById('wb-locale').value || '';
-      const res = await fetch('/api/workbench?q=' + encodeURIComponent(q) + '&alpha=' + encodeURIComponent(alpha) + '&locale=' + encodeURIComponent(locale)).then(r => r.json());
-      const items = res.results || [];
-      document.getElementById('wb-meta').textContent = 'effective_alpha=' + (res.effective_alpha ?? alpha) + ' · ' + (res.probe_latency_ms ? res.probe_latency_ms.toFixed(1) : '--') + ' ms · ' + items.length + ' results';
-      document.getElementById('tbody-workbench').innerHTML = items.map((item, idx) => {
-        const availBadge = item.is_available
-          ? '<span class="badge badge--pass"><span class="badge-dot"></span>IN_STOCK (' + (item.stock ?? 0) + ')</span>'
-          : '<span class="badge badge--pending">OUT_OF_STOCK (0)</span>';
-        return '<tr>' +
-          '<td class="mono num">#' + (idx + 1) + '</td>' +
-          '<td class="mono">' + escapeHTML(item.id) + '</td>' +
-          '<td><strong>' + escapeHTML(item.title) + '</strong> <span style="color:var(--text-muted);">· ' + escapeHTML(item.brand || '') + '</span></td>' +
-          '<td class="mono">' + escapeHTML(item.locale || 'en-US') + '</td>' +
-          '<td>' + availBadge + '</td>' +
-          '<td class="mono num">' + (item.final_score ? Number(item.final_score).toFixed(4) : '--') + '</td>' +
-        '</tr>';
-      }).join('');
-    }
-
-    async function refreshAll() {
-      const [evalRes, agentsRes, backlogRes] = await Promise.all([
-        fetch('/api/eval').then(r => r.json()),
-        fetch('/api/agents').then(r => r.json()),
-        fetch('/api/backlog').then(r => r.json())
-      ]);
-      cachedEval = evalRes;
-      cachedAgents = agentsRes.agents || [];
-
-      document.getElementById('val-ndcg').textContent = (evalRes.overall_ndcg_at_10 || 0).toFixed(3);
-      document.getElementById('val-mrr').textContent = (evalRes.overall_mrr_at_10 || 0).toFixed(3);
-      document.getElementById('val-opt-alpha').textContent = (evalRes.optimal_alpha || 0.65).toFixed(2);
-      document.getElementById('val-timestamp').textContent = (evalRes.timestamp || '').slice(11, 19) + ' UTC';
-      document.getElementById('lbl-backend-mode').textContent = evalRes.backend_mode || 'spanner';
-      document.getElementById('val-p50').textContent = (evalRes.p50_latency_ms || 0).toFixed(1) + ' ms';
-      document.getElementById('val-p95').textContent = (evalRes.p95_latency_ms || 0).toFixed(1) + ' / ' + (evalRes.p99_latency_ms || 0).toFixed(1) + ' ms';
-      document.getElementById('val-reqs-pass').textContent = evalRes.pass_count + ' PASS · ' + evalRes.partial_count + ' PARTIAL';
-      document.getElementById('link-storefront').href = evalRes.target_url || 'https://psearch-serving-249096448072.us-central1.run.app';
-
-      const runningCnt = cachedAgents.filter(a => a.phase === 'running').length;
-      document.getElementById('val-agents-cnt').textContent = runningCnt + ' / ' + cachedAgents.length + ' running';
-
-      renderAlphaCurve(evalRes.alpha_curve || []);
-      renderAgentsTable();
-      renderRequirementsTable(evalRes.requirements || []);
-
-      document.getElementById('diag-container').innerHTML = (evalRes.diagnostics || []).map(d =>
-        '<div class="diag-row">' +
-          '<span class="badge badge--' + escapeHTML(d.severity) + '"><span class="badge-dot"></span>' + escapeHTML(d.severity) + '</span>' +
-          '<div>' +
-            '<div class="diag-title">' + escapeHTML(d.title) + ' <span class="mono" style="font-weight:400;color:var(--text-muted);">[' + escapeHTML(d.target_agent) + ' · ' + escapeHTML(d.target_issue) + ']</span></div>' +
-            '<div class="diag-desc">' + escapeHTML(d.analysis) + '</div>' +
-            '<div class="diag-rec"><strong>Directive (' + escapeHTML(d.analyst_agent) + '):</strong> ' + escapeHTML(d.recommendation) + '</div>' +
-          '</div>' +
-        '</div>'
-      ).join('');
-
-      document.getElementById('tbody-golden').innerHTML = (evalRes.golden_queries || []).map(g =>
-        '<tr>' +
-          '<td><strong>' + escapeHTML(g.query) + '</strong></td>' +
-          '<td class="mono">' + escapeHTML(g.locale || 'en-US') + '</td>' +
-          '<td class="mono num">' + g.alpha.toFixed(2) + '</td>' +
-          '<td class="mono num"><strong>' + g.ndcg_at_10.toFixed(3) + '</strong></td>' +
-          '<td class="mono num">' + g.mrr_at_10.toFixed(3) + '</td>' +
-          '<td class="mono num">' + g.latency_ms.toFixed(1) + ' ms</td>' +
-          '<td class="mono">' + escapeHTML((g.returned_ids || []).slice(0, 3).join(', ')) + '</td>' +
-        '</tr>'
-      ).join('');
-
-      const mainC = (Array.isArray(backlogRes.main_commits) ? backlogRes.main_commits : []).slice(0, 4).map(c => ({ branch: 'main', c }));
-      const evalC = (Array.isArray(backlogRes.eval_commits) ? backlogRes.eval_commits : []).slice(0, 4).map(c => ({ branch: 'eval-dashboard', c }));
-      const allCommits = mainC.concat(evalC);
-      document.getElementById('tbody-commits').innerHTML = allCommits.map(item => {
-        const sha = (item.c && item.c.sha) ? item.c.sha.slice(0, 7) : '';
-        const msg = (item.c && item.c.commit && item.c.commit.message) ? item.c.commit.message.split('\n')[0] : '';
-        const author = (item.c && item.c.commit && item.c.commit.author) ? item.c.commit.author.name : '';
-        return '<tr>' +
-          '<td class="mono">' + escapeHTML(item.branch) + '</td>' +
-          '<td class="mono"><a href="https://github.com/duboc/scion-experiment/commit/' + escapeHTML(item.c.sha || '') + '" target="_blank">' + escapeHTML(sha) + '</a></td>' +
-          '<td>' + escapeHTML(msg) + '</td>' +
-          '<td style="color:var(--text-muted);">' + escapeHTML(author) + '</td>' +
-        '</tr>';
-      }).join('');
-    }
-
-    refreshAll();
-    runWorkbenchQuery();
-    setInterval(refreshAll, 20000);
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>
