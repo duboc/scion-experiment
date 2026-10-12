@@ -8,9 +8,9 @@
 
 ## #11: latest Gemini models via the Gen AI SDK (799e5e5)
 - **Date:** 2026-10-10
-- **Status:** FAIL
+- **Status:** PASS
 - **Checks:**
     - **(1) Go Tests:** PASS
-    - **(2) ADR-001 Compliance:** FAIL (Could not find ADR-001.md or the migration script `src/iac/migrations/011-gemini-v2-embeddings.sql` to verify the changes).
+    - **(2) ADR-001 Compliance:** PASS (Re-verified with correct file paths. V1/V2 embedding columns, `ACTIVE_EMBEDDING_VERSION` toggle, additive migration, and lexical fallback on failure are all correctly implemented).
     - **(3) Old References:** PASS
     - **(4) Python Compilation:** PASS
