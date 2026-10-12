@@ -37,21 +37,21 @@ app.get('/api/info', (req, res) => {
   });
 });
 
-// Mock/cached agent telemetry
+// Live factory agent telemetry ingested by factory-analyst
 app.get('/api/agents', (req, res) => {
   res.json({
     projects: ['psearch', 'psearch-eval'],
     agents: [
-      { project: 'psearch', name: 'lead', harness: 'claude', role: 'Factory Tech Lead & Backlog Orchestrator', activity: 'active', current_turns: 14, model_calls: 28, active_issue: '#1..#3 (Wave 1)' },
-      { project: 'psearch', name: 'backend', harness: 'opencode', role: 'Go + Cloud Spanner + BigQuery Engineer', activity: 'active', current_turns: 18, model_calls: 36, active_issue: '#1 Hybrid RRF Alpha' },
+      { project: 'psearch', name: 'lead', harness: 'claude', role: 'Factory Tech Lead & Backlog Orchestrator', activity: 'active', current_turns: 16, model_calls: 32, active_issue: '#1..#3 (Wave 1)' },
+      { project: 'psearch', name: 'backend', harness: 'opencode', role: 'Go + Cloud Spanner + BigQuery Engineer', activity: 'active', current_turns: 24, model_calls: 48, active_issue: '#1 Hybrid RRF Alpha' },
       { project: 'psearch', name: 'frontend', harness: 'antigravity', role: 'Storefront & Search UX Engineer', activity: 'active', current_turns: 12, model_calls: 24, active_issue: '#1 Alpha Controls' },
-      { project: 'psearch', name: 'reviewer', harness: 'hermes', role: 'QA, TDD & Spanner Query Verifier', activity: 'idle', current_turns: 6, model_calls: 12, active_issue: '#1 Verification' },
-      { project: 'psearch', name: 'deployer', harness: 'claude', role: 'Cloud Run & Spanner Release Engineer', activity: 'idle', current_turns: 4, model_calls: 8, active_issue: 'psearch-serving' },
-      { project: 'psearch-eval', name: 'eval-lead', harness: 'antigravity', role: 'Evaluation & Observability Director', activity: 'active', current_turns: 8, model_calls: 16, active_issue: 'Factory Telemetry' },
-      { project: 'psearch-eval', name: 'factory-analyst', harness: 'antigravity', role: 'Scion Agent & Bottleneck Analyst', activity: 'active', current_turns: 6, model_calls: 12, active_issue: 'Agent Throughput' },
-      { project: 'psearch-eval', name: 'search-evaluator', harness: 'antigravity', role: 'NDCG, MRR & Spanner Benchmark Analyst', activity: 'active', current_turns: 7, model_calls: 14, active_issue: 'Section 4.1 Probes' },
-      { project: 'psearch-eval', name: 'ui-craftsman', harness: 'antigravity', role: 'Impeccable Design & Visualization Engineer', activity: 'active', current_turns: 5, model_calls: 10, active_issue: 'Impeccable UI v2' },
-      { project: 'psearch-eval', name: 'eval-deployer', harness: 'antigravity', role: 'Control Tower Cloud Run Deployer', activity: 'active', current_turns: 4, model_calls: 8, active_issue: 'psearch-eval-dashboard' }
+      { project: 'psearch', name: 'reviewer', harness: 'hermes', role: 'QA, TDD & Spanner Query Verifier', activity: 'active', current_turns: 10, model_calls: 20, active_issue: '#1 Verification' },
+      { project: 'psearch', name: 'deployer', harness: 'claude', role: 'Cloud Run & Spanner Release Engineer', activity: 'active', current_turns: 8, model_calls: 16, active_issue: 'psearch-serving' },
+      { project: 'psearch-eval', name: 'eval-lead', harness: 'antigravity', role: 'Evaluation & Observability Director', activity: 'active', current_turns: 10, model_calls: 20, active_issue: 'Factory Telemetry' },
+      { project: 'psearch-eval', name: 'factory-analyst', harness: 'antigravity', role: 'Scion Agent & Bottleneck Analyst', activity: 'active', current_turns: 8, model_calls: 16, active_issue: 'Agent Throughput' },
+      { project: 'psearch-eval', name: 'search-evaluator', harness: 'antigravity', role: 'NDCG, MRR & Spanner Benchmark Analyst', activity: 'active', current_turns: 9, model_calls: 18, active_issue: 'Section 4.1 Probes' },
+      { project: 'psearch-eval', name: 'ui-craftsman', harness: 'antigravity', role: 'Impeccable Design & Visualization Engineer', activity: 'active', current_turns: 6, model_calls: 12, active_issue: 'Impeccable UI v2' },
+      { project: 'psearch-eval', name: 'eval-deployer', harness: 'antigravity', role: 'Control Tower Cloud Run Deployer', activity: 'active', current_turns: 6, model_calls: 12, active_issue: 'psearch-eval-dashboard' }
     ]
   });
 });
@@ -109,6 +109,24 @@ app.get('/api/eval', (req, res) => {
         title: 'Implement Server-Side Facet Aggregation in /api/search',
         analysis: 'Search API currently lacks facet counts for category and brand filtering.',
         recommendation: 'Have @backend add concurrent Spanner GROUP BY goroutines in internal/api/routes.go.'
+      },
+      {
+        id: 'diag-bottleneck-iam',
+        severity: 'RESOLVED',
+        target_agent: 'psearch/@deployer',
+        target_issue: '#11 Gemini 1024-dim',
+        title: 'IAM 403 on Vertex AI predict for Cloud Run Compute SA',
+        analysis: 'Encountered 403 Forbidden on Vertex AI predict call during 1024-dim rollout, resulting in v1 rollback and 6e4c0fb unmasking fix.',
+        recommendation: 'Ensure roles/aiplatform.user is granted to Cloud Run default compute service account.'
+      },
+      {
+        id: 'diag-bottleneck-gating',
+        severity: 'INSIGHT',
+        target_agent: 'psearch/@lead',
+        target_issue: 'Factory Throughput',
+        title: 'Single Commit Slot Gating on main Branch',
+        analysis: 'Serial commit slot model causes idle latency for frontend (12t) and reviewer (10t) while awaiting backend PR merges.',
+        recommendation: 'Enable parallel feature worktrees for non-conflicting components (routes.go vs application/ui).'
       }
     ]
   });
