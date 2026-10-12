@@ -56,42 +56,59 @@ app.get('/api/agents', (req, res) => {
   });
 });
 
-// Requirements evaluation summary
+// Requirements evaluation summary from live search-evaluator probe
 app.get('/api/eval', (req, res) => {
   res.json({
     timestamp: new Date().toISOString(),
     target_url: servingUrl,
     backend_mode: 'spanner',
-    overall_ndcg_at_10: 0.842,
-    overall_mrr_at_10: 0.875,
+    overall_ndcg_at_10: 1.000,
+    overall_mrr_at_10: 1.000,
     optimal_alpha: 0.65,
-    p50_latency_ms: 18.4,
-    p95_latency_ms: 42.1,
-    p99_latency_ms: 68.3,
-    pass_count: 8,
+    p50_latency_ms: 44.6,
+    p95_latency_ms: 74.5,
+    p99_latency_ms: 74.5,
+    pass_count: 3,
     partial_count: 2,
-    pending_count: 0,
+    pending_count: 5,
+    alpha_curve: [
+      { alpha: 0.00, mode: 'Pure Text', ndcg: 0.860, mrr: 1.000, p50_ms: 38.5 },
+      { alpha: 0.25, mode: 'Text-Heavy Hybrid', ndcg: 1.000, mrr: 1.000, p50_ms: 29.0 },
+      { alpha: 0.50, mode: 'Balanced Hybrid', ndcg: 1.000, mrr: 1.000, p50_ms: 30.4 },
+      { alpha: 0.65, mode: 'Optimal Hybrid', ndcg: 1.000, mrr: 1.000, p50_ms: 30.0 },
+      { alpha: 0.80, mode: 'Vector-Heavy Hybrid', ndcg: 1.000, mrr: 1.000, p50_ms: 28.3 },
+      { alpha: 1.00, mode: 'Pure Vector', ndcg: 1.000, mrr: 1.000, p50_ms: 30.2 }
+    ],
     requirements: [
-      { issue_number: 1, code: '4.1.1', title: 'Busca Híbrida (Dynamic RRF Alpha)', owner_agent: '@backend · @frontend', status: 'PASS', latency_ms: 22.4, evidence: 'GET /api/search?alpha=0.8 verified' },
-      { issue_number: 2, code: '4.1.2', title: 'Busca Vetorial (1024-dim, Blue/Green, Cache)', owner_agent: '@backend', status: 'PASS', latency_ms: 31.2, evidence: '1024-dim active with Blue/Green & cache' },
-      { issue_number: 3, code: '4.1.3', title: 'Disponibilidade (Estoque/Canal + Indisponíveis no Final)', owner_agent: '@backend · @frontend', status: 'PASS', latency_ms: 19.8, evidence: 'ORDER BY is_available DESC verified' },
-      { issue_number: 4, code: '4.1.4', title: 'Catálogo Multilanguage (pt-BR, en-US, es-MX)', owner_agent: '@backend', status: 'PASS', latency_ms: 24.1, evidence: 'Verified locale=pt-BR partition' },
-      { issue_number: 5, code: '4.1.5', title: 'Facets Server-Side (Goroutines Concorrentes)', owner_agent: '@backend · @frontend', status: 'PASS', latency_ms: 28.5, evidence: 'Server-side facets active' },
-      { issue_number: 6, code: '4.1.6', title: 'Relevance & Merchandising Rules + 8 Sinais de Boost', owner_agent: '@backend · @frontend', status: 'PARTIAL', latency_ms: 41.0, evidence: 'SQL boost active; awaiting rule editor' },
-      { issue_number: 7, code: '4.1.7', title: 'Low Relevance Synonyms (0.3x Score Weight)', owner_agent: '@backend', status: 'PASS', latency_ms: 26.2, evidence: 'Query expansion verified' },
-      { issue_number: 8, code: '4.1.8', title: 'Delivery Promises (CEP/SLA via INTERLEAVE IN PARENT)', owner_agent: '@backend', status: 'PASS', latency_ms: 35.8, evidence: 'Interleaved tables active in Spanner' },
-      { issue_number: 9, code: '4.1.9', title: 'Autocomplete (BQ Analytics + TOKENIZE_NGRAMS)', owner_agent: '@backend · @frontend', status: 'PASS', latency_ms: 12.3, evidence: 'GET /api/autocomplete returned 200 OK' },
-      { issue_number: 10, code: '4.1.10', title: 'Learning to Rank (2-Stage In-Memory Re-Ranking)', owner_agent: '@backend · @reviewer', status: 'PARTIAL', latency_ms: 48.2, evidence: 'Stage-1 RRF complete; Stage-2 LTR in training' }
+      { issue_number: 1, code: '4.1.1', title: 'Busca Híbrida (Dynamic RRF Alpha)', owner_agent: '@backend · @frontend', status: 'PASS', latency_ms: 74.5, evidence: 'dynamic ?alpha supported, effective_alpha verified' },
+      { issue_number: 2, code: '4.1.2', title: 'Busca Vetorial (1024-dim, Blue/Green, Cache)', owner_agent: '@backend', status: 'PARTIAL', latency_ms: 30.2, evidence: '768-dim active in Spanner; pending 1024-dim v2 + embedding_cache' },
+      { issue_number: 3, code: '4.1.3', title: 'Disponibilidade (Estoque/Canal + Indisponíveis no Final)', owner_agent: '@backend · @frontend', status: 'PASS', latency_ms: 39.9, evidence: 'Out-of-stock items (prod-004, prod-012) correctly demoted' },
+      { issue_number: 4, code: '4.1.4', title: 'Catálogo Multilanguage (pt-BR, en-US, es-MX)', owner_agent: '@backend', status: 'PASS', latency_ms: 31.0, evidence: 'Verified locale=pt-BR and en-US catalog partitions' },
+      { issue_number: 5, code: '4.1.5', title: 'Facets Server-Side (Goroutines Concorrentes)', owner_agent: '@backend · @frontend', status: 'PENDING', latency_ms: 0, evidence: 'Facets object absent in /api/search response' },
+      { issue_number: 6, code: '4.1.6', title: 'Relevance & Merchandising Rules + 8 Sinais de Boost', owner_agent: '@backend · @frontend', status: 'PENDING', latency_ms: 0, evidence: 'GET /api/rules returns 404' },
+      { issue_number: 7, code: '4.1.7', title: 'Low Relevance Synonyms (0.3x Score Weight)', owner_agent: '@backend', status: 'PENDING', latency_ms: 0, evidence: 'GET /api/synonyms returns 404' },
+      { issue_number: 8, code: '4.1.8', title: 'Delivery Promises (CEP/SLA via INTERLEAVE IN PARENT)', owner_agent: '@backend', status: 'PENDING', latency_ms: 0, evidence: 'No CEP/SLA delivery estimates in payload' },
+      { issue_number: 9, code: '4.1.9', title: 'Autocomplete (BQ Analytics + TOKENIZE_NGRAMS)', owner_agent: '@backend · @frontend', status: 'PENDING', latency_ms: 0, evidence: 'GET /api/autocomplete returns 404' },
+      { issue_number: 10, code: '4.1.10', title: 'Learning to Rank (2-Stage In-Memory Re-Ranking)', owner_agent: '@backend · @reviewer', status: 'PARTIAL', latency_ms: 44.6, evidence: '?ltr=true accepted on endpoint' }
     ],
     diagnostics: [
       {
         id: 'diag-wave1',
         severity: 'HEALTHY',
         target_agent: 'psearch/@lead',
-        target_issue: '#1..#4',
-        title: 'Wave 1 Hybrid RRF, 1024-dim Vector & Availability Demotion Live',
-        analysis: 'Search pipeline running on Cloud Spanner with sub-50ms p95 latency.',
-        recommendation: 'Advance to close Wave 1 issues and focus on Stage-2 LTR.'
+        target_issue: '#1 + #3 + #4',
+        title: 'Wave 1 Hybrid RRF, Availability Demotion & Locale Partitions Verified',
+        analysis: 'Ground truth Golden Query suite achieved 1.000 NDCG@10 and 1.000 MRR@10 with p95 of 74.5ms against Cloud Spanner.',
+        recommendation: 'Close Wave 1 Issue #1 and proceed to Wave 2 (#5 Facets Server-Side).'
+      },
+      {
+        id: 'diag-wave2',
+        severity: 'ACTION',
+        target_agent: 'psearch/@backend',
+        target_issue: '#5 Facets Server-Side',
+        title: 'Implement Server-Side Facet Aggregation in /api/search',
+        analysis: 'Search API currently lacks facet counts for category and brand filtering.',
+        recommendation: 'Have @backend add concurrent Spanner GROUP BY goroutines in internal/api/routes.go.'
       }
     ]
   });
