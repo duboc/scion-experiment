@@ -11,6 +11,8 @@ This branch (`eval-dashboard`) belongs to the parallel Scion project **`psearch-
 | **`psearch-eval-dashboard`** | Cloud Run Service (Impeccable UI) | [https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app) |
 | **`psearch-serving`** | Target search backend under evaluation | [https://psearch-serving-mhjw244bgq-uc.a.run.app](https://psearch-serving-mhjw244bgq-uc.a.run.app) |
 | **Cloud Spanner Instance** | Instance `psearch-instance` (100 PU) / DB `psearch-db` | [Spanner Database Console](https://console.cloud.google.com/spanner/instances/psearch-instance/databases/psearch-db/details?project=riojucu-sandbox) |
+| **Cloud Firestore (Native)** | Database `(default)`: collections `agents`, `tasks`, `eval_runs`, `requirements_compliance` | [Firestore Data Panel](https://console.cloud.google.com/firestore/databases/-default-/data/panel?project=riojucu-sandbox) |
+| **Cloud Storage (GCS)** | Private bucket: `gs://psearch-eval-data-riojucu-sandbox/snapshots/` | [GCS Console](https://console.cloud.google.com/storage/browser/psearch-eval-data-riojucu-sandbox?project=riojucu-sandbox) |
 | **GitHub Source Branch** | Branch `eval-dashboard` | [duboc/scion-experiment@eval-dashboard](https://github.com/duboc/scion-experiment/tree/eval-dashboard) |
 | **Design System** | Impeccable high-craft UI principles | [Impeccable Style Guide](https://impeccable.style) |
 
