@@ -143,16 +143,20 @@
     const rows = cachedAgents.filter(a => currentAgentFilter === 'all' || a.project === currentAgentFilter);
     tbody.innerHTML = rows.map(a => {
       const isSel = a.project === proj && a.name === name;
-      const isRunning = (a.phase === 'running' || a.activity === 'active');
+      const isRunning = (a.phase === 'running' || a.activity === 'active' || a.activity === 'working' || a.activity === 'executing' || a.activity === 'thinking');
       const badgeClass = isRunning ? 'badge--running' : 'badge--pending';
       const statusText = a.phase ? (a.phase + ' (' + (a.activity || 'idle') + ')') : (a.activity || 'idle');
+      const turnsDisplay = (a.current_turns !== null && a.current_turns !== undefined && a.current_turns !== 'n/a') ? a.current_turns : 'n/a';
+      const callsDisplay = (a.model_calls !== null && a.model_calls !== undefined && a.model_calls !== 'n/a') ? a.model_calls : 'n/a';
+      const turnsCallsText = (turnsDisplay === 'n/a' && callsDisplay === 'n/a') ? 'n/a' : (turnsDisplay + ' / ' + callsDisplay);
+
       return '<tr class="' + (isSel ? 'is-selected' : '') + '">' +
         '<td><strong>' + escapeHTML(a.project || 'psearch') + '</strong></td>' +
         '<td class="mono">@' + escapeHTML(a.name) + '</td>' +
         '<td>' + escapeHTML(a.role || a.template || 'Agent') + '</td>' +
         '<td class="mono">' + escapeHTML(a.harness || 'antigravity') + '</td>' +
-        '<td class="mono">' + escapeHTML(a.active_issue || 'Standby') + '</td>' +
-        '<td class="mono num">' + (a.current_turns || 0) + ' / ' + (a.model_calls || 0) + '</td>' +
+        '<td class="mono">' + escapeHTML(a.active_issue || a.last_summary || 'Standby') + '</td>' +
+        '<td class="mono num">' + escapeHTML(turnsCallsText) + '</td>' +
         '<td><span class="badge ' + badgeClass + '"><span class="badge-dot"></span>' + escapeHTML(statusText) + '</span></td>' +
       '</tr>';
     }).join('');
@@ -213,11 +217,30 @@
 
   function renderCommits(backlog) {
     const tbody = document.getElementById('tbody-commits');
+    const errEl = document.getElementById('backlog-error');
     if (!tbody || !backlog) return;
 
-    const mainC = (Array.isArray(backlog.main_commits) ? backlog.main_commits : []).slice(0, 4).map(c => ({ branch: 'main', c }));
-    const evalC = (Array.isArray(backlog.eval_commits) ? backlog.eval_commits : []).slice(0, 4).map(c => ({ branch: 'eval-dashboard', c }));
+    if (errEl) {
+      if (backlog.error) {
+        errEl.textContent = 'GitHub Notice: ' + backlog.error;
+        errEl.style.display = 'inline-flex';
+      } else {
+        errEl.style.display = 'none';
+      }
+    }
+
+    const mainC = (Array.isArray(backlog.main_commits) ? backlog.main_commits : []).slice(0, 5).map(c => ({ branch: 'main', c }));
+    const evalC = (Array.isArray(backlog.eval_commits) ? backlog.eval_commits : []).slice(0, 5).map(c => ({ branch: 'eval-dashboard', c }));
     const allCommits = mainC.concat(evalC);
+
+    if (allCommits.length === 0) {
+      if (backlog.error) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:1rem;">GitHub telemetry unavailable: ' + escapeHTML(backlog.error) + '</td></tr>';
+      } else {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:1rem;">No commits recorded.</td></tr>';
+      }
+      return;
+    }
 
     tbody.innerHTML = allCommits.map(item => {
       const sha = (item.c && item.c.sha) ? item.c.sha.slice(0, 7) : '';
@@ -295,10 +318,16 @@
 
       // Primary Asymmetric Focal Readouts
       const ndcgEl = document.getElementById('val-ndcg');
-      if (ndcgEl) ndcgEl.textContent = evalRes.overall_ndcg_at_10 !== undefined ? Number(evalRes.overall_ndcg_at_10).toFixed(3) : '--';
+      if (ndcgEl) {
+        const val = evalRes.overall_ndcg_at_10 !== undefined ? Number(evalRes.overall_ndcg_at_10).toFixed(3) : '--';
+        ndcgEl.textContent = val + (evalRes.is_sample ? ' (sample)' : '');
+      }
 
       const mrrEl = document.getElementById('val-mrr');
-      if (mrrEl) mrrEl.textContent = evalRes.overall_mrr_at_10 !== undefined ? Number(evalRes.overall_mrr_at_10).toFixed(3) : '--';
+      if (mrrEl) {
+        const val = evalRes.overall_mrr_at_10 !== undefined ? Number(evalRes.overall_mrr_at_10).toFixed(3) : '--';
+        mrrEl.textContent = val + (evalRes.is_sample ? ' (sample)' : '');
+      }
 
       const alphaEl = document.getElementById('val-opt-alpha');
       if (alphaEl) alphaEl.textContent = evalRes.optimal_alpha !== undefined ? Number(evalRes.optimal_alpha).toFixed(2) : '0.65';
@@ -309,7 +338,9 @@
       }
 
       const modeEl = document.getElementById('lbl-backend-mode');
-      if (modeEl) modeEl.textContent = evalRes.backend_mode || 'spanner';
+      if (modeEl) {
+        modeEl.textContent = evalRes.data_source === 'sample' ? 'spanner (sample)' : (evalRes.backend_mode || 'spanner');
+      }
 
       const p50El = document.getElementById('val-p50');
       if (p50El) p50El.textContent = evalRes.p50_latency_ms !== undefined ? Number(evalRes.p50_latency_ms).toFixed(1) + ' ms' : '-- ms';

@@ -19,7 +19,8 @@ gcloud run deploy "${SERVICE_NAME}" \
   --image="${IMAGE_TAG}" \
   --platform="managed" \
   --allow-unauthenticated \
-  --set-env-vars="GCP_PROJECT=${PROJECT_ID},PSEARCH_SERVING_URL=https://psearch-serving-mhjw244bgq-uc.a.run.app"
+  --set-env-vars="GCP_PROJECT=${PROJECT_ID},PSEARCH_SERVING_URL=https://psearch-serving-mhjw244bgq-uc.a.run.app" \
+  --update-secrets="GITHUB_TOKEN=github-token:latest"
 
 echo "=== 3. Obtaining Service URL ==="
 SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" \
