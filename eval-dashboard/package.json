@@ -1,0 +1,12 @@
+{
+  "name": "psearch-eval-dashboard",
+  "version": "1.0.0",
+  "description": "Evaluation & Observability Dashboard for psearch on Cloud Run",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
