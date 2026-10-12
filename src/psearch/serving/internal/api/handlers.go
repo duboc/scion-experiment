@@ -109,18 +109,24 @@ func (c *Controller) Search(ctx *gin.Context) {
 		alpha = *req.Alpha
 	}
 
-	results, err := c.spannerSvc.HybridSearch(ctx.Request.Context(), req.Query, limit, minScore, alpha)
+	outcome, err := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), req.Query, limit, minScore, alpha)
+	results := outcome.Results
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if outcome.RetrievalMode == services.RetrievalLexicalOnly {
+		alpha = 0 // vector leg was not executed
+	}
 
 	ctx.JSON(http.StatusOK, models.SearchResponse{
-		Query:          req.Query,
-		EffectiveAlpha: alpha,
-		Results:        results,
-		TotalFound:     len(results),
-		LatencyMs:      float64(time.Since(start).Microseconds()) / 1000.0,
-		BackendMode:    c.spannerSvc.BackendMode(),
+		Query:            req.Query,
+		EffectiveAlpha:   alpha,
+		Results:          results,
+		TotalFound:       len(results),
+		LatencyMs:        float64(time.Since(start).Microseconds()) / 1000.0,
+		BackendMode:      c.spannerSvc.BackendMode(),
+		EmbeddingVersion: c.config.ActiveEmbeddingVersion,
+		RetrievalMode:    outcome.RetrievalMode,
 	})
 }

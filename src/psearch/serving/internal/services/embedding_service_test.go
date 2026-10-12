@@ -132,3 +132,17 @@ func TestConfigActiveDimension(t *testing.T) {
 		t.Errorf("v2 active dimension want 1024, got %d", d)
 	}
 }
+
+func TestHybridSearchDetailed_ReportsMemoryFallbackMode(t *testing.T) {
+	svc := &SpannerService{config: testConfig("v2"), seedProducts: DefaultSeedProducts()}
+	out, err := svc.HybridSearchDetailed(context.Background(), "tenis", 5, 0, 0.5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.RetrievalMode != RetrievalMemory {
+		t.Fatalf("want retrieval mode %q without Spanner, got %q", RetrievalMemory, out.RetrievalMode)
+	}
+	if len(out.Results) == 0 {
+		t.Fatal("memory fallback should return seed results")
+	}
+}

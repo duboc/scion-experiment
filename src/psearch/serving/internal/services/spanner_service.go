@@ -140,8 +140,29 @@ func (s *SpannerService) SeedIfEmpty(ctx context.Context) error {
 	return err
 }
 
+// Retrieval modes reported per search response so operators can verify which
+// path actually served a query (Issue #11 rollout finding).
+const (
+	RetrievalHybridV1    = "hybrid_v1"             // Spanner RRF, legacy 768-d deterministic vectors
+	RetrievalHybridV2    = "hybrid_v2"             // Spanner RRF, gemini-embedding-2 1024-d vectors
+	RetrievalLexicalOnly = "lexical_only_degraded" // v2 active but query embedding unavailable
+	RetrievalMemory      = "memory_fallback"       // in-process demo engine (no Spanner / Spanner error)
+)
+
+// SearchOutcome carries results plus the retrieval path that produced them.
+type SearchOutcome struct {
+	Results       []models.SearchResult
+	RetrievalMode string
+}
+
 // HybridSearch executes hybrid vector + full-text RRF search against Cloud Spanner (with deterministic fallback).
 func (s *SpannerService) HybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64) ([]models.SearchResult, error) {
+	out, err := s.HybridSearchDetailed(ctx, query, limit, minScore, alpha)
+	return out.Results, err
+}
+
+// HybridSearchDetailed is HybridSearch plus the retrieval mode that served the query.
+func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string, limit int, minScore float64, alpha float64) (SearchOutcome, error) {
 	if limit <= 0 {
 		limit = s.config.DefaultLimit
 	}
@@ -154,14 +175,25 @@ func (s *SpannerService) HybridSearch(ctx context.Context, query string, limit i
 
 	if s.client != nil && strings.TrimSpace(query) != "" {
 		plan := s.planVectorQuery(ctx, query)
-		if res, err := s.spannerHybridSearch(ctx, query, limit, minScore, alpha, plan); err == nil && len(res) > 0 {
-			return res, nil
-		} else if err != nil {
+		res, err := s.spannerHybridSearch(ctx, query, limit, minScore, alpha, plan)
+		switch {
+		case err != nil:
 			log.Printf("WARN: Spanner HybridSearch fallback triggered: %v", err)
+		case plan.lexicalOnly:
+			// Degraded v2: return Spanner's lexical results as-is (even if empty).
+			// Falling back to the in-memory engine here would mask the outage with
+			// deterministic 768-d vector scores.
+			return SearchOutcome{Results: res, RetrievalMode: RetrievalLexicalOnly}, nil
+		case len(res) > 0:
+			mode := RetrievalHybridV1
+			if plan.column == vectorColumnV2 {
+				mode = RetrievalHybridV2
+			}
+			return SearchOutcome{Results: res, RetrievalMode: mode}, nil
 		}
 	}
 
-	return s.memoryHybridSearch(query, limit, minScore, alpha), nil
+	return SearchOutcome{Results: s.memoryHybridSearch(query, limit, minScore, alpha), RetrievalMode: RetrievalMemory}, nil
 }
 
 // vectorPlan describes how the vector leg of the hybrid query is executed.

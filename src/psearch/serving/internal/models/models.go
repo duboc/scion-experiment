@@ -23,6 +23,10 @@ type SearchResponse struct {
 	Facets         map[string]interface{} `json:"facets,omitempty"`
 	LatencyMs      float64                `json:"latency_ms"`
 	BackendMode    string                 `json:"backend_mode"`
+	// EmbeddingVersion is the active vector column (v1 / v2); RetrievalMode is the path
+	// that actually served this query (hybrid_v1, hybrid_v2, lexical_only_degraded, memory_fallback).
+	EmbeddingVersion string `json:"embedding_version,omitempty"`
+	RetrievalMode    string `json:"retrieval_mode,omitempty"`
 }
 
 type SearchResult struct {
