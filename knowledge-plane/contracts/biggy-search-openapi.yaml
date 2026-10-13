@@ -1,29 +1,68 @@
 openapi: 3.0.3
 info:
-  title: psearch (Biggy Search Parity / IS 2.0) API
-  version: 2.0.0
+  title: psearch Serving API (Cloud Spanner Hybrid Search)
+  version: 2.5.0
+  description: |
+    Canonical REST contract for `psearch-serving` (`src/psearch/serving`) across Waves 1–5
+    (Issues #1–#10, #11, and #19–#22).
 paths:
   /api/health:
     get:
-      summary: Cloud Run external health probe
+      summary: Cloud Run health probe (`status`, `service`, `backend_mode`)
   /api/info:
     get:
-      summary: Service, sandbox, Spanner, and active feature metadata
+      summary: Service, sandbox, Spanner, active embedding version (v1/v2), and embedding cache stats
+  /api/config/embedding-version:
+    get:
+      summary: Active embedding version (`v1` 768-d legacy vs `v2` 1024-d gemini-embedding-2)
+    post:
+      summary: Per-instance Blue/Green embedding version switch (requires `X-Admin-Token`)
   /api/search:
     get:
-      summary: Hybrid + Faceted + Merchandised + Geo/SLA + LTR product search
+      summary: >
+        Hybrid RRF + Faceted + Merchandised + Delivery Promise + Two-Stage LTR +
+        Conversational Intent + Session Personalization + Spell Check + B2B Contract Pricing search
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: alpha, in: query, schema: { type: number, minimum: 0.0, maximum: 1.0 } }
+        - { name: limit, in: query, schema: { type: integer } }
+        - { name: min_score, in: query, schema: { type: number } }
+        - { name: tenant_id, in: query, schema: { type: string, default: default } }
+        - { name: locale, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: brand, in: query, schema: { type: string } }
+        - { name: color, in: query, schema: { type: string } }
+        - { name: min_price, in: query, schema: { type: number } }
+        - { name: max_price, in: query, schema: { type: number } }
+        - { name: price_table_id, in: query, schema: { type: string } }
+        - { name: sort_by, in: query, schema: { type: string, enum: [relevance, price_asc, price_desc] } }
+        - { name: channel, in: query, schema: { type: string, enum: [web, mobile, store] } }
+        - { name: only_in_stock, in: query, schema: { type: boolean } }
+        - { name: cep, in: query, schema: { type: string } }
+        - { name: max_sla_hours, in: query, schema: { type: integer } }
+        - { name: ltr, in: query, schema: { type: boolean } }
+        - { name: parse_intent, in: query, schema: { type: boolean } }
+        - { name: session_id, in: query, schema: { type: string } }
     post:
-      summary: Hybrid + Faceted + Merchandised + Geo/SLA + LTR product search
+      summary: Same search contract via JSON request body (`models.SearchRequest`)
   /api/autocomplete:
     get:
-      summary: N-Gram autocomplete suggestions (Issue #9)
+      summary: Spanner N-Gram (`SEARCH_NGRAMS`) + prefix autocomplete suggestions (Issue #9)
   /api/rules:
     get:
-      summary: List merchandising rules (Issue #6)
+      summary: List active/configured merchandising rules for a tenant (Issue #6)
     post:
-      summary: Create or update merchandising rule (Issue #6)
+      summary: Create merchandising rule (requires `X-Admin-Token`)
+  /api/rules/{id}:
+    put:
+      summary: Update merchandising rule (requires `X-Admin-Token`)
+    delete:
+      summary: Delete merchandising rule (requires `X-Admin-Token`)
   /api/synonyms:
     get:
-      summary: List tenant search synonyms (Issue #7)
+      summary: List tenant/locale search synonyms (Issue #7)
     post:
-      summary: Upsert tenant search synonym group (Issue #7)
+      summary: Upsert tenant/locale search synonym group (requires `X-Admin-Token`)
+  /api/session/events:
+    post:
+      summary: Record session interaction (`click` or `purchase`) for real-time session vector personalization (Issue #20)
