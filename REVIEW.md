@@ -88,3 +88,11 @@
     - `npm run build`: PASS
     - ADR-004 (Merchandising): PASS
     - Security: PASS (Admin endpoints secured, inputs are bound parameters)
+
+### Follow-up: 2586e94, f07d668
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go test` and `npm run build`: PASS
+    - Rule multipliers are clamped in the backend.
+    - UI uses `/api/rules` and sessionStorage for the admin token.
