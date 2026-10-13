@@ -321,3 +321,19 @@ Verification on `00020-552`:
 - Logs: clean
 
 Process note: during this rollout lead's uncommitted edits in `/workspace` were reverted by someone (not deployer: only read-only git plus `git archive` into `/tmp`). The image came from the archive of `7a958ef`, so it wasn't affected.
+
+## Wave 5 #21 spell recovery + #19 intent default-on (`612d939`): deployed then ROLLED BACK 2026-10-13
+
+Source: clean `git archive` of **`612d9396b1acf4bddfcf3ee207369fb4a2e363a8`** (#21 `d674656` + #19 default-on). No DDL. `cmd/sqlcheck`: 27 OK, 0 FAIL (new: `spell 'sansung' -> "samsung"`, `relaxed OR query`).
+Deploy → `psearch-serving-00021-x6b` (100%), verified, then **rolled back**: `update-traffic --to-revisions=psearch-serving-00020-552=100`. **Serving now: `00020-552` (pinned)**; the service template points at the 00021 image, so the next rollout needs `update-traffic --to-latest`.
+
+| Check on `00021-x6b` | Result |
+|---|---|
+| #21 `q=sansung&alpha=0` → `did_you_mean=samsung`, `auto_corrected=true`, prod-010 first | ❌ `did_you_mean=samsung` only; **no `auto_corrected`**; top = prod-008/015/001 |
+| #21 `q=geladera` | ✅ `did_you_mean=geladeira`, `auto_corrected=true`, prod-011 first |
+| #21 `q=samsung` untouched | ✅ no correction (parser extracts `brand:Samsung` → prod-010 only) |
+| #19 default-on `q=tenis+de+corrida+ate+200+reais` (no `parse_intent`) | ✅ `parsed_query.extracted_filters.max_price=200`, 5 results, max price 189.9 |
+| #19 `parse_intent=false` | ✅ no `parsed_query` (15 results) |
+| #19 `q=geladeira` | ✅ no `parsed_query` |
+
+**Root cause of the #21 failure:** recovery only auto-corrects when the corrected query has lexical hits (`services.LexicalHits(alt.Results) > 0`). "samsung" appears only in `products.brand`; prod-010's title/description ("Galaxy S25 Ultra 5G 512GB Smartphone" / "Flagship Android phone…") don't contain it, and the search index covers only title/description tokens. Read-only checks: `SEARCH(title_tokens_folded|description_tokens_folded, 'samsung')` → 0 rows; `q=samsung&parse_intent=false&alpha=0` → no text hits, prod-010 not on top. Fix options: (a) after spell-correcting, re-run the intent parser on the corrected query, so `samsung` → brand filter → prod-010, and accept the correction when that yields results; (b) index brand/category text (e.g. a `brand_tokens` TOKENLIST added to `products_text_idx` and to the fts WHERE), which needs DDL.
