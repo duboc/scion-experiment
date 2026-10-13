@@ -79,3 +79,12 @@ func TestParseNum(t *testing.T) {
 		}
 	}
 }
+
+// #21 recovery relies on re-parsing corrected queries: brand-only entities (indexed
+// as a column, not in title tokens) must be extracted as filters.
+func TestParseBrandOnlyQuery(t *testing.T) {
+	in := newQU(nil).Parse("samsung")
+	if in.Brand != "Samsung" || in.CleanQuery == "" {
+		t.Fatalf("Parse(samsung) = %+v", in)
+	}
+}
