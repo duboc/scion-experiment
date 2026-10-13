@@ -289,3 +289,13 @@ Verification on `00018-rc5`:
 - #8 still OK: `cep=01310-100` → 12, all SP, labels "Chega amanhã / Chega em 2 dias - CD São Paulo"; `max_sla_hours=24` → 8; SUL 12; `cep=123` → 400. Free-shipping items now report `shipping_cost=0` (follow-up `f00acb7`)
 - Regressions: tenis → prod-002 first; geladeira synonyms; boost (0, 0.002]; OOS last; acme → 0 results, `hybrid_v2`; Acer → prod-006; facets 4; cache miss → hit; info v2/1024; POST `/api/rules`, `/api/synonyms`, `/api/config/embedding-version` → 403
 - Logs: fully clean (no WARN, fallback, InvalidArgument, PermissionDenied, lexical, SEARCH_NGRAMS or ERROR; no seed-check timeout this time)
+
+## #10 UI (LTR toggle in storefront): LIVE 2026-10-13
+
+Source: clean `git archive` of **`5d5c13619c2ee8fb5bee972bba5452d94759ab67`** (adds `8a7017d`; the only image change since `69bdc21` is `internal/api/routes.go` storefront HTML/JS). No DDL; env unchanged.
+`cmd/sqlcheck`: 22 OK, 0 FAIL, exit 0. Deploy → **`psearch-serving-00019-dsr`**, then `update-traffic --to-latest` (100%, follows latest). Rollback target: `00018-rc5`.
+
+- Storefront `GET /` → 200; HTML contains `<input type="checkbox" id="ltr" /> Re-rank (LTR)` and the `ltr-badge` element plus the JS that appends `&ltr=true` and renders "LTR: <model> (<µs>)"
+- `/api/search?q=shoes&ltr=true&limit=5` unchanged from 00018: `ltr=true`, `ltr_model=baseline-2026-10`, `ltr_latency_us=36`; identical stage1/stage2 ranks and `ltr_score`s (prod-015 6→5). Without `ltr`: no ltr fields
+- Regressions: tenis → prod-002 first; geladeira pt-BR → prod-011 first; acme → 0 results, `hybrid_v2`; cep SP → 12 promises; boost OK; OOS last; facets 4; autocomplete `gel` → geladeira; health 200
+- Logs: clean
