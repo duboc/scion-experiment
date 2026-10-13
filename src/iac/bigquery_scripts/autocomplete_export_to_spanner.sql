@@ -10,6 +10,7 @@ SELECT
   IFNULL(tenant_id, 'default') AS tenant_id,
   IFNULL(locale, 'pt-BR') AS locale,
   LOWER(TRIM(query)) AS suggestion_text,
+  REGEXP_REPLACE(NORMALIZE(LOWER(TRIM(query)), NFD), r'\p{M}', '') AS suggestion_folded,
   COUNT(*) AS search_count,
   SAFE_DIVIDE(COUNTIF(clicked), COUNT(*)) AS ctr_score,
   CURRENT_TIMESTAMP() AS updated_at
