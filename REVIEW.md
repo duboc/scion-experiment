@@ -177,3 +177,10 @@
 - **Checks:**
     - `go vet` and `go test -race`: PASS
     - ADR-008 (Zero-results Recovery): PASS
+
+### Follow-up: 780c681
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `npm run build`: PASS
+    - UI now has a smart query toggle and removable filter chips.
