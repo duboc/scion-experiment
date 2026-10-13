@@ -32,6 +32,8 @@ func SetupRouter(router *gin.Engine, cfg *config.Config) {
 	router.GET("/api/info", controller.Info)
 	router.GET("/api/config/embedding-version", controller.GetEmbeddingVersion)
 	router.POST("/api/config/embedding-version", controller.SetEmbeddingVersion)
+	router.GET("/api/synonyms", controller.ListSynonyms)
+	router.POST("/api/synonyms", controller.UpsertSynonym)
 	router.GET("/search", controller.Search)
 	router.POST("/search", controller.Search)
 	router.GET("/api/search", controller.Search)

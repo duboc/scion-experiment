@@ -20,6 +20,7 @@ type Controller struct {
 	spannerSvc   *services.SpannerService
 	embeddingSvc *services.EmbeddingService
 	cache        *services.EmbeddingCache // nil when the embedding service is unavailable
+	synonyms     *services.SynonymService
 }
 
 func NewController(cfg *config.Config) (*Controller, error) {
@@ -46,11 +47,18 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		cache = services.NewEmbeddingCache(embeddingSvc, store, embeddingSvc.Model(), cfg.GeminiEmbeddingDimension, 1000)
 		spannerSvc.SetQueryEmbedder(cache)
 	}
+	var synStore services.SynonymStore = services.NewMemorySynonymStore()
+	if client := spannerSvc.Client(); client != nil {
+		synStore = services.SpannerSynonymStore{Client: client}
+	}
+	synonyms := services.NewSynonymService(synStore, time.Minute)
+	spannerSvc.SetSynonyms(synonyms)
 	return &Controller{
 		config:       cfg,
 		spannerSvc:   spannerSvc,
 		embeddingSvc: embeddingSvc,
 		cache:        cache,
+		synonyms:     synonyms,
 	}, nil
 }
 
@@ -194,6 +202,7 @@ func (c *Controller) Search(ctx *gin.Context) {
 		BackendMode:      c.spannerSvc.BackendMode(),
 		EmbeddingVersion: c.config.ActiveVersion(),
 		CacheHit:         outcome.CacheHit,
+		ExpandedTerms:    outcome.ExpandedTerms,
 		RetrievalMode:    outcome.RetrievalMode,
 	})
 }
@@ -221,9 +230,7 @@ func (c *Controller) GetEmbeddingVersion(ctx *gin.Context) {
 // Requires X-Admin-Token == ADMIN_TOKEN; disabled (403) when ADMIN_TOKEN is unset.
 // The switch is per Cloud Run instance; set ACTIVE_EMBEDDING_VERSION for a fleet-wide change.
 func (c *Controller) SetEmbeddingVersion(ctx *gin.Context) {
-	token := ctx.GetHeader("X-Admin-Token")
-	if c.config.AdminToken == "" || subtle.ConstantTimeCompare([]byte(token), []byte(c.config.AdminToken)) != 1 {
-		ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+	if !c.authorizeAdmin(ctx) {
 		return
 	}
 	var body struct {
@@ -239,4 +246,48 @@ func (c *Controller) SetEmbeddingVersion(ctx *gin.Context) {
 	}
 	log.Printf("config: active embedding version switched to %s (this instance)", body.Version)
 	c.GetEmbeddingVersion(ctx)
+}
+
+// authorizeAdmin enforces X-Admin-Token == ADMIN_TOKEN (constant-time); writes 403 otherwise.
+// Admin writes are disabled entirely when ADMIN_TOKEN is unset.
+func (c *Controller) authorizeAdmin(ctx *gin.Context) bool {
+	token := ctx.GetHeader("X-Admin-Token")
+	if c.config.AdminToken == "" || subtle.ConstantTimeCompare([]byte(token), []byte(c.config.AdminToken)) != 1 {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return false
+	}
+	return true
+}
+
+// ListSynonyms: GET /api/synonyms?tenant_id=default&locale=pt-BR (Issue #7).
+func (c *Controller) ListSynonyms(ctx *gin.Context) {
+	tenant := strings.TrimSpace(ctx.Query("tenant_id"))
+	if tenant == "" {
+		tenant = "default"
+	}
+	rows, err := c.synonyms.List(ctx.Request.Context(), tenant, strings.TrimSpace(ctx.Query("locale")))
+	if err != nil {
+		log.Printf("WARN: list synonyms: %v", err)
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "synonyms unavailable"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"tenant_id": tenant, "synonyms": rows, "count": len(rows)})
+}
+
+// UpsertSynonym: POST /api/synonyms {tenant_id, locale, term, synonyms[], weight} (admin only).
+func (c *Controller) UpsertSynonym(ctx *gin.Context) {
+	if !c.authorizeAdmin(ctx) {
+		return
+	}
+	var body services.Synonym
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	saved, err := c.synonyms.Upsert(ctx.Request.Context(), body)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, saved)
 }

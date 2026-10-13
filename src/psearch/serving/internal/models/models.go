@@ -37,9 +37,10 @@ type SearchResponse struct {
 	RetrievalMode    string         `json:"retrieval_mode,omitempty"`
 	CacheHit         bool           `json:"cache_hit,omitempty"`
 	FacetsLatencyMs  float64        `json:"facets_latency_ms,omitempty"`
-	Candidates       int            `json:"candidates,omitempty"` // size of the facet candidate set (top 100)
-	TenantID         string         `json:"tenant_id,omitempty"`  // effective tenant (ADR-002)
-	Locale           string         `json:"locale,omitempty"`     // locale filter applied ("" = all)
+	Candidates       int            `json:"candidates,omitempty"`     // size of the facet candidate set (top 100)
+	TenantID         string         `json:"tenant_id,omitempty"`      // effective tenant (ADR-002)
+	Locale           string         `json:"locale,omitempty"`         // locale filter applied ("" = all)
+	ExpandedTerms    []string       `json:"expanded_terms,omitempty"` // synonyms added at reduced weight (Issue #7)
 }
 
 type FacetBucket struct {

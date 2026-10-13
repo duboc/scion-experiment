@@ -299,3 +299,37 @@ func TestCatalogFiltersLocaleTenantCategoryBrand(t *testing.T) {
 		t.Fatalf("accent-insensitive 'tenis' should rank 'Tênis...' (prod-002) first at alpha=0: %s", ids(folded.Results))
 	}
 }
+
+// Issue #7: synonyms API (GET public, POST admin-only) and expanded_terms in search.
+func TestSynonymsEndpoints(t *testing.T) {
+	r := newTokenRouter("s3cret")
+	req := httptest.NewRequest(http.MethodGet, "/api/synonyms?locale=pt-BR", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"term":"tenis"`) {
+		t.Fatalf("GET /api/synonyms: %d %s", w.Code, w.Body.String())
+	}
+	post := func(token, body string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/synonyms", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("X-Admin-Token", token)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+	if code := post("", `{"locale":"pt-BR","term":"bota","synonyms":["coturno"]}`); code != http.StatusForbidden {
+		t.Fatalf("POST without token = %d, want 403", code)
+	}
+	if code := post("s3cret", `{"locale":"pt-BR","term":"bota","synonyms":["coturno"],"weight":2}`); code != http.StatusBadRequest {
+		t.Fatalf("POST weight>=1 = %d, want 400", code)
+	}
+	if code := post("s3cret", `{"locale":"en-US","term":"kicks","synonyms":["sneaker","shoes"]}`); code != http.StatusOK {
+		t.Fatalf("POST valid = %d", code)
+	}
+	resp := doSearch(t, r, "q=kicks&locale=en-US")
+	if len(resp.ExpandedTerms) == 0 || len(resp.Results) == 0 {
+		t.Fatalf("search 'kicks' should expand via new synonym: terms=%v results=%d", resp.ExpandedTerms, len(resp.Results))
+	}
+}

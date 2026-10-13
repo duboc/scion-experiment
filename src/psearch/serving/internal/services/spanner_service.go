@@ -21,7 +21,11 @@ type SpannerService struct {
 	embeddings   QueryEmbedder
 	seedProducts []models.SearchResult
 	backendMode  string
+	synonyms     *SynonymService // optional query expansion (Issue #7)
 }
+
+// SetSynonyms installs the synonym expansion service (Issue #7, ADR-003).
+func (s *SpannerService) SetSynonyms(syn *SynonymService) { s.synonyms = syn }
 
 func NewSpannerService(ctx context.Context, cfg *config.Config, embeddings QueryEmbedder) (*SpannerService, error) {
 	svc := &SpannerService{
@@ -164,7 +168,8 @@ const (
 type SearchOutcome struct {
 	Results       []models.SearchResult
 	RetrievalMode string
-	CacheHit      bool // query embedding served from the embedding cache (v2 only)
+	CacheHit      bool     // query embedding served from the embedding cache (v2 only)
+	ExpandedTerms []string // synonym phrases added to the text leg (Issue #7)
 }
 
 // HybridSearch executes hybrid vector + full-text RRF search against Cloud Spanner (with deterministic fallback).
@@ -185,8 +190,11 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		alpha = 1
 	}
 
+	nf := normalizeFilters(filters)
+	expansion := s.synonyms.Expand(ctx, nf.TenantID, nf.Locale, query)
 	if s.client != nil && strings.TrimSpace(query) != "" {
 		plan := s.planVectorQuery(ctx, query)
+		plan.expansion = expansion
 		res, err := s.spannerHybridSearch(ctx, query, limit, minScore, alpha, plan, filters)
 		switch {
 		case err != nil:
@@ -195,7 +203,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			// Degraded v2: return Spanner's lexical results as-is (even if empty).
 			// Falling back to the in-memory engine here would mask the outage with
 			// deterministic 768-d vector scores.
-			return SearchOutcome{Results: res, RetrievalMode: RetrievalLexicalOnly}, nil
+			return SearchOutcome{Results: res, RetrievalMode: RetrievalLexicalOnly, ExpandedTerms: expansion.Terms}, nil
 		default:
 			// A successful Spanner query is authoritative even when it returns no rows
 			// (e.g. tenant/category filters exclude everything). Falling back to the
@@ -204,11 +212,11 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			if plan.column == vectorColumnV2 {
 				mode = RetrievalHybridV2
 			}
-			return SearchOutcome{Results: res, RetrievalMode: mode, CacheHit: plan.cacheHit}, nil
+			return SearchOutcome{Results: res, RetrievalMode: mode, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms}, nil
 		}
 	}
 
-	return SearchOutcome{Results: s.memoryHybridSearch(query, limit, minScore, alpha, filters), RetrievalMode: RetrievalMemory}, nil
+	return SearchOutcome{Results: s.memoryHybridSearchExpanded(query, limit, minScore, alpha, filters, expansion), RetrievalMode: RetrievalMemory, ExpandedTerms: expansion.Terms}, nil
 }
 
 // vectorPlan describes how the vector leg of the hybrid query is executed.
@@ -217,6 +225,7 @@ type vectorPlan struct {
 	embedding   interface{} // []float64 (v1 deterministic) or []float32 (v2 Gemini)
 	lexicalOnly bool        // true when no usable query embedding exists (degraded mode)
 	cacheHit    bool        // query embedding came from the embedding cache
+	expansion   Expansion   // synonym expansion for the text leg
 }
 
 // metaEmbedder is implemented by EmbeddingCache.
@@ -288,9 +297,14 @@ func buildHybridSQLWith(column string, lexicalOnly, folded bool) string {
 			FROM UNNEST(ARRAY(
 				SELECT AS STRUCT product_id, title, product_data, is_available, stock
 				FROM products
-				WHERE (SEARCH(` + titleTok + `, @query_text) OR SEARCH(` + descTok + `, @query_text))
+				WHERE (SEARCH(` + titleTok + `, @query_text) OR SEARCH(` + descTok + `, @query_text)
+					OR SEARCH(` + titleTok + `, @syn_text) OR SEARCH(` + descTok + `, @syn_text))
 					AND ` + catalogFilterSQL + `
-				ORDER BY (SCORE(` + titleTok + `, @query_text) + SCORE(` + descTok + `, @query_text)) DESC
+				ORDER BY
+					/* exact_first: exact matches always outrank synonym-only matches (ADR-003) */
+					IF(SCORE(` + titleTok + `, @query_text) + SCORE(` + descTok + `, @query_text) > 0, 0, 1),
+					(SCORE(` + titleTok + `, @query_text) + SCORE(` + descTok + `, @query_text))
+						+ @syn_weight * (SCORE(` + titleTok + `, @syn_text) + SCORE(` + descTok + `, @syn_text)) DESC
 				LIMIT @limit
 			)) WITH OFFSET AS offset
 		)`
@@ -384,8 +398,16 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		queryText = FoldAccents(query)
 	}
 	f := normalizeFilters(filters)
+	// Synonym leg: when there is no expansion, reuse the exact query with weight 0
+	// (avoids an empty SEARCH query and leaves scores unchanged).
+	synText, synWeight := queryText, 0.0
+	if len(plan.expansion.Terms) > 0 {
+		synText, synWeight = plan.expansion.SpannerQuery(), plan.expansion.Weight
+	}
 	params := map[string]interface{}{
 		"query_text":     queryText,
+		"syn_text":       synText,
+		"syn_weight":     synWeight,
 		"tenant_id":      f.TenantID,
 		"locale":         f.Locale,
 		"category":       f.Category,
@@ -463,6 +485,11 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 }
 
 func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore float64, alpha float64, filters models.SearchFilters) []models.SearchResult {
+	nf := normalizeFilters(filters)
+	return s.memoryHybridSearchExpanded(query, limit, minScore, alpha, filters, s.synonyms.Expand(context.Background(), nf.TenantID, nf.Locale, query))
+}
+
+func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, minScore float64, alpha float64, filters models.SearchFilters, expansion Expansion) []models.SearchResult {
 	filters = normalizeFilters(filters)
 	qLower := FoldAccents(strings.ToLower(strings.TrimSpace(query)))
 	qTokens := strings.Fields(qLower)
@@ -472,6 +499,7 @@ func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore fl
 		prod     models.SearchResult
 		vecSim   float64
 		txtRaw   float64
+		exact    bool
 		vecRank  int
 		txtRank  int
 		rrfScore float64
@@ -498,7 +526,17 @@ func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore fl
 				}
 			}
 		}
-		items[i] = scored{prod: p, vecSim: vecSim, txtRaw: txtRaw}
+		exact := txtRaw > 0
+		titleFolded := FoldAccents(strings.ToLower(p.Title))
+		for _, term := range expansion.Terms {
+			if strings.Contains(titleFolded, term) {
+				txtRaw += 2.0 * expansion.Weight
+			}
+			if strings.Contains(docText, term) {
+				txtRaw += 1.0 * expansion.Weight
+			}
+		}
+		items[i] = scored{prod: p, vecSim: vecSim, txtRaw: txtRaw, exact: exact}
 	}
 
 	// Assign vector ranks
@@ -519,6 +557,9 @@ func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore fl
 		txtOrder[i] = i
 	}
 	sort.Slice(txtOrder, func(i, j int) bool {
+		if items[txtOrder[i]].exact != items[txtOrder[j]].exact {
+			return items[txtOrder[i]].exact // exact matches outrank synonym-only (ADR-003)
+		}
 		if items[txtOrder[i]].txtRaw == items[txtOrder[j]].txtRaw {
 			return items[txtOrder[i]].prod.ID < items[txtOrder[j]].prod.ID
 		}

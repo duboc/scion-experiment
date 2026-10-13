@@ -7,6 +7,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	"psearch/serving-go/internal/config"
 	"psearch/serving-go/internal/models"
@@ -30,6 +31,13 @@ func main() {
 		log.Fatalf("spanner: %v", err)
 	}
 	defer svc.Close()
+	syn := services.NewSynonymService(services.SpannerSynonymStore{Client: svc.Client()}, time.Minute)
+	svc.SetSynonyms(syn)
+	if rows, err := syn.List(ctx, "default", ""); err != nil {
+		log.Fatalf("FAIL synonyms table: %v", err)
+	} else {
+		log.Printf("OK   search_synonyms rows=%d expand(geladeira,pt-BR)=%v", len(rows), syn.Expand(ctx, "default", "pt-BR", "geladeira").Terms)
+	}
 
 	cases := []struct {
 		q       string
@@ -45,6 +53,8 @@ func main() {
 		{"tenis", 0, models.SearchFilters{Locale: "pt-BR"}},
 		{"notebook", 0.5, models.SearchFilters{Category: "Computers", Brand: "Acer", TenantID: "default"}},
 		{"shoes", 0.5, models.SearchFilters{TenantID: "acme"}},
+		{"geladeira", 0, models.SearchFilters{Locale: "pt-BR"}},
+		{"notebook gamer", 0.5, models.SearchFilters{}},
 	}
 	failed := false
 	for _, c := range cases {
