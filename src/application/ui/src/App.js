@@ -1195,6 +1195,7 @@ function ProductSearch({
                     {/* Use the isolated SearchInput component */}
                     <SearchInput
                         onSearch={handleSearch}
+                        query={activeSearchQuery}
                         alpha={alpha}
                         setAlpha={setAlpha}
                         channel={channel}
@@ -1233,6 +1234,72 @@ function ProductSearch({
                             searchQuery={activeSearchQuery}
                             allProducts={products} // Pass all products for smart filtering
                         />
+
+                        {/* Zero-results recovery banner (Issue #21) */}
+                        {autoCorrected && didYouMean ? (
+                            <Alert severity="info" sx={{ mb: 2, alignItems: 'center' }}>
+                                <span>Mostrando resultados para &quot;{didYouMean}&quot;. </span>
+                                <Button
+                                    variant="text"
+                                    color="primary"
+                                    size="small"
+                                    onClick={() => {
+                                        const orig = responseQuery || activeSearchQuery;
+                                        setParseIntent(false);
+                                        parseIntentRef.current = false;
+                                        setActiveSearchQuery(orig);
+                                        fetchProducts({
+                                            query: orig,
+                                            parseIntent: false,
+                                            extractedFilters: null,
+                                        });
+                                    }}
+                                    sx={{
+                                        textTransform: 'none',
+                                        p: 0,
+                                        minWidth: 'auto',
+                                        verticalAlign: 'baseline',
+                                        fontWeight: 600,
+                                        textDecoration: 'underline',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    Buscar por &quot;{responseQuery || activeSearchQuery}&quot;
+                                </Button>
+                            </Alert>
+                        ) : !autoCorrected && didYouMean ? (
+                            <Alert severity="info" sx={{ mb: 2, alignItems: 'center' }}>
+                                <span>Você quis dizer: </span>
+                                <Button
+                                    variant="text"
+                                    color="primary"
+                                    size="small"
+                                    onClick={() => {
+                                        setActiveSearchQuery(didYouMean);
+                                        fetchProducts({
+                                            query: didYouMean,
+                                            parseIntent: parseIntentRef.current,
+                                            extractedFilters: null,
+                                        });
+                                    }}
+                                    sx={{
+                                        textTransform: 'none',
+                                        p: 0,
+                                        minWidth: 'auto',
+                                        verticalAlign: 'baseline',
+                                        fontWeight: 600,
+                                        textDecoration: 'underline',
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    {didYouMean}?
+                                </Button>
+                            </Alert>
+                        ) : queryRelaxed ? (
+                            <Alert severity="info" sx={{ mb: 2 }}>
+                                Nenhum resultado com todos os termos — mostrando resultados com qualquer um deles
+                            </Alert>
+                        ) : null}
 
                         {/* Smart query intent chips (Issue #19) */}
                         {activeExtractedFilters && Object.keys(activeExtractedFilters).length > 0 && (
