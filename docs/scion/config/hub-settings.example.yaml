@@ -1,4 +1,5 @@
 # Excerpt of the Hub's ~/.scion/settings.yaml used by this factory (values replaced by variables).
+# HUB_INTERNAL_IP, HUB_PROJECT_NUMBER and HUB_IAP_PROXY_SERVICE are not in factory.env: fill them in by hand.
 # Every harness authenticates to Vertex AI with the Hub VM's identity ("vertex-ai").
 schema_version: "1"
 default_harness_config: antigravity
