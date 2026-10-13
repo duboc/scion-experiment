@@ -1,7 +1,7 @@
 # `psearch` Knowledge Plane — Master Index
 
 Welcome to the canonical **Knowledge Plane** for the `psearch` Software Factory on [`duboc/scion-experiment`](https://github.com/duboc/scion-experiment).
-All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult this index and the linked ADRs before planning, implementing, reviewing, or deploying any GitHub Issue (`#1`–`#11`, `#19`–`#22`).
+All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult this index and the linked ADRs before planning, implementing, reviewing, or deploying any GitHub Issue (`#1`–`#11`, `#19`–`#23`).
 
 ---
 
@@ -9,14 +9,14 @@ All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult 
 
 | ADR | GitHub Issues | Wave & Status | `psearch` Functional Requirements |
 | :--- | :--- | :--- | :--- |
-| [`adr/ADR-001-hybrid-and-vector-1024.md`](adr/ADR-001-hybrid-and-vector-1024.md) | **#1**, **#2**, **#11** | Wave 1 — ✅ Live (`00019-dsr`) | **4.1.1 Busca Híbrida** (Dynamic `@alpha` RRF weight in SQL) & **4.1.2 Busca Vetorial** (`gemini-embedding-2` 1024-d `embedding_v2`, Blue/Green `v1`/`v2` switch, two-tier `embedding_cache`) |
+| [`adr/ADR-001-hybrid-and-vector-1024.md`](adr/ADR-001-hybrid-and-vector-1024.md) | **#1**, **#2**, **#11**, **#23** | Wave 1 / 5 — ✅ Live (`00024-ltv`), **#23** Planned | **4.1.1 Busca Híbrida** (`@alpha` RRF), **4.1.2 Busca Vetorial** (`gemini-embedding-2` 1024-d `embedding_v2`, Blue/Green `v1`/`v2`, `embedding_cache`), & **#23 Latest Models** (`gemini-3.8-flash` text/flash, `gemini-4-argon` Pro with `gemini-4-pro` alias normalization) |
 | [`adr/ADR-002-catalog-locale-avail.md`](adr/ADR-002-catalog-locale-avail.md) | **#3**, **#4** | Wave 1/2 — ✅ Live (`00019-dsr`) | **4.1.3 Disponibilidade** (`is_available`, `stock`, `is_visible`, `channels`, OOS sorted last) & **4.1.4 Catálogo Multilanguage** (`tenant_id`, `locale`, accent-folded `TOKENLIST` in `products_text_idx`) |
 | [`adr/ADR-003-facets-and-synonyms.md`](adr/ADR-003-facets-and-synonyms.md) | **#5**, **#7** | Wave 2/3 — ✅ Live (`00019-dsr`) | **4.1.5 Facets Server-Side** (Concurrent Go `errgroup` + Spanner `GROUP BY` over Top-100) & **4.1.7 Low-Relevance Synonyms** (`search_synonyms` table + `0.3 * SCORE()` expansion with exact-first rank) |
 | [`adr/ADR-004-merchandising-boosts.md`](adr/ADR-004-merchandising-boosts.md) | **#6** | Wave 3 — ✅ Live (`00019-dsr`) | **4.1.6 Relevance & Merchandising Rules** (`merchandising_rules` in Spanner, `/api/rules` CRUD, pins/buries, and 8 normalized boost signals in SQL score) |
 | [`adr/ADR-005-delivery-promises.md`](adr/ADR-005-delivery-promises.md) | **#8** | Wave 3 — ✅ Live (`00019-dsr`) | **4.1.8 Delivery Promises** (`products` → `skus` → `regional_inventory` via Spanner `INTERLEAVE IN PARENT` + CEP/SLA filter and fastest promise badge) |
 | [`adr/ADR-006-autocomplete-and-ltr.md`](adr/ADR-006-autocomplete-and-ltr.md) | **#9**, **#10** | Wave 4 — ✅ Live (`00019-dsr`) | **4.1.9 Autocomplete** (`autocomplete_suggestions` + `SEARCH_NGRAMS`) & **4.1.10 Learning to Rank** (Stage-1 Spanner Top-100 + Stage-2 `<100µs` Go in-memory 12-feature re-ranker) |
-| [`adr/ADR-007-conversational-query-and-session.md`](adr/ADR-007-conversational-query-and-session.md) | **#19**, **#20** | Wave 5 — 🔄 In Progress | **4.1.11 Conversational Query Understanding** (Parser-first + Gemini Flash Lite fallback, `query_intent_cache`, extracted `min_price`/`max_price`/`brand`/`color` filters) & **4.1.12 Session-Aware Personalization** (Real-time session vector centroid re-ranking) |
-| [`adr/ADR-008-zero-results-and-b2b-pricing.md`](adr/ADR-008-zero-results-and-b2b-pricing.md) | **#21**, **#22** | Wave 5 — 🔄 In Progress | **4.1.13 Zero-Results Recovery & Spell Check** (`SEARCH_NGRAMS` Did You Mean + `AND`→`OR` relaxation) & **4.1.14 B2B / Contract Pricing & Assortment** (`product_prices` via `INTERLEAVE IN PARENT products`, effective price, `sort_by`) |
+| [`adr/ADR-007-conversational-query-and-session.md`](adr/ADR-007-conversational-query-and-session.md) | **#19**, **#20**, **#23** | Wave 5 — ✅ Live (`00024-ltv`) | **4.1.11 Conversational Query Understanding** (Parser-first + `gemini-3.8-flash` fallback, `query_intent_cache`, extracted `min_price`/`max_price`/`brand`/`color` filters) & **4.1.12 Session-Aware Personalization** (Real-time session vector centroid re-ranking) |
+| [`adr/ADR-008-zero-results-and-b2b-pricing.md`](adr/ADR-008-zero-results-and-b2b-pricing.md) | **#21**, **#22** | Wave 5 — ✅ Live (`00024-ltv`) | **4.1.13 Zero-Results Recovery & Spell Check** (`SEARCH_NGRAMS` Did You Mean + `AND`→`OR` relaxation) & **4.1.14 B2B / Contract Pricing & Assortment** (`product_prices` via `INTERLEAVE IN PARENT products`, effective price, `sort_by`) |
 
 ---
 

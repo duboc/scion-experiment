@@ -1,8 +1,8 @@
 # ADR-007: Conversational Query Understanding & Session-Aware Personalization
 
-- **Status:** In Progress (Wave 5 — #19 backend committed `b35ce14`, #20 planned)
-- **Covered Issues:** GitHub **Issue #19** (`[Req 4.1.11]`), **Issue #20** (`[Req 4.1.12]`)
-- **Migrations:** `src/iac/migrations/020_query_intent_cache.sql`, `user_session_events`
+- **Status:** Delivered & Live (`psearch-serving-00024-ltv`; #23 upgrades LLM fallback default to `gemini-3.8-flash`)
+- **Covered Issues:** GitHub **Issue #19** (`[Req 4.1.11]`), **Issue #20** (`[Req 4.1.12]`), **Issue #23** (Model upgrade)
+- **Migrations:** `src/iac/migrations/020_query_intent_cache.sql`, `src/iac/migrations/021_user_session_events.sql`
 
 ## Context (GitHub Issues #19 — Req 4.1.11, #20 — Req 4.1.12)
 1. **#19 (Conversational Query Understanding):** Natural-language queries (`"tênis de corrida até 300 reais"`, `"running shoes nike under 200"`) previously reached hybrid search verbatim. Price/brand/color constraints polluted the lexical `SEARCH()` score and were not enforced as structured `WHERE` filters.
