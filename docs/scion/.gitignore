@@ -1,0 +1,4 @@
+# Rendered templates (scripts/render-templates.py) contain your real project IDs and emails.
+build/
+# Real values; only factory.env.example is committed (the repo-wide *.env rule also covers this).
+config/factory.env
