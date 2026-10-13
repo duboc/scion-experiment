@@ -158,3 +158,28 @@ Verification on `00012-65q`:
 - Spanner tier: `embedding_cache` has **2 rows** (`gemini-embedding-2`, dims 1024, `ARRAY_LENGTH=1024`) written about 20 s after the misses. The async write landed under request-based CPU, and the `psearch-serving@` databaseUser role covers it
 - Ranking: `running shoes` alpha=0 gives an identical order over 3 calls (zero-score tail now tie-broken); alpha=0 vs 1 still differ; Wave 1 regressions OK (`shoes` OOS last, `only_in_stock` 13, `channel=store` 9 without prod-002)
 - `retrieval_mode=hybrid_v2` on all queries. Logs show no `WARN`, `embedding cache store`, `PermissionDenied`, `fallback`, `lexical`, `InvalidArgument` or ERROR (no cold-start read timeout either)
+
+## #4 tenant/locale/category/brand filters + accent folding, #5 server-side facets: LIVE 2026-10-13
+
+Source: **clean `git archive` of `14add095420dc2aa0629788d0486aaef696fb833`** (`254c8f7` + UI `405d454`; in the image only `internal/api/routes.go` storefront JS differs from `254c8f7`). SA `psearch-serving@`. Env as before plus **`TEXT_FOLDING=true`**.
+
+| Step | Result |
+|---|---|
+| DDL `014_tenant_locale.sql` | ✅ `tenant_id STRING(64)`, `locale STRING(16)` |
+| DML `014c` | ✅ 15 rows modified; `tenant_id IS NULL OR locale IS NULL` = 0; `default/en-US` 10, `default/pt-BR` 5 |
+| DDL `014b` part 3a (two `ADD COLUMN` generated `TOKENLIST`s with `REGEXP_REPLACE(NORMALIZE(x, NFD), r'\p{M}', '')`) | ✅ accepted by Spanner |
+| DDL `014b` part 3b (`ALTER SEARCH INDEX products_text_idx ADD COLUMN …` ×2) | ✅ index is now `(title_tokens, description_tokens, title_tokens_folded, description_tokens_folded)`. SQL check: `SEARCH(title_tokens_folded,'tenis')` → prod-002 "Tênis…", plain `title_tokens` → 0 rows |
+| `cmd/sqlcheck` (archive, v2, `TEXT_FOLDING=true`) | ✅ 9/9 + facets OK, `hybrid_v2`, exit 0 (incl. `tenis` pt-BR → 5, Computers+Acer → 1, tenant `acme` → 0) |
+| Deploy → **`psearch-serving-00013-5vm`**, then `update-traffic --to-latest` | ✅ 100%, follows latest. Rollback target: `00012-65q` |
+
+Verification on `00013-5vm`:
+- `q=tenis&alpha=0` (text only) → **prod-002 "Tênis de Corrida Nimbus Cloud" first** (accent folding)
+- `q=tenis&locale=pt-BR` → 5 results, all pt-BR (002, 009, 006, 013, 011)
+- `q=shoes&tenant_id=acme` → 0 results
+- `q=notebook&category=Computers&brand=Acer` → prod-006 only
+- `facets`: 4 groups (`categories`, `brands`, `price_ranges`, `availability`) with counts, plus `facets_latency_ms` (≈6–47 ms); facets follow the active filters
+- `q=shoes&limit=3` → 3 results, `candidates=15`
+- Regressions: alpha=0 deterministic, alpha 0≠1, 1.7→1; `only_in_stock` 13; `channel=store` 9 without prod-002; OOS last; cache miss 857 ms → hit 16.7 ms (`spanner_hits=1` across instances); `/api/info` v2/1024; GET config v2, POST 403
+- `retrieval_mode=hybrid_v2` on all non-empty queries. Logs show no WARN, fallback, InvalidArgument, PermissionDenied, lexical, embedding cache store or ERROR
+
+**Finding (labeling bug, not a rollback trigger):** legitimate zero-result Spanner queries (`tenant_id=acme`; `category=Computers&brand=Nike`) report `retrieval_mode=memory_fallback`. `HybridSearch` only returns the Spanner outcome when `len(res) > 0`; on a successful empty result it falls through to `memoryHybridSearch`. There's no SQL error (logs clean, sqlcheck shows the same case as `hybrid_v2` rows=0). Risks: it breaks the "memory_fallback = SQL error" signal, and if the Spanner catalog diverges from the seed set, memory mode could return products Spanner correctly filtered out. Suggested fix: return the Spanner result (with `hybrid_v2`/`hybrid_v1`) whenever `err == nil`, even when empty.
