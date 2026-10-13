@@ -149,3 +149,10 @@
     - `go vet` and `go test -race`: PASS
     - ADR-006 (LTR): PASS
 - **Process Gap:** NDCG@10 comparison on the psearch-eval dashboard is not implemented.
+
+### Follow-up: 8a7017d
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `npm run build`: PASS
+    - UI now has LTR toggle and rank-change badges.
