@@ -82,3 +82,29 @@ Service template = serving revision: SA `psearch-serving@`, `ACTIVE_EMBEDDING_VE
 **Rollback:** `gcloud run services update-traffic psearch-serving --project=riojucu-sandbox --region=us-central1 --to-revisions=psearch-serving-00008-ms8=100` (v1, new SA), or `--update-env-vars=ACTIVE_EMBEDDING_VERSION=v1`.
 
 Observation (not a blocker): with only 15 products, the v2 ANN leg ranks every row, so low-relevance items appear lower in the list (e.g. `tenis` #3 is a TV). A `min_score`/cosine cutoff for the vector leg would be worth considering.
+
+## Wave 1 (#1 alpha / #3 availability, visibility, channels): rollout 2026-10-13. Deploy ROLLED BACK
+
+Source: `main` @ `8894c6d` (code `7b404be`, review `8894c6d`). Runtime SA `psearch-serving@`, `ACTIVE_EMBEDDING_VERSION=v2`.
+
+| Step | Result |
+|---|---|
+| 1. DDL `012_availability_visibility_channels.sql` | ✅ `is_visible BOOL`, `channels ARRAY<STRING(64)>` added (additive) |
+| 2. DML `012b_backfill_visibility_channels.dml.sql` | ✅ "Statement modified 15 rows". Check: `null_channels=0`, `null_visible=0`, `visible=15/15`, 0 mismatches vs `product_data.channels`. Products without `store`: prod-002, 004, 005, 009, 012, 015 |
+| Old rev `00009-9dc` after the DDL | ✅ still `hybrid_v2` (tenis, running shoes, 15 results each); no warnings |
+| 3. Deploy → `psearch-serving-00010-w7g` (100%) | ❌ **every query `retrieval_mode=memory_fallback`** |
+| Rollback `update-traffic --to-revisions=psearch-serving-00009-9dc=100` | ✅ `hybrid_v2` restored. **Serving now: `00009-9dc`, 100% (pinned)** |
+
+**Root cause** (`00010-w7g` logs):
+```
+WARN: Spanner HybridSearch fallback triggered: spanner: code = "InvalidArgument",
+desc = "Aggregations of aggregations are not allowed [at 44:46]
+  ORDER BY IF(IFNULL(ANY_VALUE(is_available), TRUE) AND IFNULL(...
+```
+In `buildHybridSQL`, the `ORDER BY` resolves `is_available`/`stock` to the SELECT aliases, which are already `ANY_VALUE(...)`, so the expression nests aggregates. Fix: order by the aliases directly, e.g. `ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1), rrf_score DESC`, or wrap the query in a subquery. Unit tests only exercise memory mode, so they didn't catch this. A test against the Spanner emulator, or a SQL dry-run, would.
+
+Behaviour observed under `memory_fallback` on `00010-w7g` (Go logic only, not the Spanner path): `effective_alpha` echoed 0 / 1 / 0.5 and clamped 1.7→1; alpha=0 vs alpha=1 orderings differed; `q=shoes` put prod-004/prod-012 (OUT_OF_STOCK) last; `only_in_stock=true` → 13 results, both excluded; `channel=store` → 9 results, prod-002 absent.
+
+**Other finding (pre-existing, not a regression):** the runtime SA `psearch-serving@` lacks `monitoring.timeSeries.create`, so the Spanner client logs `PermissionDenied ... Need monitoring metric writer permission` (also seen on `00009-9dc`). Fix with `roles/monitoring.metricWriter` on the SA, or turn client-side metrics off with `SPANNER_DISABLE_BUILTIN_METRICS=true`.
+
+**Template note:** the service template points at `00010-w7g`'s image (same env and SA as `00009-9dc`) while traffic is pinned to `00009-9dc` (image `psearch-serving@sha256:814672c0…`). The next fixed deploy needs `--to-latest` / `update-traffic`.
