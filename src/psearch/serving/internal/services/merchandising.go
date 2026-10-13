@@ -219,8 +219,10 @@ func (s *RuleService) Match(ctx context.Context, tenantID, query string) RuleSet
 			continue
 		}
 		rs.Applied = append(rs.Applied, r.RuleID)
-		if r.BoostMultiplier != 1 && (r.TargetBrand != "" || r.TargetCategory != "") {
-			rs.Boosts = append(rs.Boosts, ruleBoost{Brand: r.TargetBrand, Category: r.TargetCategory, Multiplier: r.BoostMultiplier})
+		// Clamp defensively: rows written directly to Spanner bypass Save() validation,
+		// and a multiplier <= 0 would make LN() fail the whole query.
+		if m := clamp(r.BoostMultiplier, 0.1, 10); m != 1 && (r.TargetBrand != "" || r.TargetCategory != "") {
+			rs.Boosts = append(rs.Boosts, ruleBoost{Brand: r.TargetBrand, Category: r.TargetCategory, Multiplier: m})
 		}
 		for _, id := range r.PinProductIDs {
 			if !pinned[id] {

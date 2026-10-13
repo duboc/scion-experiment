@@ -131,3 +131,12 @@ func TestBuildHybridSQL_MerchandisingTerms(t *testing.T) {
 		}
 	}
 }
+
+func TestRuleMatchClampsUnvalidatedMultipliers(t *testing.T) {
+	store := NewMemoryRuleStore()
+	_ = store.Upsert(context.Background(), Rule{TenantID: "default", RuleID: "raw", Name: "raw", TargetBrand: "nike", BoostMultiplier: -3, Active: true})
+	rs := NewRuleService(store, time.Minute).Match(context.Background(), "default", "shoes")
+	if len(rs.Boosts) != 1 || rs.Boosts[0].Multiplier != 0.1 {
+		t.Fatalf("raw multiplier -3 must be clamped to 0.1: %+v", rs.Boosts)
+	}
+}
