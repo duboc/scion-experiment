@@ -127,3 +127,18 @@
 - **Checks:**
     - `npm run build`: PASS
     - UI now has debounced typeahead with keyboard navigation.
+
+### Follow-up: f3fc754
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go test`: PASS
+    - Autocomplete DDL and BigQuery export now use a plain `suggestion_folded` column.
+
+## #10: LTR (75fee13)
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test -race`: PASS
+    - ADR-006 (LTR): PASS
+- **Process Gap:** NDCG@10 comparison on the psearch-eval dashboard is not implemented.
