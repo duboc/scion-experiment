@@ -79,3 +79,12 @@
     - `go vet` and `go test -race`: PASS
     - ADR-003 (Synonyms): PASS
     - Security: PASS (Admin endpoint secured, inputs are bound parameters)
+
+## #6: Merchandising (0b54d52)
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test -race`: PASS
+    - `npm run build`: PASS
+    - ADR-004 (Merchandising): PASS
+    - Security: PASS (Admin endpoints secured, inputs are bound parameters)
