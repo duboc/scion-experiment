@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-12T23:10:21.990087+00:00",
+  "timestamp": "2026-10-13T23:37:33.192362+00:00",
   "source": "spanner:factory_agent_status",
   "database": "riojucu-sandbox/psearch-instance/psearch-db",
   "projects": [
@@ -15,14 +15,14 @@
       "role": "backend",
       "harness": "opencode",
       "phase": "running",
-      "activity": "executing",
+      "activity": "stalled",
       "parent_agent": "lead",
       "current_turns": "n/a",
       "model_calls": "n/a",
-      "active_issue": "Executing: edit",
-      "last_summary": "Executing: edit",
-      "updated_at": "2026-10-12T23:10:04.15956147Z",
-      "last_activity_at": "2026-10-12T23:10:01Z"
+      "active_issue": "Ready",
+      "last_summary": "Ready",
+      "updated_at": "2026-10-13T23:37:02.46467586Z",
+      "last_activity_at": "2026-10-13T20:22:04Z"
     },
     {
       "project": "psearch",
@@ -36,10 +36,10 @@
       "parent_agent": "lead",
       "current_turns": "n/a",
       "model_calls": "n/a",
-      "active_issue": "Ready",
-      "last_summary": "Ready",
-      "updated_at": "2026-10-12T23:10:04.15956147Z",
-      "last_activity_at": "2026-10-12T22:49:42Z"
+      "active_issue": "Acknowledged PO deploy rules: clean git-archive source and --to-latest after pinned rollback",
+      "last_summary": "Acknowledged PO deploy rules: clean git-archive source and --to-latest after pinned rollback",
+      "updated_at": "2026-10-13T23:37:02.46467586Z",
+      "last_activity_at": "2026-10-13T21:47:39Z"
     },
     {
       "project": "psearch",
@@ -49,14 +49,14 @@
       "role": "frontend",
       "harness": "antigravity",
       "phase": "running",
-      "activity": "thinking",
+      "activity": "working",
       "parent_agent": "lead",
       "current_turns": "n/a",
       "model_calls": "n/a",
-      "active_issue": "Processing",
-      "last_summary": "Processing",
-      "updated_at": "2026-10-12T23:10:04.15956147Z",
-      "last_activity_at": "2026-10-12T23:09:56Z"
+      "active_issue": "Issue #20 UI (session personalization)",
+      "last_summary": "Issue #20 UI (session personalization)",
+      "updated_at": "2026-10-13T23:37:02.46467586Z",
+      "last_activity_at": "2026-10-13T23:34:53Z"
     },
     {
       "project": "psearch",
@@ -70,10 +70,10 @@
       "parent_agent": null,
       "current_turns": "n/a",
       "model_calls": "n/a",
-      "active_issue": "waiting: backend (#1/#3 Go+DDL) and frontend (#1/#3 UI)",
-      "last_summary": "waiting: backend (#1/#3 Go+DDL) and frontend (#1/#3 UI)",
-      "updated_at": "2026-10-12T23:10:04.15956147Z",
-      "last_activity_at": "2026-10-12T23:08:24Z"
+      "active_issue": "Close psearch issues #1-#10 with live acceptance evidence",
+      "last_summary": "Close psearch issues #1-#10 with live acceptance evidence",
+      "updated_at": "2026-10-13T23:37:02.46467586Z",
+      "last_activity_at": "2026-10-13T23:32:35Z"
     },
     {
       "project": "psearch",
@@ -89,7 +89,7 @@
       "model_calls": "n/a",
       "active_issue": "Agent started",
       "last_summary": "Agent started",
-      "updated_at": "2026-10-12T23:10:04.15956147Z",
+      "updated_at": "2026-10-13T23:37:02.46467586Z",
       "last_activity_at": "2026-10-09T17:57:21Z"
     },
     {
@@ -100,14 +100,14 @@
       "role": "eval-deployer",
       "harness": "antigravity",
       "phase": "running",
-      "activity": "stalled",
+      "activity": "working",
       "parent_agent": "eval-lead",
       "current_turns": "n/a",
       "model_calls": "n/a",
-      "active_issue": "Ready",
-      "last_summary": "Ready",
-      "updated_at": "2026-10-12T23:10:04.15956147Z",
-      "last_activity_at": "2026-10-12T22:30:49Z"
+      "active_issue": "Deployed commit df87336 to psearch-eval-dashboard on Cloud Run with 100% traffic to latest",
+      "last_summary": "Deployed commit df87336 to psearch-eval-dashboard on Cloud Run with 100% traffic to latest",
+      "updated_at": "2026-10-13T23:37:02.46467586Z",
+      "last_activity_at": "2026-10-13T23:34:48Z"
     },
     {
       "project": "psearch-eval",
@@ -117,14 +117,14 @@
       "role": "eval-lead",
       "harness": "antigravity",
       "phase": "running",
-      "activity": "blocked",
+      "activity": "working",
       "parent_agent": null,
       "current_turns": "n/a",
       "model_calls": "n/a",
-      "active_issue": "Executing: replace_file_content",
-      "last_summary": "Executing: replace_file_content",
-      "updated_at": "2026-10-12T23:10:04.15956147Z",
-      "last_activity_at": "2026-10-12T23:09:59Z"
+      "active_issue": "Agent started",
+      "last_summary": "Agent started",
+      "updated_at": "2026-10-13T23:37:02.46467586Z",
+      "last_activity_at": "2026-10-13T23:34:48Z"
     },
     {
       "project": "psearch-eval",
@@ -134,14 +134,14 @@
       "role": "factory-analyst",
       "harness": "antigravity",
       "phase": "running",
-      "activity": "stalled",
+      "activity": "working",
       "parent_agent": "eval-lead",
       "current_turns": "n/a",
       "model_calls": "n/a",
-      "active_issue": "Ready",
-      "last_summary": "Ready",
-      "updated_at": "2026-10-12T23:10:04.15956147Z",
-      "last_activity_at": "2026-10-12T22:31:32Z"
+      "active_issue": "Agent started",
+      "last_summary": "Agent started",
+      "updated_at": "2026-10-13T23:37:02.46467586Z",
+      "last_activity_at": "2026-10-13T23:34:48Z"
     },
     {
       "project": "psearch-eval",
@@ -150,15 +150,15 @@
       "template": "search-evaluator",
       "role": "search-evaluator",
       "harness": "antigravity",
-      "phase": "running",
-      "activity": "stalled",
+      "phase": "idle",
+      "activity": "standing by",
       "parent_agent": "eval-lead",
       "current_turns": "n/a",
       "model_calls": "n/a",
-      "active_issue": "Ready",
-      "last_summary": "Ready",
-      "updated_at": "2026-10-12T23:10:04.15956147Z",
-      "last_activity_at": "2026-10-12T22:31:19Z"
+      "active_issue": "Benchmark psearch-serving across Section 4.1 (#1-#10) complete: 10/10 PASS (NDCG@10=0.980, MRR@10=1.000, p50=37.7ms). Standing by for @eval-lead.",
+      "last_summary": "Benchmark psearch-serving across Section 4.1 (#1-#10) complete: 10/10 PASS (NDCG@10=0.980, MRR@10=1.000, p50=37.7ms). Standing by for @eval-lead.",
+      "updated_at": "2026-10-13T23:37:30.414666Z",
+      "last_activity_at": "2026-10-13T23:37:30.322319085Z"
     },
     {
       "project": "psearch-eval",
@@ -168,14 +168,14 @@
       "role": "ui-craftsman",
       "harness": "antigravity",
       "phase": "running",
-      "activity": "stalled",
+      "activity": "working",
       "parent_agent": "eval-lead",
       "current_turns": "n/a",
       "model_calls": "n/a",
-      "active_issue": "Ready",
-      "last_summary": "Ready",
-      "updated_at": "2026-10-12T23:10:04.15956147Z",
-      "last_activity_at": "2026-10-12T22:30:54Z"
+      "active_issue": "Agent started",
+      "last_summary": "Agent started",
+      "updated_at": "2026-10-13T23:37:02.46467586Z",
+      "last_activity_at": "2026-10-13T23:34:50Z"
     }
   ]
 }

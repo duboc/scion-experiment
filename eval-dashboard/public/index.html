@@ -302,15 +302,20 @@
       border-radius: 50%;
       background: currentColor;
     }
-    .badge--pass, .badge--running, .badge--closed, .badge--HEALTHY {
+    .badge--pass, .badge--running, .badge--closed, .badge--HEALTHY, .badge--RESOLVED {
       color: var(--status-pass);
       background: var(--status-pass-bg);
       border-color: var(--status-pass);
     }
-    .badge--partial, .badge--open, .badge--ACTION, .badge--INSIGHT {
+    .badge--partial, .badge--open, .badge--ACTION, .badge--INSIGHT, .badge--WARNING {
       color: var(--status-warn);
       background: var(--status-warn-bg);
       border-color: var(--status-warn);
+    }
+    .badge--gap, .badge--CRITICAL {
+      color: var(--status-gap);
+      background: var(--status-gap-bg);
+      border-color: var(--status-gap);
     }
     .badge--pending {
       color: var(--text-muted);
