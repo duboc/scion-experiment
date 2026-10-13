@@ -111,6 +111,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <span class="badge" id="retrieval-badge">Retrieval: -</span>
       <span class="badge" id="tenant-badge" style="display:none;"></span>
       <span class="badge" id="locale-badge" style="display:none;"></span>
+      <span class="badge" id="ltr-badge" style="display:none;"></span>
     </div>
   </header>
   <main>
@@ -141,6 +142,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       </label>
       <label class="checkbox-wrap">
         <input type="checkbox" id="only_in_stock" /> Only in stock
+      </label>
+      <label class="checkbox-wrap">
+        <input type="checkbox" id="ltr" /> Re-rank (LTR)
       </label>
       <button onclick="runSearch()">Search</button>
     </div>
@@ -184,6 +188,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const locale = document.getElementById('locale') ? document.getElementById('locale').value : '';
       const cep = document.getElementById('cep') ? document.getElementById('cep').value.trim() : '';
       const maxSla24h = document.getElementById('max_sla_24h') ? document.getElementById('max_sla_24h').checked : false;
+      const ltr = document.getElementById('ltr') ? document.getElementById('ltr').checked : false;
       let url = '/api/search?q=' + encodeURIComponent(q) + '&alpha=' + encodeURIComponent(alpha);
       if (channel) {
         url += '&channel=' + encodeURIComponent(channel);
@@ -202,6 +207,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       }
       if (maxSla24h) {
         url += '&max_sla_hours=24';
+      }
+      if (ltr) {
+        url += '&ltr=true';
       }
       const res = await fetch(url);
       const data = await res.json();
@@ -230,6 +238,14 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           document.getElementById('locale-badge').style.display = 'none';
         }
       }
+      if (document.getElementById('ltr-badge')) {
+        if (data.ltr) {
+          document.getElementById('ltr-badge').textContent = 'LTR: ' + (data.ltr_model || 'active') + (data.ltr_latency_us !== undefined ? ' (' + data.ltr_latency_us + 'µs)' : '');
+          document.getElementById('ltr-badge').style.display = 'inline-block';
+        } else {
+          document.getElementById('ltr-badge').style.display = 'none';
+        }
+      }
       const facetLat = data.facets_latency_ms !== undefined ? data.facets_latency_ms : (data.facets && data.facets.latency_ms);
       if (facetLat !== undefined && facetLat !== null) {
         document.getElementById('facets-latency').textContent = Number(facetLat).toFixed(1) + 'ms';
@@ -237,7 +253,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         document.getElementById('facets-latency').textContent = '';
       }
       document.getElementById('meta').textContent =
-        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + ')';
+        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + ')';
       
       const expEl = document.getElementById('expanded-terms');
       if (expEl) {
@@ -279,33 +295,54 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         const finalScore = s.final_score !== undefined ? s.final_score : (s.hybrid !== undefined ? s.hybrid : 0);
         const vecScore = s.vector !== undefined ? s.vector : 0;
         const txtScore = s.text !== undefined ? s.text : 0;
+        const ltrScore = s.ltr_score !== undefined ? ' | ltr=' + s.ltr_score.toFixed(4) : '';
         return '<div class="card">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="' + stockClass + '">' + stockBadge + '</span>' + locBadge + '<span class="delivery-badge" style="display:none;"></span></div><span style="color:#94a3b8;font-size:12px;">' + (p.categories || []).join(', ') + '</span></div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="' + stockClass + '">' + stockBadge + '</span>' + locBadge + '<span class="rank-badge" style="display:none;"></span><span class="delivery-badge" style="display:none;"></span></div><span style="color:#94a3b8;font-size:12px;">' + (p.categories || []).join(', ') + '</span></div>' +
           '<h3>' + p.title + '</h3>' +
           '<div style="color:#94a3b8;font-size:13px;">' + (p.description || '') + '</div>' +
           '<div class="price">$' + ((p.priceInfo && p.priceInfo.price) || '0.00') + '</div>' +
-          '<div class="scores">hybrid=' + finalScore.toFixed(4) + ' | vec=' + vecScore.toFixed(4) + ' | txt=' + txtScore.toFixed(4) + '</div>' +
+          '<div class="scores">hybrid=' + finalScore.toFixed(4) + ' | vec=' + vecScore.toFixed(4) + ' | txt=' + txtScore.toFixed(4) + ltrScore + '</div>' +
         '</div>';
       }).join('');
       (data.results || []).forEach((p, i) => {
-        if (p.deliveryPromise && p.deliveryPromise.label) {
-          const card = container.children[i];
-          if (card) {
-            const badge = card.querySelector('.delivery-badge');
-            if (badge) {
-              let labelText = p.deliveryPromise.label;
-              if (p.deliveryPromise.free_shipping) {
-                labelText += ' · Frete grátis';
-              }
-              badge.textContent = labelText;
-              badge.style.display = 'inline-block';
-              badge.style.background = '#064e3b';
-              badge.style.border = '1px solid #10b981';
-              badge.style.color = '#6ee7b7';
-              badge.style.fontSize = '11px';
-              badge.style.padding = '2px 6px';
-              badge.style.borderRadius = '4px';
+        const card = container.children[i];
+        if (!card) return;
+        const s = p.score || {};
+        if (s.stage1_rank !== undefined && s.stage2_rank !== undefined) {
+          const rankEl = card.querySelector('.rank-badge');
+          if (rankEl) {
+            const diff = s.stage1_rank - s.stage2_rank;
+            let rankText = s.stage1_rank + '→' + s.stage2_rank;
+            if (diff > 0) {
+              rankText += ' (↑' + diff + ')';
+            } else if (diff < 0) {
+              rankText += ' (↓' + Math.abs(diff) + ')';
             }
+            rankEl.textContent = rankText;
+            rankEl.style.display = 'inline-block';
+            rankEl.style.background = '#1e293b';
+            rankEl.style.border = '1px solid #a855f7';
+            rankEl.style.color = '#d8b4fe';
+            rankEl.style.fontSize = '11px';
+            rankEl.style.padding = '2px 6px';
+            rankEl.style.borderRadius = '4px';
+          }
+        }
+        if (p.deliveryPromise && p.deliveryPromise.label) {
+          const badge = card.querySelector('.delivery-badge');
+          if (badge) {
+            let labelText = p.deliveryPromise.label;
+            if (p.deliveryPromise.free_shipping) {
+              labelText += ' · Frete grátis';
+            }
+            badge.textContent = labelText;
+            badge.style.display = 'inline-block';
+            badge.style.background = '#064e3b';
+            badge.style.border = '1px solid #10b981';
+            badge.style.color = '#6ee7b7';
+            badge.style.fontSize = '11px';
+            badge.style.padding = '2px 6px';
+            badge.style.borderRadius = '4px';
           }
         }
       });

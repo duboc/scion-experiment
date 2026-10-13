@@ -50,6 +50,8 @@ const SearchInput = memo(({
     setCep: controlledSetCep,
     maxSla24h: controlledMaxSla24h,
     setMaxSla24h: controlledSetMaxSla24h,
+    ltr: controlledLtr,
+    setLtr: controlledSetLtr,
 }) => {
     const [inputValue, setInputValue] = useState('');
     const [internalAlpha, setInternalAlpha] = useState(0.5);
@@ -59,6 +61,7 @@ const SearchInput = memo(({
     const [internalLocale] = useState('');
     const [internalCep, setInternalCep] = useState('');
     const [internalMaxSla24h, setInternalMaxSla24h] = useState(false);
+    const [internalLtr, setInternalLtr] = useState(false);
     const [cepError, setCepError] = useState('');
     const [suggestions, setSuggestions] = useState([]);
     const [isOpen, setIsOpen] = useState(false);
@@ -79,6 +82,8 @@ const SearchInput = memo(({
     const setCep = controlledSetCep || setInternalCep;
     const maxSla24h = controlledMaxSla24h !== undefined ? controlledMaxSla24h : internalMaxSla24h;
     const setMaxSla24h = controlledSetMaxSla24h || setInternalMaxSla24h;
+    const ltr = controlledLtr !== undefined ? controlledLtr : internalLtr;
+    const setLtr = controlledSetLtr || setInternalLtr;
 
     // Local slider value for responsive dragging
     const [localAlpha, setLocalAlpha] = useState(alpha);
@@ -146,6 +151,7 @@ const SearchInput = memo(({
             locale,
             cep,
             maxSla24h,
+            ltr,
         });
     };
 
@@ -178,7 +184,8 @@ const SearchInput = memo(({
             tenantId,
             locale,
             cep,
-            maxSla24h
+            maxSla24h,
+            ltr
         });
     };
 
@@ -395,6 +402,18 @@ const SearchInput = memo(({
                         />
                     }
                     label="Only in stock"
+                />
+
+                {/* Re-rank (LTR) Toggle */}
+                <FormControlLabel
+                    control={
+                        <Switch
+                            checked={Boolean(ltr)}
+                            onChange={(e) => setLtr(e.target.checked)}
+                            color="primary"
+                        />
+                    }
+                    label="Re-rank (LTR)"
                 />
             </Box>
         </Paper>
