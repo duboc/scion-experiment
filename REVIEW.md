@@ -156,3 +156,10 @@
 - **Checks:**
     - `npm run build`: PASS
     - UI now has LTR toggle and rank-change badges.
+
+## #19: Conversational Query (b35ce14)
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test -race`: PASS
+    - ADR-007 (Conversational Query): PASS
