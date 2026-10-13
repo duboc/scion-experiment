@@ -62,6 +62,13 @@ func (s *SpannerService) Close() {
 	}
 }
 
+// SetQueryEmbedder replaces the query embedder (used to install the embedding cache,
+// which needs the Spanner client created by NewSpannerService).
+func (s *SpannerService) SetQueryEmbedder(e QueryEmbedder) { s.embeddings = e }
+
+// Client exposes the Spanner client (nil in memory mode).
+func (s *SpannerService) Client() *spanner.Client { return s.client }
+
 func (s *SpannerService) BackendMode() string {
 	return s.backendMode
 }
@@ -155,6 +162,7 @@ const (
 type SearchOutcome struct {
 	Results       []models.SearchResult
 	RetrievalMode string
+	CacheHit      bool // query embedding served from the embedding cache (v2 only)
 }
 
 // HybridSearch executes hybrid vector + full-text RRF search against Cloud Spanner (with deterministic fallback).
@@ -191,7 +199,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			if plan.column == vectorColumnV2 {
 				mode = RetrievalHybridV2
 			}
-			return SearchOutcome{Results: res, RetrievalMode: mode}, nil
+			return SearchOutcome{Results: res, RetrievalMode: mode, CacheHit: plan.cacheHit}, nil
 		}
 	}
 
@@ -203,6 +211,12 @@ type vectorPlan struct {
 	column      string      // vector column to search ("embedding" for v1, "embedding_v2" for v2)
 	embedding   interface{} // []float64 (v1 deterministic) or []float32 (v2 Gemini)
 	lexicalOnly bool        // true when no usable query embedding exists (degraded mode)
+	cacheHit    bool        // query embedding came from the embedding cache
+}
+
+// metaEmbedder is implemented by EmbeddingCache.
+type metaEmbedder interface {
+	EmbedQueryWithMeta(ctx context.Context, text string) ([]float32, bool, error)
 }
 
 const (
@@ -222,12 +236,19 @@ func (s *SpannerService) planVectorQuery(ctx context.Context, query string) vect
 		log.Printf("WARN: ACTIVE_EMBEDDING_VERSION=v2 but embedding service is unavailable; lexical-only search")
 		return vectorPlan{column: vectorColumnV2, lexicalOnly: true}
 	}
-	emb, err := s.embeddings.EmbedQuery(ctx, query)
+	var emb []float32
+	var hit bool
+	var err error
+	if me, ok := s.embeddings.(metaEmbedder); ok {
+		emb, hit, err = me.EmbedQueryWithMeta(ctx, query)
+	} else {
+		emb, err = s.embeddings.EmbedQuery(ctx, query)
+	}
 	if err != nil {
 		log.Printf("WARN: query embedding failed (%v); lexical-only search", err)
 		return vectorPlan{column: vectorColumnV2, lexicalOnly: true}
 	}
-	return vectorPlan{column: vectorColumnV2, embedding: emb}
+	return vectorPlan{column: vectorColumnV2, embedding: emb, cacheHit: hit}
 }
 
 // catalogFilterSQL is applied inside BOTH retrieval legs (ADR-002 / Issue #3):
@@ -295,7 +316,7 @@ func buildHybridSQL(column string, lexicalOnly bool) string {
 			)
 			GROUP BY product_id
 		)
-		ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */, rrf_score DESC
+		ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */, rrf_score DESC, vector_score DESC, text_score DESC, product_id
 		LIMIT @limit
 	`
 }
@@ -512,7 +533,16 @@ func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore fl
 		if ui != uj {
 			return !ui // available products first (ADR-002)
 		}
-		return out[i].Score["hybrid"] > out[j].Score["hybrid"]
+		if out[i].Score["hybrid"] != out[j].Score["hybrid"] {
+			return out[i].Score["hybrid"] > out[j].Score["hybrid"]
+		}
+		if out[i].Score["vector"] != out[j].Score["vector"] {
+			return out[i].Score["vector"] > out[j].Score["vector"]
+		}
+		if out[i].Score["text"] != out[j].Score["text"] {
+			return out[i].Score["text"] > out[j].Score["text"]
+		}
+		return out[i].ID < out[j].ID // deterministic tie-break
 	})
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]

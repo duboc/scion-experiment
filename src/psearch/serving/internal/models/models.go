@@ -33,6 +33,7 @@ type SearchResponse struct {
 	// that actually served this query (hybrid_v1, hybrid_v2, lexical_only_degraded, memory_fallback).
 	EmbeddingVersion string `json:"embedding_version,omitempty"`
 	RetrievalMode    string `json:"retrieval_mode,omitempty"`
+	CacheHit         bool   `json:"cache_hit,omitempty"` // query embedding served from embedding_cache (Issue #2)
 }
 
 type SearchResult struct {

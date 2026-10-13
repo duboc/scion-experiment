@@ -97,8 +97,23 @@ func TestAlphaExtremesChangeRankingAndAreClamped(t *testing.T) {
 	r := newTestRouter()
 	text := doSearch(t, r, "q=running+shoes&alpha=0&limit=15")
 	vec := doSearch(t, r, "q=running+shoes&alpha=1&limit=15")
-	if ids(text.Results) == ids(vec.Results) {
-		t.Fatalf("alpha=0 and alpha=1 returned identical rankings: %s", ids(text.Results))
+	// final_score must reflect the weights: pure-text scores ignore the vector leg and vice versa.
+	textScore := map[string]float64{}
+	for _, res := range text.Results {
+		textScore[res.ID] = res.Score["final_score"]
+		if res.Score["final_score"] != res.Score["text"] {
+			t.Fatalf("alpha=0: %s final_score %v != text %v", res.ID, res.Score["final_score"], res.Score["text"])
+		}
+	}
+	differs := false
+	for _, res := range vec.Results {
+		if res.Score["final_score"] != res.Score["vector"] {
+			t.Fatalf("alpha=1: %s final_score %v != vector %v", res.ID, res.Score["final_score"], res.Score["vector"])
+		}
+		differs = differs || textScore[res.ID] != res.Score["final_score"]
+	}
+	if !differs {
+		t.Fatal("alpha=0 and alpha=1 produced identical final_scores")
 	}
 	for _, res := range text.Results {
 		if res.Score["alpha"] != 0 {
@@ -181,5 +196,56 @@ func TestChannelFilterGetAndPost(t *testing.T) {
 	}
 	if ids(resp.Results) == "" {
 		t.Fatal("POST with channel=store&only_in_stock should return results")
+	}
+}
+
+func newTokenRouter(token string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	cfg := &config.Config{ProjectID: "riojucu-sandbox", ActiveEmbeddingVersion: "v1", GeminiEmbeddingDimension: 1024,
+		DefaultAlpha: 0.5, DefaultLimit: 10, UseMemoryStore: true, AdminToken: token}
+	SetupRouter(r, cfg)
+	return r
+}
+
+func postVersion(r *gin.Engine, token, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/api/config/embedding-version", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("X-Admin-Token", token)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+// Issue #2: runtime Blue/Green toggle is admin-protected and validated.
+func TestEmbeddingVersionEndpoint(t *testing.T) {
+	if w := postVersion(newTokenRouter(""), "anything", `{"version":"v2"}`); w.Code != http.StatusForbidden {
+		t.Fatalf("POST with ADMIN_TOKEN unset: status %d, want 403", w.Code)
+	}
+	r := newTokenRouter("s3cret")
+	if w := postVersion(r, "", `{"version":"v2"}`); w.Code != http.StatusForbidden {
+		t.Fatalf("POST without token: status %d, want 403", w.Code)
+	}
+	if w := postVersion(r, "wrong", `{"version":"v2"}`); w.Code != http.StatusForbidden {
+		t.Fatalf("POST wrong token: status %d, want 403", w.Code)
+	}
+	if w := postVersion(r, "s3cret", `{"version":"v9"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("POST invalid version: status %d, want 400", w.Code)
+	}
+	if w := postVersion(r, "s3cret", `{"version":"v2"}`); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"active_embedding_version":"v2"`) {
+		t.Fatalf("POST valid: status %d body %s", w.Code, w.Body.String())
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/info", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	var info map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &info)
+	if info["active_embedding_version"] != "v2" || info["vector_dimensions"] != float64(1024) {
+		t.Fatalf("info after switch = %v / %v", info["active_embedding_version"], info["vector_dimensions"])
+	}
+	if _, ok := info["embedding_cache"]; !ok {
+		t.Fatal("/api/info must include embedding_cache stats")
 	}
 }

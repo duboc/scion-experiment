@@ -30,6 +30,8 @@ func SetupRouter(router *gin.Engine, cfg *config.Config) {
 	router.GET("/healthz", controller.HealthCheck)
 	router.GET("/api/health", controller.HealthCheck)
 	router.GET("/api/info", controller.Info)
+	router.GET("/api/config/embedding-version", controller.GetEmbeddingVersion)
+	router.POST("/api/config/embedding-version", controller.SetEmbeddingVersion)
 	router.GET("/search", controller.Search)
 	router.POST("/search", controller.Search)
 	router.GET("/api/search", controller.Search)

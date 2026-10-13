@@ -177,3 +177,5 @@ func TestMemorySearchFilters(t *testing.T) {
 		}
 	}
 }
+
+func emptyFilters() models.SearchFilters { return models.SearchFilters{} }
