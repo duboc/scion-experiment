@@ -46,6 +46,8 @@ import Filters from './components/Filters'; // Import the custom filters compone
 import AIFilterSuggestion from './components/AIFilterSuggestion'; // Import the AI filter suggestion component
 import ProductImage from './components/ProductImage'; // Import the optimized ProductImage component
 import SearchInput from './components/SearchInput'; // Import the new isolated search component
+import SessionPanel from './components/SessionPanel';
+import { getSessionId, recordSessionEvent } from './services/sessionService';
 import axios from 'axios';
 import config from './config';
 const API_URL = config.apiUrl;
@@ -86,6 +88,11 @@ function ProductSearch({
     parseIntentRef.current = parseIntent;
     const cleanQueryBaseRef = useRef(cleanQueryBase);
     cleanQueryBaseRef.current = cleanQueryBase;
+    const [sessionId, setSessionId] = useState(() => getSessionId());
+    const sessionIdRef = useRef(sessionId);
+    sessionIdRef.current = sessionId;
+    const [personalized, setPersonalized] = useState(false);
+    const [sessionRefreshKey, setSessionRefreshKey] = useState(0);
     const [internalTenantId, setInternalTenantId] = useState('default');
     const [internalLocale, setInternalLocale] = useState('');
     const tenantId = propTenantId !== undefined ? propTenantId : internalTenantId;
@@ -518,6 +525,9 @@ function ProductSearch({
             const sortByToUse = (searchParams && searchParams.sortBy !== undefined)
                 ? searchParams.sortBy
                 : sortBy;
+            const sessionIdToUse = (searchParams && searchParams.sessionId !== undefined)
+                ? searchParams.sessionId
+                : (sessionIdRef.current || getSessionId());
 
             const payload = {
                 query: queryToUse,
@@ -527,6 +537,9 @@ function ProductSearch({
                 only_in_stock: Boolean(onlyInStock),
                 tenant_id: tenantId || 'default',
             };
+            if (sessionIdToUse) {
+                payload.session_id = sessionIdToUse;
+            }
             if (parseIntentToUse !== undefined) {
                 payload.parse_intent = Boolean(parseIntentToUse);
             }
@@ -655,6 +668,11 @@ function ProductSearch({
                 } else {
                     setEffectiveSortBy('');
                 }
+                if (response.data.personalized !== undefined) {
+                    setPersonalized(Boolean(response.data.personalized));
+                } else {
+                    setPersonalized(false);
+                }
             }
 
             // Simple processing - just map products without modifying anything
@@ -691,6 +709,7 @@ function ProductSearch({
             setDidYouMean('');
             setEffectivePriceTableId('');
             setEffectiveSortBy('');
+            setPersonalized(false);
             const serverErrMsg = error.response?.data?.error || error.response?.data?.message;
             const displayError = serverErrMsg || error.message || 'An error occurred while searching';
             setError(displayError);
@@ -941,8 +960,17 @@ function ProductSearch({
 
     // Stable handler for product clicks
     const handleProductClick = useCallback((productId) => {
+        recordSessionEvent(productId, 'click', tenantId);
+        setSessionRefreshKey(prev => prev + 1);
         navigate(`/product/${productId}`);
-    }, [navigate]);
+    }, [navigate, tenantId]);
+
+    const handleSessionUpdate = useCallback((newSessionId) => {
+        setSessionId(newSessionId);
+        sessionIdRef.current = newSessionId;
+        setSessionRefreshKey(prev => prev + 1);
+        fetchProducts({ sessionId: newSessionId });
+    }, [fetchProducts]);
 
     // Optimized product grid with exactly 6 products per row
     const ProductGrid = memo(({ products, onProductClick }) => {
@@ -1153,6 +1181,22 @@ function ProductSearch({
                                                         }
                                                         return null;
                                                     })()}
+                                                    {(() => {
+                                                        const s = product.score || {};
+                                                        if (personalized && s.session_boost !== undefined) {
+                                                            const b = Number(s.session_boost);
+                                                            return (
+                                                                <Chip
+                                                                    label={`boost: +${b.toFixed(4)}`}
+                                                                    size="small"
+                                                                    color={b > 0 ? "secondary" : "default"}
+                                                                    variant="outlined"
+                                                                    sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
+                                                                />
+                                                            );
+                                                        }
+                                                        return null;
+                                                    })()}
                                                 </Box>
                                             );
                                         })()}
@@ -1178,6 +1222,11 @@ function ProductSearch({
                     maxWidth: { xs: '100%', sm: '33.333%', md: '25%' },
                     display: { xs: 'none', sm: 'block' } 
                 }}>
+                    <SessionPanel
+                        onSessionUpdate={handleSessionUpdate}
+                        tenantId={tenantId}
+                        refreshKey={sessionRefreshKey}
+                    />
                     <Card sx={{
                         p: 2,
                         boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
@@ -1214,6 +1263,11 @@ function ProductSearch({
                     width: '100%',
                     mb: 2
                 }}>
+                    <SessionPanel
+                        onSessionUpdate={handleSessionUpdate}
+                        tenantId={tenantId}
+                        refreshKey={sessionRefreshKey}
+                    />
                     <Card sx={{
                         p: 2,
                         boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
@@ -1437,8 +1491,12 @@ function ProductSearch({
                                 {parsedQuery && parsedQuery.intent_source && parsedQuery.intent_source !== 'none' && ` • intent: ${parsedQuery.intent_source}`}
                                 {effectivePriceTableId && ` • price_table: ${effectivePriceTableId}`}
                                 {effectiveSortBy && ` • sort: ${effectiveSortBy}`}
+                                {personalized && ` • Personalizado`}
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                                {personalized && (
+                                    <Chip size="small" color="secondary" label="Personalizado" />
+                                )}
                                 {effectiveAlpha !== null && (
                                     <Chip size="small" variant="outlined" label={`effective_alpha: ${effectiveAlpha}`} />
                                 )}

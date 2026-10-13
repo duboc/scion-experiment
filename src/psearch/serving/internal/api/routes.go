@@ -117,6 +117,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <span class="badge" id="intent-badge" style="display:none;"></span>
       <span class="badge" id="price-table-badge" style="display:none;"></span>
       <span class="badge" id="sort-badge" style="display:none;"></span>
+      <span class="badge" id="personalized-badge" style="display:none;background:#3b0764;border-color:#a855f7;color:#e9d5ff;"></span>
     </div>
   </header>
   <main>
@@ -128,6 +129,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         <input type="range" id="alpha" min="0" max="1" step="0.1" value="0.5" oninput="document.getElementById('alpha-val').textContent=this.value" />
         <span>Vector (1.0) · α=<strong id="alpha-val">0.5</strong></span>
       </div>
+      <input type="text" id="session_id" placeholder="Session (sess-...)" style="flex:0 0 140px;min-width:120px;" title="ID da Sessão" onkeydown="if(event.key==='Enter') runSearch()" />
       <input type="text" id="tenant_id" value="default" placeholder="Tenant" style="flex:0 0 110px;min-width:90px;" title="Tenant ID" />
       <select id="locale" title="Locale">
         <option value="">All Locales</option>
@@ -213,7 +215,11 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const parseIntent = document.getElementById('parse_intent') ? document.getElementById('parse_intent').checked : true;
       const priceTableId = document.getElementById('price_table_id') ? document.getElementById('price_table_id').value : '';
       const sortBy = document.getElementById('sort_by') ? document.getElementById('sort_by').value : '';
+      const sessionId = document.getElementById('session_id') ? document.getElementById('session_id').value.trim() : '';
       let url = '/api/search?q=' + encodeURIComponent(q) + '&alpha=' + encodeURIComponent(alpha);
+      if (sessionId) {
+        url += '&session_id=' + encodeURIComponent(sessionId);
+      }
       if (channel) {
         url += '&channel=' + encodeURIComponent(channel);
       }
@@ -307,6 +313,14 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           document.getElementById('sort-badge').style.display = 'none';
         }
       }
+      if (document.getElementById('personalized-badge')) {
+        if (data.personalized) {
+          document.getElementById('personalized-badge').textContent = 'Personalizado';
+          document.getElementById('personalized-badge').style.display = 'inline-block';
+        } else {
+          document.getElementById('personalized-badge').style.display = 'none';
+        }
+      }
       const facetLat = data.facets_latency_ms !== undefined ? data.facets_latency_ms : (data.facets && data.facets.latency_ms);
       if (facetLat !== undefined && facetLat !== null) {
         document.getElementById('facets-latency').textContent = Number(facetLat).toFixed(1) + 'ms';
@@ -314,7 +328,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         document.getElementById('facets-latency').textContent = '';
       }
       document.getElementById('meta').textContent =
-        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none' ? ', intent=' + data.parsed_query.intent_source : '') + (data.price_table_id ? ', table=' + data.price_table_id : '') + (data.sort_by ? ', sort=' + data.sort_by : '') + ')';
+        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none' ? ', intent=' + data.parsed_query.intent_source : '') + (data.price_table_id ? ', table=' + data.price_table_id : '') + (data.sort_by ? ', sort=' + data.sort_by : '') + (data.personalized ? ', personalized=true' : '') + ')';
       
       const expEl = document.getElementById('expanded-terms');
       if (expEl) {
@@ -451,11 +465,12 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         const txtScore = s.text !== undefined ? s.text : 0;
         const ltrScore = s.ltr_score !== undefined ? ' | ltr=' + s.ltr_score.toFixed(4) : '';
         return '<div class="card">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="' + stockClass + '">' + stockBadge + '</span>' + locBadge + '<span class="rank-badge" style="display:none;"></span><span class="delivery-badge" style="display:none;"></span></div><span style="color:#94a3b8;font-size:12px;">' + (p.categories || []).join(', ') + '</span></div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="' + stockClass + '">' + stockBadge + '</span>' + locBadge + '<span class="rank-badge" style="display:none;"></span><span class="delivery-badge" style="display:none;"></span><span class="boost-badge" style="display:none;"></span></div><span style="color:#94a3b8;font-size:12px;">' + (p.categories || []).join(', ') + '</span></div>' +
           '<h3>' + p.title + '</h3>' +
           '<div style="color:#94a3b8;font-size:13px;">' + (p.description || '') + '</div>' +
           '<div class="price"><span class="price-val">$' + ((p.priceInfo && p.priceInfo.price) || '0.00') + '</span><span class="base-price" style="display:none;text-decoration:line-through;color:var(--muted);font-size:14px;font-weight:normal;margin-left:8px;"></span><span class="contract-badge" style="display:none;margin-left:8px;"></span></div>' +
           '<div class="scores">hybrid=' + finalScore.toFixed(4) + ' | vec=' + vecScore.toFixed(4) + ' | txt=' + txtScore.toFixed(4) + ltrScore + '</div>' +
+          '<div style="margin-top:10px;display:flex;justify-content:flex-end;"><button type="button" class="record-click-btn" style="background:#1e293b;border:1px solid #64748b;color:#f8fafc;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">+ Clique</button></div>' +
         '</div>';
       }).join('');
       (data.results || []).forEach((p, i) => {
@@ -522,6 +537,42 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
             contractEl.style.borderRadius = '4px';
           }
         }
+        if (data.personalized && s.session_boost !== undefined) {
+          const boostEl = card.querySelector('.boost-badge');
+          if (boostEl) {
+            boostEl.textContent = 'boost: +' + Number(s.session_boost).toFixed(4);
+            boostEl.style.display = 'inline-block';
+            boostEl.style.background = '#3b0764';
+            boostEl.style.border = '1px solid #a855f7';
+            boostEl.style.color = '#e9d5ff';
+            boostEl.style.fontSize = '11px';
+            boostEl.style.padding = '2px 6px';
+            boostEl.style.borderRadius = '4px';
+          }
+        }
+        const recordBtn = card.querySelector('.record-click-btn');
+        if (recordBtn) {
+          recordBtn.textContent = '+ Clique';
+          recordBtn.onclick = async function(e) {
+            e.stopPropagation();
+            recordBtn.disabled = true;
+            recordBtn.textContent = 'Gravando...';
+            try {
+              const curSid = (document.getElementById('session_id') && document.getElementById('session_id').value.trim()) || 'sess-default';
+              const curTenant = (document.getElementById('tenant_id') && document.getElementById('tenant_id').value.trim()) || 'default';
+              await fetch('/api/session/events', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: curSid, product_id: p.id, event_type: 'click', tenant_id: curTenant })
+              });
+              runSearch();
+            } catch (err) {
+              console.error(err);
+              recordBtn.textContent = 'Erro';
+              recordBtn.disabled = false;
+            }
+          };
+        }
       });
     }
     const qInput = document.getElementById('q');
@@ -556,6 +607,14 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           }
         }, 150);
       });
+    const sidEl = document.getElementById('session_id');
+    if (sidEl && !sidEl.value) {
+      let storedSid = sessionStorage.getItem('psearch_storefront_session_id');
+      if (!storedSid) {
+        storedSid = 'sess-' + Math.random().toString(16).substring(2, 10) + Math.random().toString(16).substring(2, 10);
+        sessionStorage.setItem('psearch_storefront_session_id', storedSid);
+      }
+      sidEl.value = storedSid;
     }
     runSearch();
   </script>
