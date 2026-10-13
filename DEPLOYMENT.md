@@ -357,3 +357,34 @@ Pre-check: `b306c09` alone contained only a unit test (the handlers.go change ha
 | Logs | ✅ clean |
 
 Observation: when a correction resolves to an entity (sansung → brand Samsung), the response carries `did_you_mean`/`auto_corrected` but no `parsed_query`, so the UI shows no brand chip for the applied filter. Consider surfacing it.
+
+## Wave 5 #22 B2B contract pricing + #20 session personalization: LIVE 2026-10-13
+
+Source: clean `git archive` of **`1fad8cfc8b220d01960cb2384d79a3527d510e8b`** (#22 `372ad12` + #20 `497fee6` + fix `1fad8cf`). Env unchanged.
+
+| Step | Result |
+|---|---|
+| DDL `019_b2b_product_prices.sql`: `product_prices` `INTERLEAVE IN PARENT products ON DELETE CASCADE` | ✅ (applied during the first #22 attempt) |
+| DML `019b` | ✅ 45 rows: b2b-corporate 15 (×0.90), b2b-gold 15 (×0.82 Computers/Appliances, ×0.92 otherwise), vip-club 15 |
+| sqlcheck on `372ad12` (1st attempt) | ❌ 17/27 FAIL: `SCORE is only supported in queries with query optimizer version 6 or above` (correlated `product_prices` subqueries in the fts CTE). The listed #22 sqlcheck cases were also missing. Not deployed; prod unaffected. Fix proven in a private copy: statement hint `@{OPTIMIZER_VERSION=latest_version}` |
+| DDL `021_user_session_events.sql` | ✅ |
+| sqlcheck on `1fad8cf` (hint + real #22/#20 cases) | ✅ 32 OK, 0 FAIL: laptop b2b-corporate price_asc → 15; shoes vip-club price_desc ≤300 → 7; macbook b2b-gold ≤1200 → 12; `user_session_events readable`; facets with b2b-gold |
+| Deploy → **`psearch-serving-00023-z7g`**, then `update-traffic --to-latest` | ✅ 100%, follows latest. Rollback target: `00022-nll` |
+
+#22 verification:
+- `q=laptop&price_table_id=b2b-corporate&sort_by=price_asc` → every `priceInfo.numericPrice` = **0.90 × basePrice** (e.g. prod-015 119 → 107.1), `priceTableId=b2b-corporate`, **ascending among available**, OOS (prod-004, prod-012) last
+- Facets use contract prices: `notebook gamer` Acer with b2b-gold → prod-006 **1650 → 1353**, price_ranges `500-1500`; without a table → 1650, `1500+`
+- `q=macbook&price_table_id=b2b-gold&max_price=1200` → includes **prod-007 at 1147.18**
+- No `price_table_id` → prices unchanged (basePrice = numericPrice, no priceTableId)
+- `sort_by=cheap` → **400** `invalid sort_by "cheap" (relevance | price_asc | price_desc)`
+
+#20 verification:
+- `POST /api/session/events` `{sess-qa-runner1, prod-003, purchase}` → **201**; `{sess-qa-laptop1, prod-005, purchase}` → 201; invalid `session_id` → **400** (`8-128 chars [A-Za-z0-9_-]`); invalid `event_type` → 400. Rows persisted in `user_session_events`
+- `GET /api/session/events?session_id=sess-qa-runner1` → count 1 (prod-003 purchase)
+- `q=shoes&session_id=sess-qa-runner1` → `personalized=true`, `session_boost` on all results (prod-003 0.003 max); order 001, 003, **002**, 008, …
+- `q=shoes&session_id=sess-qa-laptop1` → `personalized=true`; order 001, **005**, 008, 007, … (prod-005 moves from rank 11 to 2), clearly different from the runner session
+- No session, or a session with no events → unchanged baseline (001, 003, 008, 002, …), no `session_boost`
+- OOS prod-004/prod-012 last in every variant
+
+Regressions: sansung → samsung auto-corrected, prod-010; geladera → geladeira; default intent max_price 200; tenis → prod-002 first; cep SP → 12 promises; LTR baseline; acme → 0 results with `hybrid_v2`; autocomplete gel; storefront/health 200. Logs clean (no SCORE/optimizer, WARN, fallback, PermissionDenied or ERROR).
+Follow-up: UI commit `299f7ec` (#20 session panel) landed after `1fad8cf` and ships as a separate small deploy.
