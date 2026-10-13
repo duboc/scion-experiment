@@ -46,3 +46,11 @@
     - `go vet` and `go test`: PASS
     - Spanner SQL query fixed to avoid nested aggregations.
 - **Process Gap:** The existing test suite only covers the in-memory search implementation, not the Spanner SQL. The new `cmd/sqlcheck` tool is intended to bridge this gap in pre-deployment validation.
+
+## #2: Embedding Cache & Version Endpoint (23bf1f7)
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test -race`: PASS
+    - ADR-001 (Cache): PASS
+    - Security: PASS (Constant-time token comparison, no token leakage)
