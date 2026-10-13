@@ -135,6 +135,13 @@
     - `go test`: PASS
     - Autocomplete DDL and BigQuery export now use a plain `suggestion_folded` column.
 
+### Hotfix: 69bdc21
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go test`: PASS
+    - Autocomplete SQL query no longer uses `OR STARTS_WITH`.
+
 ## #10: LTR (75fee13)
 - **Date:** 2026-10-13
 - **Status:** PASS
