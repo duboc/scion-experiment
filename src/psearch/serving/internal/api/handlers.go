@@ -23,6 +23,7 @@ type Controller struct {
 	synonyms     *services.SynonymService
 	rules        *services.RuleService
 	autocomplete *services.AutocompleteService
+	ltrModel     *services.LTRModel
 }
 
 func NewController(cfg *config.Config) (*Controller, error) {
@@ -61,6 +62,14 @@ func NewController(cfg *config.Config) (*Controller, error) {
 	}
 	rules := services.NewRuleService(ruleStore, 30*time.Second)
 	spannerSvc.SetRules(rules)
+	ltrModel := services.DefaultLTRModel()
+	if cfg.LTRModelJSON != "" {
+		if m, err := services.ParseLTRModel(cfg.LTRModelJSON); err != nil {
+			log.Printf("WARN: invalid LTR_MODEL_JSON (%v); using baseline model", err)
+		} else {
+			ltrModel = m
+		}
+	}
 	autocomplete := services.NewAutocompleteService(spannerSvc.Client(), services.DefaultSeedProducts(), 30*time.Second)
 	return &Controller{
 		config:       cfg,
@@ -70,6 +79,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		synonyms:     synonyms,
 		rules:        rules,
 		autocomplete: autocomplete,
+		ltrModel:     ltrModel,
 	}, nil
 }
 
@@ -122,6 +132,7 @@ func (c *Controller) Search(ctx *gin.Context) {
 		req.Brand = ctx.Query("brand")
 		req.Locale = ctx.Query("locale")
 		req.TenantID = ctx.Query("tenant_id")
+		req.LTR = ctx.Query("ltr") == "true" || ctx.Query("ltr") == "1"
 		if v := ctx.Query("max_sla_hours"); v != "" {
 			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 				req.MaxSLAHours = n
@@ -207,7 +218,9 @@ func (c *Controller) Search(ctx *gin.Context) {
 		facets, facetsMs = nil, 0
 	}
 	candidates := len(results)
-	if len(results) > limit {
+	// Delivery promises are attached to the whole candidate set when LTR needs the
+	// sla_hours feature; otherwise only to the returned page.
+	if !req.LTR && len(results) > limit {
 		results = results[:limit]
 	}
 	if zip5 != "" && len(results) > 0 {
@@ -225,6 +238,18 @@ func (c *Controller) Search(ctx *gin.Context) {
 				}
 			}
 		}
+	}
+	var ltrRes services.LTRResult
+	if req.LTR && len(results) > 0 {
+		// ADR-006 stage 2: in-memory re-ranking of the stage-1 top-100 candidates.
+		signals, err := c.spannerSvc.CandidateSignals(ctx.Request.Context(), ids)
+		if err != nil {
+			log.Printf("WARN: ltr signals unavailable (re-ranking on relevance features only): %v", err)
+		}
+		ltrRes = services.Rerank(c.ltrModel, results, signals, outcome.Pins, outcome.Buries)
+	}
+	if len(results) > limit {
+		results = results[:limit]
 	}
 	tenant := strings.TrimSpace(req.TenantID)
 	if tenant == "" {
@@ -247,6 +272,9 @@ func (c *Controller) Search(ctx *gin.Context) {
 		CacheHit:         outcome.CacheHit,
 		ExpandedTerms:    outcome.ExpandedTerms,
 		AppliedRules:     outcome.AppliedRules,
+		LTR:              req.LTR && ltrRes.ModelVersion != "",
+		LTRLatencyUS:     ltrRes.LatencyUS,
+		LTRModel:         ltrRes.ModelVersion,
 		RetrievalMode:    outcome.RetrievalMode,
 	})
 }

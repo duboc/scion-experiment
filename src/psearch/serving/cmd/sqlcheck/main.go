@@ -100,6 +100,13 @@ func main() {
 			log.Printf("OK   autocomplete %q -> %d suggestions", q, len(out))
 		}
 	}
+	// LTR stage-2 inputs (Issue #10): boost signals for candidates.
+	if sig, err := svc.CandidateSignals(ctx, []string{"prod-001", "prod-002", "prod-003"}); err != nil {
+		failed = true
+		log.Printf("FAIL ltr candidate signals: %v", err)
+	} else {
+		log.Printf("OK   ltr candidate signals: %d products", len(sig))
+	}
 	// Facet queries (Issue #5) over the full catalog.
 	if f, err := svc.Facets(ctx, []string{"prod-001", "prod-002", "prod-004", "prod-012"}); err != nil {
 		failed = true

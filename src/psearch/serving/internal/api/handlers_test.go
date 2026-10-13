@@ -431,3 +431,23 @@ func TestAutocompleteEndpoint(t *testing.T) {
 		t.Fatalf("long q = %d, want 400", w.Code)
 	}
 }
+
+// Issue #10: ?ltr=true returns stage ranks, ltr_score and latency; limit still applies.
+func TestLTRSearch(t *testing.T) {
+	r := newTestRouter()
+	resp := doSearch(t, r, "q=shoes&limit=5&ltr=true")
+	if !resp.LTR || resp.LTRModel == "" || len(resp.Results) != 5 {
+		t.Fatalf("ltr=%v model=%q results=%d", resp.LTR, resp.LTRModel, len(resp.Results))
+	}
+	for i, res := range resp.Results {
+		if res.Score["stage2_rank"] != float64(i+1) || res.Score["stage1_rank"] == 0 {
+			t.Fatalf("%s ranks %v", res.ID, res.Score)
+		}
+		if _, ok := res.Score["ltr_score"]; !ok {
+			t.Fatalf("%s missing ltr_score", res.ID)
+		}
+	}
+	if plain := doSearch(t, r, "q=shoes&limit=5"); plain.LTR || plain.Results[0].Score["ltr_score"] != 0 {
+		t.Fatal("ltr must be opt-in")
+	}
+}
