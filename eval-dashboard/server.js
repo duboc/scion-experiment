@@ -173,69 +173,21 @@ app.get('/api/agents', async (req, res) => {
   }
 });
 
-// Baseline requirements & alpha curve (used as reference and fallback)
-const sampleAlphaCurve = [
-  { alpha: 0.00, mode: 'Pure Text', ndcg: 0.860, mrr: 1.000, p50_ms: 38.5 },
-  { alpha: 0.25, mode: 'Text-Heavy Hybrid', ndcg: 1.000, mrr: 1.000, p50_ms: 29.0 },
-  { alpha: 0.50, mode: 'Balanced Hybrid', ndcg: 1.000, mrr: 1.000, p50_ms: 30.4 },
-  { alpha: 0.65, mode: 'Optimal Hybrid', ndcg: 1.000, mrr: 1.000, p50_ms: 30.0 },
-  { alpha: 0.80, mode: 'Vector-Heavy Hybrid', ndcg: 1.000, mrr: 1.000, p50_ms: 28.3 },
-  { alpha: 1.00, mode: 'Pure Vector', ndcg: 1.000, mrr: 1.000, p50_ms: 30.2 }
+// Canonical 10 Biggy Search requirements template with unmeasured baseline
+const defaultUnmeasuredRequirements = [
+  { issue_number: 1, code: '4.1.1', title: 'Busca Híbrida (Dynamic RRF Alpha)', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 2, code: '4.1.2', title: 'Busca Vetorial (1024-dim, Blue/Green, Cache)', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 3, code: '4.1.3', title: 'Disponibilidade (Estoque/Canal + Indisponíveis no Final)', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 4, code: '4.1.4', title: 'Catálogo Multilanguage (pt-BR, en-US, es-MX)', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 5, code: '4.1.5', title: 'Facets Server-Side (Goroutines Concorrentes)', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 6, code: '4.1.6', title: 'Relevance & Merchandising Rules + 8 Sinais de Boost', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 7, code: '4.1.7', title: 'Low Relevance Synonyms (0.3x Score Weight)', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 8, code: '4.1.8', title: 'Delivery Promises (CEP/SLA via INTERLEAVE IN PARENT)', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 9, code: '4.1.9', title: 'Autocomplete (BQ Analytics + TOKENIZE_NGRAMS)', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 10, code: '4.1.10', title: 'Learning to Rank (2-Stage In-Memory Re-Ranking)', owner_agent: '@backend · @reviewer', status: 'not measured', latency_ms: null, evidence: null }
 ];
 
-const sampleRequirements = [
-  { issue_number: 1, code: '4.1.1', title: 'Busca Híbrida (Dynamic RRF Alpha)', owner_agent: '@backend · @frontend', status: 'PASS', latency_ms: 74.5, evidence: 'dynamic ?alpha supported, effective_alpha verified' },
-  { issue_number: 2, code: '4.1.2', title: 'Busca Vetorial (1024-dim, Blue/Green, Cache)', owner_agent: '@backend', status: 'PARTIAL', latency_ms: 30.2, evidence: '768-dim active in Spanner; pending 1024-dim v2 + embedding_cache' },
-  { issue_number: 3, code: '4.1.3', title: 'Disponibilidade (Estoque/Canal + Indisponíveis no Final)', owner_agent: '@backend · @frontend', status: 'PASS', latency_ms: 39.9, evidence: 'Out-of-stock items (prod-004, prod-012) correctly demoted' },
-  { issue_number: 4, code: '4.1.4', title: 'Catálogo Multilanguage (pt-BR, en-US, es-MX)', owner_agent: '@backend', status: 'PASS', latency_ms: 31.0, evidence: 'Verified locale=pt-BR and en-US catalog partitions' },
-  { issue_number: 5, code: '4.1.5', title: 'Facets Server-Side (Goroutines Concorrentes)', owner_agent: '@backend · @frontend', status: 'PENDING', latency_ms: 0, evidence: 'Facets object absent in /api/search response' },
-  { issue_number: 6, code: '4.1.6', title: 'Relevance & Merchandising Rules + 8 Sinais de Boost', owner_agent: '@backend · @frontend', status: 'PENDING', latency_ms: 0, evidence: 'GET /api/rules returns 404' },
-  { issue_number: 7, code: '4.1.7', title: 'Low Relevance Synonyms (0.3x Score Weight)', owner_agent: '@backend', status: 'PENDING', latency_ms: 0, evidence: 'GET /api/synonyms returns 404' },
-  { issue_number: 8, code: '4.1.8', title: 'Delivery Promises (CEP/SLA via INTERLEAVE IN PARENT)', owner_agent: '@backend', status: 'PENDING', latency_ms: 0, evidence: 'No CEP/SLA delivery estimates in payload' },
-  { issue_number: 9, code: '4.1.9', title: 'Autocomplete (BQ Analytics + TOKENIZE_NGRAMS)', owner_agent: '@backend · @frontend', status: 'PENDING', latency_ms: 0, evidence: 'GET /api/autocomplete returns 404' },
-  { issue_number: 10, code: '4.1.10', title: 'Learning to Rank (2-Stage In-Memory Re-Ranking)', owner_agent: '@backend · @reviewer', status: 'PARTIAL', latency_ms: 44.6, evidence: '?ltr=true accepted on endpoint' }
-];
-
-const sampleDiagnostics = [
-  {
-    id: 'diag-wave1',
-    severity: 'HEALTHY',
-    target_agent: 'psearch/@lead',
-    target_issue: '#1 + #3 + #4',
-    title: 'Wave 1 Hybrid RRF, Availability Demotion & Locale Partitions Verified',
-    analysis: 'Ground truth Golden Query suite achieved 1.000 NDCG@10 and 1.000 MRR@10 with p95 of 74.5ms against Cloud Spanner.',
-    recommendation: 'Close Wave 1 Issue #1 and proceed to Wave 2 (#5 Facets Server-Side).'
-  },
-  {
-    id: 'diag-wave2',
-    severity: 'ACTION',
-    target_agent: 'psearch/@backend',
-    target_issue: '#5 Facets Server-Side',
-    title: 'Implement Server-Side Facet Aggregation in /api/search',
-    analysis: 'Search API currently lacks facet counts for category and brand filtering.',
-    recommendation: 'Have @backend add concurrent Spanner GROUP BY goroutines in internal/api/routes.go.'
-  },
-  {
-    id: 'diag-bottleneck-iam',
-    severity: 'RESOLVED',
-    target_agent: 'psearch/@deployer',
-    target_issue: '#11 Gemini 1024-dim',
-    title: 'IAM 403 on Vertex AI predict for Cloud Run Compute SA',
-    analysis: 'Encountered 403 Forbidden on Vertex AI predict call during 1024-dim rollout, resulting in v1 rollback and 6e4c0fb unmasking fix.',
-    recommendation: 'Ensure roles/aiplatform.user is granted to Cloud Run default compute service account.'
-  },
-  {
-    id: 'diag-bottleneck-gating',
-    severity: 'INSIGHT',
-    target_agent: 'psearch/@lead',
-    target_issue: 'Factory Throughput',
-    title: 'Single Commit Slot Gating on main Branch',
-    analysis: 'Serial commit slot model causes idle latency for frontend and reviewer while awaiting backend PR merges.',
-    recommendation: 'Enable parallel feature worktrees for non-conflicting components (routes.go vs application/ui).'
-  }
-];
-
-// Requirements evaluation summary from Spanner eval_runs (or explicitly labeled sample)
+// Requirements evaluation summary: built ONLY from real probe results in Spanner eval_runs
 app.get('/api/eval', async (req, res) => {
   try {
     const db = getSpannerDatabase();
@@ -255,50 +207,70 @@ app.get('/api/eval', async (req, res) => {
     if (runs && runs.length > 0) {
       const run = runs[0];
       const reqData = run.requirements_json || {};
+
+      const hasRealReqs = Array.isArray(reqData.requirements) && reqData.requirements.length > 0;
+      const hasRealAlpha = Array.isArray(reqData.alpha_curve) && reqData.alpha_curve.length > 0;
+      const hasRealMetrics = run.ndcg_at_10 !== null && run.mrr_at_10 !== null && run.p50_ms !== null;
+
+      // is_sample=true whenever anything is not from a real measured source
+      const isSample = Boolean(!hasRealReqs || !hasRealAlpha || !hasRealMetrics || reqData.is_sample);
+
+      const requirements = hasRealReqs ? reqData.requirements : defaultUnmeasuredRequirements;
+      const alphaCurve = hasRealAlpha ? reqData.alpha_curve : [];
+      const diagnostics = Array.isArray(reqData.diagnostics) ? reqData.diagnostics : [];
+      const goldenQueries = Array.isArray(reqData.golden_queries) ? reqData.golden_queries : [];
+
+      const passCount = requirements.filter(r => r.status === 'PASS').length;
+      const partialCount = requirements.filter(r => r.status === 'PARTIAL').length;
+      const pendingCount = requirements.filter(r => r.status === 'PENDING').length;
+      const notMeasuredCount = requirements.filter(r => r.status === 'not measured').length;
+
       return res.json({
         timestamp: run.created_at ? run.created_at.toISOString() : new Date().toISOString(),
-        data_source: 'spanner',
-        is_sample: false,
+        data_source: isSample ? 'sample' : 'spanner',
+        is_sample: isSample,
         run_id: run.run_id,
         git_commit: run.git_commit,
         target_url: servingUrl,
         backend_mode: 'spanner',
         overall_ndcg_at_10: run.ndcg_at_10,
         overall_mrr_at_10: run.mrr_at_10,
-        optimal_alpha: reqData.optimal_alpha ?? 0.65,
+        optimal_alpha: reqData.optimal_alpha ?? null,
         p50_latency_ms: run.p50_ms,
         p95_latency_ms: run.p95_ms,
         p99_latency_ms: run.p99_ms,
-        pass_count: reqData.pass_count ?? 3,
-        partial_count: reqData.partial_count ?? 2,
-        pending_count: reqData.pending_count ?? 5,
-        alpha_curve: reqData.alpha_curve || sampleAlphaCurve,
-        requirements: reqData.requirements || sampleRequirements,
-        diagnostics: reqData.diagnostics || sampleDiagnostics,
-        golden_queries: reqData.golden_queries || []
+        pass_count: passCount,
+        partial_count: partialCount,
+        pending_count: pendingCount,
+        not_measured_count: notMeasuredCount,
+        alpha_curve: alphaCurve,
+        requirements: requirements,
+        diagnostics: diagnostics,
+        golden_queries: goldenQueries
       });
     }
 
-    // eval_runs is empty: explicitly label as 'sample'
+    // When eval_runs is completely empty: return unmeasured baseline with null values, never fallback numbers
     return res.json({
       timestamp: new Date().toISOString(),
       data_source: 'sample',
       is_sample: true,
       target_url: servingUrl,
       backend_mode: 'spanner',
-      overall_ndcg_at_10: 1.000,
-      overall_mrr_at_10: 1.000,
-      optimal_alpha: 0.65,
-      p50_latency_ms: 44.6,
-      p95_latency_ms: 74.5,
-      p99_latency_ms: 74.5,
-      pass_count: 3,
-      partial_count: 2,
-      pending_count: 5,
-      alpha_curve: sampleAlphaCurve,
-      requirements: sampleRequirements,
-      diagnostics: sampleDiagnostics,
-      sample_note: 'Spanner eval_runs table currently has no rows; metrics explicitly labeled as sample'
+      overall_ndcg_at_10: null,
+      overall_mrr_at_10: null,
+      optimal_alpha: null,
+      p50_latency_ms: null,
+      p95_latency_ms: null,
+      p99_latency_ms: null,
+      pass_count: 0,
+      partial_count: 0,
+      pending_count: 0,
+      not_measured_count: 10,
+      alpha_curve: [],
+      requirements: defaultUnmeasuredRequirements,
+      diagnostics: [],
+      note: 'Spanner eval_runs table currently has no rows; metrics are unmeasured'
     });
   } catch (err) {
     console.error('Eval endpoint error:', err.message);

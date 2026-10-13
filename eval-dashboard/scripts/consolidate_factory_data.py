@@ -205,18 +205,41 @@ def fetch_spanner_eval_runs():
         return []
 
 # 4. Biggy Search Requirements Compliance
-REQUIREMENTS_CATALOG = [
-    {"issue_number": 1, "code": "4.1.1", "title": "Busca Híbrida (Dynamic RRF Alpha)", "owner_agents": "@backend · @frontend", "status": "PASS", "latency_ms": 74.5, "evidence": "dynamic ?alpha supported, effective_alpha verified"},
-    {"issue_number": 2, "code": "4.1.2", "title": "Busca Vetorial (1024-dim, Blue/Green, Cache)", "owner_agents": "@backend", "status": "PARTIAL", "latency_ms": 30.2, "evidence": "768-dim active in Spanner; pending 1024-dim v2 + embedding_cache"},
-    {"issue_number": 3, "code": "4.1.3", "title": "Disponibilidade (Estoque/Canal + Indisponíveis no Final)", "owner_agents": "@backend · @frontend", "status": "PASS", "latency_ms": 39.9, "evidence": "Out-of-stock items (prod-004, prod-012) correctly demoted"},
-    {"issue_number": 4, "code": "4.1.4", "title": "Catálogo Multilanguage (pt-BR, en-US, es-MX)", "owner_agents": "@backend", "status": "PASS", "latency_ms": 31.0, "evidence": "Verified locale=pt-BR and en-US catalog partitions"},
-    {"issue_number": 5, "code": "4.1.5", "title": "Facets Server-Side (Goroutines Concorrentes)", "owner_agents": "@backend · @frontend", "status": "PENDING", "latency_ms": 0.0, "evidence": "Facets object absent in /api/search response"},
-    {"issue_number": 6, "code": "4.1.6", "title": "Relevance & Merchandising Rules + 8 Sinais de Boost", "owner_agents": "@backend · @frontend", "status": "PENDING", "latency_ms": 0.0, "evidence": "GET /api/rules returns 404"},
-    {"issue_number": 7, "code": "4.1.7", "title": "Low Relevance Synonyms (0.3x Score Weight)", "owner_agents": "@backend", "status": "PENDING", "latency_ms": 0.0, "evidence": "GET /api/synonyms returns 404"},
-    {"issue_number": 8, "code": "4.1.8", "title": "Delivery Promises (CEP/SLA via INTERLEAVE IN PARENT)", "owner_agents": "@backend", "status": "PENDING", "latency_ms": 0.0, "evidence": "No CEP/SLA delivery estimates in payload"},
-    {"issue_number": 9, "code": "4.1.9", "title": "Autocomplete (BQ Analytics + TOKENIZE_NGRAMS)", "owner_agents": "@backend · @frontend", "status": "PENDING", "latency_ms": 0.0, "evidence": "GET /api/autocomplete returns 404"},
-    {"issue_number": 10, "code": "4.1.10", "title": "Learning to Rank (2-Stage In-Memory Re-Ranking)", "owner_agents": "@backend · @reviewer", "status": "PARTIAL", "latency_ms": 44.6, "evidence": "?ltr=true accepted on endpoint"}
+UNMEASURED_REQUIREMENTS = [
+    {"issue_number": 1, "code": "4.1.1", "title": "Busca Híbrida (Dynamic RRF Alpha)", "owner_agent": "@backend · @frontend", "status": "not measured", "latency_ms": None, "evidence": None},
+    {"issue_number": 2, "code": "4.1.2", "title": "Busca Vetorial (1024-dim, Blue/Green, Cache)", "owner_agent": "@backend", "status": "not measured", "latency_ms": None, "evidence": None},
+    {"issue_number": 3, "code": "4.1.3", "title": "Disponibilidade (Estoque/Canal + Indisponíveis no Final)", "owner_agent": "@backend · @frontend", "status": "not measured", "latency_ms": None, "evidence": None},
+    {"issue_number": 4, "code": "4.1.4", "title": "Catálogo Multilanguage (pt-BR, en-US, es-MX)", "owner_agent": "@backend", "status": "not measured", "latency_ms": None, "evidence": None},
+    {"issue_number": 5, "code": "4.1.5", "title": "Facets Server-Side (Goroutines Concorrentes)", "owner_agent": "@backend · @frontend", "status": "not measured", "latency_ms": None, "evidence": None},
+    {"issue_number": 6, "code": "4.1.6", "title": "Relevance & Merchandising Rules + 8 Sinais de Boost", "owner_agent": "@backend · @frontend", "status": "not measured", "latency_ms": None, "evidence": None},
+    {"issue_number": 7, "code": "4.1.7", "title": "Low Relevance Synonyms (0.3x Score Weight)", "owner_agent": "@backend", "status": "not measured", "latency_ms": None, "evidence": None},
+    {"issue_number": 8, "code": "4.1.8", "title": "Delivery Promises (CEP/SLA via INTERLEAVE IN PARENT)", "owner_agent": "@backend", "status": "not measured", "latency_ms": None, "evidence": None},
+    {"issue_number": 9, "code": "4.1.9", "title": "Autocomplete (BQ Analytics + TOKENIZE_NGRAMS)", "owner_agent": "@backend · @frontend", "status": "not measured", "latency_ms": None, "evidence": None},
+    {"issue_number": 10, "code": "4.1.10", "title": "Learning to Rank (2-Stage In-Memory Re-Ranking)", "owner_agent": "@backend · @reviewer", "status": "not measured", "latency_ms": None, "evidence": None}
 ]
+
+def fetch_spanner_latest_requirements():
+    sql = "SELECT requirements_json FROM eval_runs WHERE requirements_json IS NOT NULL ORDER BY created_at DESC LIMIT 1"
+    cmd = [
+        "gcloud", "spanner", "databases", "execute-sql", SPANNER_DATABASE,
+        f"--instance={SPANNER_INSTANCE}",
+        f"--project={PROJECT_ID}",
+        f"--billing-project={PROJECT_ID}",
+        "--format=json",
+        f"--sql={sql}"
+    ]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(res.stdout)
+        rows = data.get("rows", [])
+        if rows and len(rows) > 0:
+            raw_json = rows[0][0]
+            parsed = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+            if parsed and isinstance(parsed, dict) and "requirements" in parsed:
+                return parsed["requirements"]
+    except Exception as e:
+        print(f"[WARN] Spanner requirements fetch failed: {e}", file=sys.stderr)
+    return UNMEASURED_REQUIREMENTS
 
 def run_consolidation():
     print(f"=== Starting Factory Data Consolidation ({datetime.now(timezone.utc).isoformat()}) ===")
@@ -257,13 +280,14 @@ def run_consolidation():
     # 4. Requirements Compliance -> Firestore 'requirements_compliance'
     print("[4/5] Ingesting Biggy Search requirements compliance into Firestore 'requirements_compliance'...")
     now_iso = datetime.now(timezone.utc).isoformat()
+    requirements = fetch_spanner_latest_requirements()
     reqs_written = 0
-    for req in REQUIREMENTS_CATALOG:
+    for req in requirements:
         doc_id = f"req_{req['issue_number']}"
         payload = {**req, "evaluated_at": now_iso}
         if write_firestore_doc(token, "requirements_compliance", doc_id, payload):
             reqs_written += 1
-    print(f"  -> Successfully wrote {reqs_written}/{len(REQUIREMENTS_CATALOG)} requirements to Firestore 'requirements_compliance'")
+    print(f"  -> Successfully wrote {reqs_written}/{len(requirements)} requirements to Firestore 'requirements_compliance'")
 
     # 5. Compile Consolidated JSON Snapshot -> GCS Bucket
     print(f"[5/5] Exporting consolidated factory state snapshot to gs://{BUCKET_NAME}/snapshots/...")
@@ -282,12 +306,12 @@ def run_consolidation():
             "agents": len(agents),
             "tasks": len(tasks),
             "eval_runs": len(eval_runs),
-            "requirements": len(REQUIREMENTS_CATALOG)
+            "requirements": len(requirements)
         },
         "agents": agents,
         "tasks": tasks,
         "eval_runs": eval_runs,
-        "requirements_compliance": REQUIREMENTS_CATALOG
+        "requirements_compliance": requirements
     }
 
     tmp_path = f"/tmp/factory_state_{now_str}.json"

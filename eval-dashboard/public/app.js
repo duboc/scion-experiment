@@ -89,7 +89,11 @@
 
   function renderAlphaCurve(points) {
     const svg = document.getElementById('svg-alpha-curve');
-    if (!svg || !Array.isArray(points) || points.length === 0) return;
+    if (!svg) return;
+    if (!Array.isArray(points) || points.length === 0) {
+      svg.innerHTML = '<text x="230" y="60" text-anchor="middle" fill="var(--text-muted)" font-family="JetBrains Mono, monospace" font-size="12">No alpha sweep measured</text>';
+      return;
+    }
 
     const w = 460;
     const h = 118;
@@ -183,7 +187,11 @@
 
   function renderDiagnostics(diags) {
     const container = document.getElementById('diag-container');
-    if (!container || !Array.isArray(diags)) return;
+    if (!container) return;
+    if (!Array.isArray(diags) || diags.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-muted);padding:1rem;font-style:italic;">No active diagnostic findings recorded from factory analysis.</div>';
+      return;
+    }
 
     container.innerHTML = diags.map(d => {
       const sev = (d.severity || 'HEALTHY').toUpperCase();
@@ -330,7 +338,11 @@
       }
 
       const alphaEl = document.getElementById('val-opt-alpha');
-      if (alphaEl) alphaEl.textContent = evalRes.optimal_alpha !== undefined ? Number(evalRes.optimal_alpha).toFixed(2) : '0.65';
+      if (alphaEl) {
+        alphaEl.textContent = (evalRes.optimal_alpha !== undefined && evalRes.optimal_alpha !== null)
+          ? Number(evalRes.optimal_alpha).toFixed(2)
+          : '--';
+      }
 
       const timeEl = document.getElementById('val-timestamp');
       if (timeEl) {
@@ -343,18 +355,28 @@
       }
 
       const p50El = document.getElementById('val-p50');
-      if (p50El) p50El.textContent = evalRes.p50_latency_ms !== undefined ? Number(evalRes.p50_latency_ms).toFixed(1) + ' ms' : '-- ms';
+      if (p50El) {
+        p50El.textContent = (evalRes.p50_latency_ms !== undefined && evalRes.p50_latency_ms !== null)
+          ? Number(evalRes.p50_latency_ms).toFixed(1) + ' ms'
+          : '-- ms';
+      }
 
       const p95El = document.getElementById('val-p95');
       if (p95El) {
-        const p95Str = evalRes.p95_latency_ms !== undefined ? Number(evalRes.p95_latency_ms).toFixed(1) : '--';
-        const p99Str = evalRes.p99_latency_ms !== undefined ? Number(evalRes.p99_latency_ms).toFixed(1) : '--';
+        const p95Str = (evalRes.p95_latency_ms !== undefined && evalRes.p95_latency_ms !== null)
+          ? Number(evalRes.p95_latency_ms).toFixed(1)
+          : '--';
+        const p99Str = (evalRes.p99_latency_ms !== undefined && evalRes.p99_latency_ms !== null)
+          ? Number(evalRes.p99_latency_ms).toFixed(1)
+          : '--';
         p95El.textContent = p95Str + ' / ' + p99Str + ' ms';
       }
 
       const passEl = document.getElementById('val-reqs-pass');
       if (passEl) {
-        passEl.textContent = (evalRes.pass_count ?? 8) + ' PASS · ' + (evalRes.partial_count ?? 2) + ' PARTIAL';
+        const pCnt = (evalRes.pass_count !== undefined && evalRes.pass_count !== null) ? evalRes.pass_count : '--';
+        const partCnt = (evalRes.partial_count !== undefined && evalRes.partial_count !== null) ? evalRes.partial_count : '--';
+        passEl.textContent = pCnt + ' PASS · ' + partCnt + ' PARTIAL';
       }
 
       const linkStorefront = document.getElementById('link-storefront');
