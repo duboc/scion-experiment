@@ -207,3 +207,6 @@
 
 ### Follow-up: 1fad8cf (#22/#20)
 - **Status:** PASS (reviewer, read-only worktree): go vet / go test -race PASS; hybrid SQL carries the optimizer-version statement hint; sqlcheck covers #22 price tables and #20 sessions.
+
+## #20 UI (299f7ec)
+- **Status:** PASS (reviewer, read-only worktree): npm run build PASS (pre-existing eslint warnings only), go build PASS; session panel, personas, click/purchase tracking and personalized badges present; storefront uses textContent.
