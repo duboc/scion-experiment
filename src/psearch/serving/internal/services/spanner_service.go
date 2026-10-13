@@ -454,6 +454,9 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 	if s.config.TextFolding {
 		queryText = FoldAccents(query)
 	}
+	if filters.RelaxText {
+		queryText = RelaxedQuery(queryText) // ADR-008: implicit AND -> OR
+	}
 	f := normalizeFilters(filters)
 	// Synonym leg: when there is no expansion, reuse the exact query with weight 0
 	// (avoids an empty SEARCH query and leaves scores unchanged).

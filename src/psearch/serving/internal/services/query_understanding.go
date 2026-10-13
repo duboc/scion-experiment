@@ -341,13 +341,13 @@ func (s SpannerIntentStore) Put(ctx context.Context, key, query string, in Inten
 	return err
 }
 
-// CatalogVocabulary returns products carrying only brand/category, for parser
-// vocabulary. Spanner mode reads DISTINCT values; memory mode uses the seed.
+// CatalogVocabulary returns lightweight products (title, brand, category, clicks)
+// for the query parser (#19) and spell checker (#21); memory mode uses the seed.
 func (s *SpannerService) CatalogVocabulary(ctx context.Context) []models.SearchResult {
 	if s.client == nil {
 		return s.seedProducts
 	}
-	iter := s.client.Single().Query(ctx, spanner.Statement{SQL: `SELECT DISTINCT IFNULL(brand, ''), IFNULL(category, '') FROM products`})
+	iter := s.client.Single().Query(ctx, spanner.Statement{SQL: `SELECT IFNULL(title, ''), IFNULL(brand, ''), IFNULL(category, ''), IFNULL(clicks, 10) FROM products LIMIT 20000`})
 	defer iter.Stop()
 	var out []models.SearchResult
 	for {
@@ -358,9 +358,10 @@ func (s *SpannerService) CatalogVocabulary(ctx context.Context) []models.SearchR
 			}
 			return out
 		}
-		var b, c string
-		if row.Columns(&b, &c) == nil {
-			out = append(out, models.SearchResult{Brands: []string{b}, Categories: []string{c}})
+		var t, b, c string
+		var clicks int64
+		if row.Columns(&t, &b, &c, &clicks) == nil {
+			out = append(out, models.SearchResult{Title: t, Brands: []string{b}, Categories: []string{c}, Signals: &models.BoostSignals{Clicks: clicks}})
 		}
 	}
 }

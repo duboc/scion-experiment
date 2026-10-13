@@ -485,3 +485,19 @@ func TestParseIntentSearch(t *testing.T) {
 		t.Fatalf("min>max = %d, want 400", w.Code)
 	}
 }
+
+// Issue #21: typo recovery with did_you_mean / auto_corrected.
+func TestZeroResultsRecovery(t *testing.T) {
+	r := newTestRouter()
+	resp := doSearch(t, r, "q=sansung&limit=5&alpha=0")
+	if resp.DidYouMean != "samsung" || !resp.AutoCorrected || len(resp.Results) == 0 || resp.Results[0].ID != "prod-010" {
+		t.Fatalf("did_you_mean=%q auto=%v results=%s", resp.DidYouMean, resp.AutoCorrected, ids(resp.Results))
+	}
+	gel := doSearch(t, r, "q=geladera&limit=5&alpha=0")
+	if gel.DidYouMean != "geladeira" || !gel.AutoCorrected || gel.Results[0].ID != "prod-011" {
+		t.Fatalf("geladera: %q %v %s", gel.DidYouMean, gel.AutoCorrected, ids(gel.Results))
+	}
+	if ok := doSearch(t, r, "q=samsung&limit=5"); ok.DidYouMean != "" || ok.AutoCorrected || ok.QueryRelaxed {
+		t.Fatal("queries with lexical hits are untouched")
+	}
+}

@@ -111,6 +111,20 @@ func main() {
 	}
 	// Query understanding vocabulary (Issue #19).
 	log.Printf("OK   catalog vocabulary entries=%d", len(svc.CatalogVocabulary(ctx)))
+	// Spell check (Issue #21): SEARCH_NGRAMS candidates + relaxed (OR) text leg.
+	spell := services.NewSpellCheckService(svc.Client())
+	spell.AddVocabulary(svc.CatalogVocabulary(ctx), nil)
+	if fixed, changed := spell.Correct(ctx, "default", "sansung"); !changed {
+		log.Printf("WARN spell 'sansung' not corrected (got %q)", fixed)
+	} else {
+		log.Printf("OK   spell 'sansung' -> %q", fixed)
+	}
+	if n, mode, err := svc.CheckSpannerQuery(ctx, "samsung geladeira", 0.5, models.SearchFilters{RelaxText: true}); err != nil {
+		failed = true
+		log.Printf("FAIL relaxed OR query: %v", err)
+	} else {
+		log.Printf("OK   relaxed OR query rows=%d mode=%s", n, mode)
+	}
 	// Facet queries (Issue #5) over the full catalog.
 	if f, err := svc.Facets(ctx, []string{"prod-001", "prod-002", "prod-004", "prod-012"}); err != nil {
 		failed = true

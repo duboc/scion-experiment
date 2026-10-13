@@ -29,6 +29,7 @@ type SearchFilters struct {
 	Locale      string  // ADR-002 / Issue #4 (pt-BR, en-US, es-MX); empty = all locales
 	Zip5        string  // ADR-005 / Issue #8: 5-digit CEP prefix; empty = no delivery filter
 	MaxSLAHours int64   // ADR-005: maximum delivery SLA in hours; 0 = any
+	RelaxText   bool    // ADR-008 (#21): run the text leg with OR between terms
 	MinPrice    float64 // ADR-007/008: minimum price (0 = none)
 	MaxPrice    float64 // ADR-007/008: maximum price (0 = none)
 }
@@ -54,6 +55,9 @@ type SearchResponse struct {
 	LTRLatencyUS     int64          `json:"ltr_latency_us,omitempty"` // stage-2 in-memory latency (microseconds)
 	LTRModel         string         `json:"ltr_model,omitempty"`
 	ParsedQuery      *ParsedQuery   `json:"parsed_query,omitempty"` // Issue #19 (ADR-007)
+	DidYouMean       string         `json:"did_you_mean,omitempty"` // Issue #21 (ADR-008)
+	AutoCorrected    bool           `json:"auto_corrected,omitempty"`
+	QueryRelaxed     bool           `json:"query_relaxed,omitempty"`
 }
 
 type FacetBucket struct {

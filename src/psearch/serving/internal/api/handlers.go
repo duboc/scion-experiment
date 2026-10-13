@@ -25,6 +25,7 @@ type Controller struct {
 	autocomplete *services.AutocompleteService
 	ltrModel     *services.LTRModel
 	intent       *services.QueryUnderstandingService
+	spell        *services.SpellCheckService
 }
 
 func NewController(cfg *config.Config) (*Controller, error) {
@@ -76,8 +77,14 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		}
 	}
 	vocabCtx, vocabCancel := context.WithTimeout(ctx, 5*time.Second)
-	intent := services.NewQueryUnderstandingService(spannerSvc.CatalogVocabulary(vocabCtx), intentLLM, intentStore)
+	vocab := spannerSvc.CatalogVocabulary(vocabCtx)
 	vocabCancel()
+	intent := services.NewQueryUnderstandingService(vocab, intentLLM, intentStore)
+	spell := services.NewSpellCheckService(spannerSvc.Client())
+	spell.AddVocabulary(vocab, services.DefaultSuggestions(services.DefaultSeedProducts()))
+	for _, syn := range services.DefaultSynonyms() {
+		spell.AddVocabulary([]models.SearchResult{{Title: syn.Term + " " + strings.Join(syn.Synonyms, " ")}}, nil)
+	}
 	ltrModel := services.DefaultLTRModel()
 	if cfg.LTRModelJSON != "" {
 		if m, err := services.ParseLTRModel(cfg.LTRModelJSON); err != nil {
@@ -97,6 +104,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		autocomplete: autocomplete,
 		ltrModel:     ltrModel,
 		intent:       intent,
+		spell:        spell,
 	}, nil
 }
 
@@ -251,6 +259,24 @@ func (c *Controller) Search(ctx *gin.Context) {
 		candidateLimit = facetCandidates
 	}
 	outcome, err := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), searchQuery, candidateLimit, minScore, alpha, filters)
+	// ADR-008 (Issue #21): zero-results recovery when the lexical leg found nothing.
+	var didYouMean string
+	var autoCorrected, relaxed bool
+	if err == nil && strings.TrimSpace(searchQuery) != "" && services.LexicalHits(outcome.Results) == 0 {
+		if corrected, changed := c.spell.Correct(ctx.Request.Context(), filters.TenantID, searchQuery); changed {
+			didYouMean = corrected
+			if alt, aerr := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), corrected, candidateLimit, minScore, alpha, filters); aerr == nil && services.LexicalHits(alt.Results) > 0 {
+				outcome, searchQuery, autoCorrected = alt, corrected, true
+			}
+		}
+		if !autoCorrected && len(strings.Fields(searchQuery)) > 1 {
+			rf := filters
+			rf.RelaxText = true
+			if alt, aerr := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), searchQuery, candidateLimit, minScore, alpha, rf); aerr == nil && services.LexicalHits(alt.Results) > 0 {
+				outcome, relaxed = alt, true
+			}
+		}
+	}
 	results := outcome.Results
 	if results == nil {
 		results = []models.SearchResult{} // always serialize as [] (never null)
@@ -332,6 +358,9 @@ func (c *Controller) Search(ctx *gin.Context) {
 		LTRLatencyUS:     ltrRes.LatencyUS,
 		LTRModel:         ltrRes.ModelVersion,
 		ParsedQuery:      parsed,
+		DidYouMean:       didYouMean,
+		AutoCorrected:    autoCorrected,
+		QueryRelaxed:     relaxed,
 		RetrievalMode:    outcome.RetrievalMode,
 	})
 }
