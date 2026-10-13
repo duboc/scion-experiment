@@ -149,11 +149,33 @@ Each runbook below has: **Trigger**, **Diagnose**, **Act**, **Check**, **Escalat
 
 ## After a Scion upgrade
 
-The Hub follows the nightly channel and updates itself. After an update:
+The Hub maintenance policy is set to `server.maintenance.update_policy: notify` in `~/.scion/settings.yaml`. When a new nightly binary is available, Scion notifies the admin but does not restart unannounced or overwrite provisioners.
 
-1. `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py` (re-apply with `--apply` if needed; L20).
-2. `scripts/run-on-hub.sh scripts/scion-admin.py experiments`: overrides still in place.
-3. `scripts/run-on-hub.sh scripts/factory-status.sh`: agents running, schedules firing, sync log moving.
+To perform a controlled upgrade:
+1. Pause the factory heartbeats: `scripts/run-on-hub.sh scripts/scion-admin.py schedule pause ...`
+2. Stop the Hub service: `gcloud compute ssh "$HUB_VM" --command="sudo systemctl stop scion-hub"`
+3. Update the Scion binary: `gcloud compute ssh "$HUB_VM" --command="sudo scion self-update"`
+4. Start the Hub service: `gcloud compute ssh "$HUB_VM" --command="sudo systemctl start scion-hub"`
+5. Re-apply Antigravity provisioner patches immediately:
+   `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py --apply`
+   *(Note: `scion-hub` runs `OverwriteBuiltinManaged` on startup, which overwrites `workspace-storage/.../antigravity/provision.py`; the watchdog will also catch this within 5 minutes).*
+6. Verify health and resume: `scripts/run-on-hub.sh scripts/factory-status.sh` and resume schedules.
+
+## Watchdog daemon & circuit breaker
+
+[`scripts/factory-watchdog.py`](scripts/factory-watchdog.py) runs every 5 minutes on the Hub VM via cron (`*/5 * * * * /usr/bin/python3 $HOME/.scion/factory-watchdog.py --apply >> $HOME/.scion/watchdog.log 2>&1`).
+It performs four automatic recovery and alerting functions:
+1. **Antigravity provisioner drift guard:** checks `~/.scion/workspace-storage/hubs/*/harness-configs/global/antigravity/provision.py`. If a Hub restart ran `OverwriteBuiltinManaged`, the watchdog re-patches it within 5 minutes.
+2. **Heartbeat schedule guard:** checks that project heartbeat schedules (`*-lead-heartbeat`) remain `active`. If an agent or bug paused a schedule, it resumes it.
+3. **Agent liveness & circuit-breaker recovery:**
+   - Wakes suspended agents via `POST /agents/{slug}/message` with `wake: true`.
+   - Auto-restarts stopped or crashed agents via Hub API `/start` (with `forceResume: true` for error-phase agents) and notifies the project lead.
+   - Enforces circuit breaker: max 3 restarts per agent per hour. If a broken worker crashes repeatedly, the watchdog stops restarting it and emits a `WATCHDOG_CIRCUIT_BREAKER` error log to trigger Cloud Monitoring alerts.
+4. **PO Inbox escalation forwarder:**
+   - Forwards new messages addressed to `user:<ADMIN_EMAIL>` to Cloud Logging (`scion-factory-alerts`, severity `ERROR`), triggering immediate email notification to the PO via Cloud Monitoring.
+
+Logs: `~/.scion/watchdog.log` and `~/.scion/watchdog-state.json` on the Hub VM.
+Manual check: `scripts/run-on-hub.sh scripts/factory-watchdog.py`
 
 ## Change the heartbeat text or cadence
 

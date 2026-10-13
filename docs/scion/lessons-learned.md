@@ -329,3 +329,17 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
 - **Encoded in:** [`templates/deployer/system-prompt.md`](templates/deployer/system-prompt.md),
   [`templates/eval-deployer/system-prompt.md`](templates/eval-deployer/system-prompt.md),
   [operations-runbook.md](operations-runbook.md#a-deploy-failed-or-needs-a-rollback).
+
+## L24. Unannounced Hub restarts overwrite managed harness files (`update_policy: notify`)
+
+- **What we found:** On startup, `scion server` executes `OverwriteBuiltinManaged`, which overwrites
+  `workspace-storage/.../harness-configs/global/antigravity/provision.py` with default builtin templates.
+  When `server.maintenance.update_policy` was set to `auto`, nightly Scion updates triggered unannounced service restarts,
+  silently reverting the Antigravity telemetry hook patch and causing tool calls to time out (L6).
+- **Fix:**
+  1. Set `server.maintenance.update_policy: notify` in `~/.scion/settings.yaml`. Updates notify the operator without auto-restarting.
+  2. The watchdog daemon ([`scripts/factory-watchdog.py`](scripts/factory-watchdog.py)) runs every 5 minutes and immediately
+     detects and re-patches any provisioner drift if the service is restarted.
+- **Encoded in:** [`config/hub-settings.example.yaml`](config/hub-settings.example.yaml),
+  [`scripts/factory-watchdog.py`](scripts/factory-watchdog.py),
+  [operations-runbook.md](operations-runbook.md#after-a-scion-upgrade).
