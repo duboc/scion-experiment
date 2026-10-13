@@ -21,7 +21,7 @@ it. The scripts and templates are parameterized, so you can build another factor
 | [setup-runbook.md](setup-runbook.md) | you are building a new factory (step by step, with a check after each step) |
 | [operations-runbook.md](operations-runbook.md) | a factory is running and something looks wrong, or you need a routine task |
 | [agent-protocol.md](agent-protocol.md) | you want to understand or change the rules the agents follow |
-| [lessons-learned.md](lessons-learned.md) | before you change anything: 20 failures, their causes and fixes |
+| [lessons-learned.md](lessons-learned.md) | before you change anything: 21 failures, their causes and fixes |
 | [templates/](templates/README.md) | role prompts and settings for the ten agents, plus the shared protocol |
 | [scripts/](scripts/README.md) | the tooling: status, admin actions, sandbox setup, sync, patches |
 | [config/](config/) | `factory.env.example`, the heartbeat text, the Hub settings excerpt, the Spanner DDL |
@@ -37,7 +37,7 @@ it. The scripts and templates are parameterized, so you can build another factor
 5. Create the GitHub labels and store the token as the Hub secret `GITHUB_TOKEN`.
 6. Create the two Hub projects, make their folders checkouts of the repo, register the deployer identity.
 7. `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py --apply` (before any Antigravity agent starts).
-8. `scripts/render-templates.py`, push the templates, start the ten agents.
+8. `scripts/push-templates.py --project <slug> --roles <roles> --apply` for each project, then start the ten agents.
 9. Create the two heartbeat schedules.
 10. `scripts/install-sync-cron.sh`.
 11. Send each lead the GO message.
@@ -67,5 +67,6 @@ Most of the work was not building the factory but keeping it from stopping. The 
 | Heartbeats, agent-status sync, Antigravity hook patch, sandbox setup | running and verified |
 | `factory-status.sh`, `scion-admin.py` (read commands), `sync-factory-agents.py --dry-run`, `patch-antigravity-hooks.py` (check) | run against the live Hub |
 | `setup-sandbox.sh`, `install-sync-cron.sh` | verified in dry-run mode against the live environment |
-| Template upload with `scion templates push` | supported path, not exercised on this Hub |
+| `push-templates.py` | its procedure fixed the five eval templates on the live Hub (2026-10-13; it reports them up to date); dry run against the build templates |
+| Reincarnate (harness switch with the same agent ID) | refused by Scion for these projects (L21); recreate the agent instead |
 | v2 design (per-issue workers, `factoryctl`, watchdogs) | draft, not implemented |

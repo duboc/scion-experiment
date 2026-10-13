@@ -25,6 +25,7 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
 | [L18](#l18-hub-activity-is-a-hint-not-the-truth) | Hub activity is a hint, not the truth | observability |
 | [L19](#l19-heartbeats-can-turn-into-chatter) | Heartbeats can turn into chatter | protocol |
 | [L20](#l20-local-patches-dont-survive-upgrades-silently) | Local patches don't survive upgrades silently | operations |
+| [L21](#l21-reincarnate-is-refused-for-agents-of-these-projects) | Reincarnate is refused for agents of these projects | Scion |
 
 ---
 
@@ -85,7 +86,8 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
   back on their own.
 - **Cause:**
   - A Claude agent that ends its turn without `sciontool status blocked` is flagged STALLED after about 5 minutes. The
-    first templates said "Do NOT run `sciontool status`".
+    first templates said "Do NOT run `sciontool status`". Scion's own default template (`agents.md`) tells agents to
+    use `sciontool status`; our templates replaced that file with role prompts that said the opposite.
   - Agents only react to input. No schedule existed, so a lost message meant a permanent wait.
   - Hub notifications about an agent go to its creator. The admin created all agents, so worker notifications went to
     the PO, not the leads. Repeated identical notifications are deduplicated.
@@ -218,10 +220,19 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
 - **Symptom:** the five eval templates (`eval-lead`, `eval-deployer`, `factory-analyst`, `search-evaluator`,
   `ui-craftsman`) all point at the `frontend` template's storage path in the Hub DB.
 - **Cause:** the templates were registered by inserting rows straight into the Hub's SQLite DB with a copied storage
-  path, so starting or reincarnating an eval agent from its template is expected to load the frontend files.
-- **Fix:** re-push each template through the Scion CLI so it gets its own files (`scion templates push`).
-- **Encoded in:** [templates/README.md](templates/README.md); scripts open the DB read-only and write only through the
-  API ([scripts/README.md](scripts/README.md)).
+  path, so the eval agents were actually provisioned from the frontend template's files.
+- **Trap:** don't fix it with `scion templates push`. A push to an existing template uploads into that row's storage
+  path, which here belongs to `frontend`: it would overwrite the frontend template's files. Deleting the rows with
+  their files (`deleteFiles=true`) would delete the frontend's files; deleting them without files leaves the running
+  agents pointing at a template ID that no longer exists.
+- **Fix (2026-10-13):** rename each broken row to `<role>-legacy` (a metadata PATCH; storage untouched, and running
+  agents keep resolving it by ID), then create `<role>` again so it gets its own storage path. Result: five new rows
+  with their own files, the legacy rows still resolving for the running agents, and the frontend template's content
+  hash unchanged. A plain restart of an eval agent still uses its legacy row, as before; a recreated agent uses the
+  new template (reincarnate is refused here, L21).
+- **Encoded in:** [`scripts/push-templates.py`](scripts/push-templates.py), which does this automatically and never
+  uploads into a path a template doesn't own; [templates/README.md](templates/README.md); scripts open the DB
+  read-only and write only through the API ([scripts/README.md](scripts/README.md)).
 
 ## L17. Pre-provision the identities the backlog will need
 
@@ -261,3 +272,18 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
 - **Lesson:** keep every local patch in a script with a check mode, and run the checks after each update.
 - **Encoded in:** [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py) (check by default),
   [operations-runbook.md](operations-runbook.md#after-a-scion-upgrade).
+
+## L21. Reincarnate is refused for agents of these projects
+
+- **When:** 2026-10-13, preparing to move `eval-lead` from Antigravity to Claude Code.
+- **Symptom:** `POST /api/v1/projects/<id>/agents/<agent-id>/reincarnate` with `{"dryRun": true}` returns HTTP 400
+  "reincarnate requires a clone-per-agent, shared-workspace or hub-managed workspace" for the agents of both
+  Hub-managed projects (no git remote, broker on the Hub VM).
+- **Cause (from the code):** the eligibility check in `pkg/hub/handlers_agent_reincarnate.go` uses the agent's
+  "effective" workspace, and for a project linked on the broker the agent's absolute workspace path
+  (`~/.scion/projects/<slug>`) is cleared first, so the agent looks like it has no workspace at all. Probably a Scion
+  bug for this topology; worth reporting upstream.
+- **Workaround:** recreate the agent instead: put the state on GitHub and write a short handoff, `scion delete
+  <agent>`, then `scion start <agent> -t <template> "<handoff>"`. The new agent has a new ID: schedules address agents
+  by name and keep working, but notification subscriptions and message history don't carry over.
+- **Encoded in:** [operations-runbook.md](operations-runbook.md#switch-an-agents-harness).

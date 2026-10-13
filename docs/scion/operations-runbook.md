@@ -177,25 +177,34 @@ scripts/run-on-hub.sh scripts/scion-admin.py message --project <project> --agent
 
 Make the same change in the template so it survives restarts.
 
-## Switch an agent's harness (keeping its identity and work)
+## Switch an agent's harness
 
-Scion's `reincarnate` stops an agent and starts a new generation with the same ID and slug, re-resolving its
-configuration from the current template, with a handoff note as the first task.
+Change `default_harness_config` in the role's template, then push it with
+`scripts/push-templates.py --project <project> --roles <role> --apply` (it refuses to write into another template's
+files; L16). Templates only apply when an agent is created, so the agent then has to be reincarnated or recreated.
 
-1. Change `default_harness_config` in the role's template, render it, and push it (make sure the template has its own
-   files; L16).
-2. Get a handoff: ask the agent to write one, using the format from `scion reincarnate --handoff-template`, to a file
-   in `/workspace`, and to commit nothing else.
-3. Preview, then migrate (from a CLI context linked to the project):
-   ```bash
-   scion reincarnate <agent> --dry-run                      # shows the template, image, harness and env changes
-   scion reincarnate <agent> --handoff-file <handoff.md>
-   ```
-   The agent can also migrate itself from inside its container (`scion reincarnate --handoff-file <file>`).
-4. **Check:** `factory-status.sh` shows the new harness for the agent, and its first message confirms it read the
-   handoff.
+**Reincarnate** (same ID and slug, configuration re-resolved from the template, handoff note as the first task) is the
+clean path where Scion allows it:
 
-The harness switch follows the template's default only if the agent was created without an explicit harness config.
+```bash
+scion reincarnate <agent> --dry-run                     # shows the template, image, harness and env changes
+scion reincarnate <agent> --handoff-file <handoff.md>   # handoff format: scion reincarnate --handoff-template
+```
+
+The harness follows the template's default only if the agent was created without an explicit harness config.
+
+**Recreate** where reincarnate is refused. On this factory's Hub-managed projects the dry run returns HTTP 400
+"reincarnate requires a clone-per-agent, shared-workspace or hub-managed workspace" (L21):
+
+1. Ask the agent to post the state of its work on the issues and to write a short handoff (what it was doing, what
+   is next, open questions) to a file in `/workspace`. Wait for it to confirm.
+2. `scion delete <agent>`, then `scion start <agent> -t <template> "Read /workspace/<handoff file> and the open
+   issues, then continue as <role>."`
+3. **Check:** `factory-status.sh` shows the agent on the new harness; its first message confirms it read the
+   handoff; the heartbeat schedule still reaches it (schedules address agents by name).
+
+The recreated agent has a new ID: re-create any notification subscriptions that pointed at it; its message history
+stays with the old ID.
 
 ## Restart a stuck agent
 
