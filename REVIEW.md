@@ -184,3 +184,13 @@
 - **Checks:**
     - `npm run build`: PASS
     - UI now has a smart query toggle and removable filter chips.
+
+## Wave 5 batch: #19 UI, #21 UI, #21 fix (07c75d5, d1b602b, 8ba9d06, 4ab8403)
+- **Date:** 2026-10-13
+- **Status:** PASS (reviewer, private worktree; lead independently re-ran `go vet ./...` and `go test -race ./...` on `4ab8403`: ok)
+- **Checks:**
+    - `07c75d5` (#19 UI chips + smart-query toggle): `npm run build` PASS
+    - `d1b602b` (#21 banners + explicit `parse_intent=false`): `npm run build` PASS
+    - `8ba9d06` (#21 'Você quis dizer' banner): `npm run build` PASS
+    - `4ab8403` (#21 entity-aware correction + handler regression test for `sansung`): `go vet` / `go test -race` PASS
+- **Note:** an earlier entry for `780c681` was mislabeled as #21 UI; it is a DEPLOYMENT.md-only commit.
