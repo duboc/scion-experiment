@@ -76,6 +76,7 @@ function ProductSearch({
     const [effectiveTenantId, setEffectiveTenantId] = useState(null);
     const [effectiveLocale, setEffectiveLocale] = useState(null);
     const [expandedTerms, setExpandedTerms] = useState([]);
+    const [appliedRules, setAppliedRules] = useState([]);
     const [serverFacets, setServerFacets] = useState(null);
     const [facetsLatencyMs, setFacetsLatencyMs] = useState(null);
     // State for the filters component - now a dynamic object
@@ -520,6 +521,11 @@ function ProductSearch({
                 } else {
                     setExpandedTerms([]);
                 }
+                if (response.data.applied_rules && Array.isArray(response.data.applied_rules)) {
+                    setAppliedRules(response.data.applied_rules);
+                } else {
+                    setAppliedRules([]);
+                }
                 if (response.data.facets && Object.keys(response.data.facets).length > 0) {
                     setServerFacets(response.data.facets);
                 } else {
@@ -697,6 +703,8 @@ function ProductSearch({
         setSelectedFilters({});
         setServerFacets(null);
         setFacetsLatencyMs(null);
+        setExpandedTerms([]);
+        setAppliedRules([]);
         if (options.alpha !== undefined) {
             setAlpha(options.alpha);
         }
@@ -728,6 +736,8 @@ function ProductSearch({
             // Clear any references to large data structures
             setProducts([]);
             setFilterConfigs([]);
+            setExpandedTerms([]);
+            setAppliedRules([]);
         };
     }, [fetchProducts, activeSearchQuery]);
 
@@ -1037,6 +1047,7 @@ function ProductSearch({
                                 {effectiveTenantId && ` • tenant: ${effectiveTenantId}`}
                                 {effectiveLocale && ` • locale: ${effectiveLocale}`}
                                 {facetsLatencyMs !== null && ` • facets: ${Number(facetsLatencyMs).toFixed(1)}ms`}
+                                {appliedRules && appliedRules.length > 0 && ` • applied_rules: ${appliedRules.join(', ')}`}
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                                 {effectiveAlpha !== null && (
@@ -1054,6 +1065,9 @@ function ProductSearch({
                                 {facetsLatencyMs !== null && (
                                     <Chip size="small" variant="outlined" label={`facets: ${Number(facetsLatencyMs).toFixed(1)}ms`} />
                                 )}
+                                {appliedRules && appliedRules.length > 0 && (
+                                    <Chip size="small" color="secondary" variant="outlined" label={`applied_rules: ${appliedRules.join(', ')}`} />
+                                )}
                             </Box>
                         </Box>
 
@@ -1061,6 +1075,14 @@ function ProductSearch({
                             <Box sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                                 <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
                                     Also matching: {expandedTerms.join(', ')}
+                                </Typography>
+                            </Box>
+                        )}
+
+                        {appliedRules && appliedRules.length > 0 && (
+                            <Box sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                <Typography variant="body2" color="text.secondary">
+                                    Applied rules: {appliedRules.join(', ')}
                                 </Typography>
                             </Box>
                         )}
