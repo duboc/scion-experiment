@@ -34,6 +34,7 @@ func SetupRouter(router *gin.Engine, cfg *config.Config) {
 	router.POST("/api/config/embedding-version", controller.SetEmbeddingVersion)
 	router.GET("/api/synonyms", controller.ListSynonyms)
 	router.POST("/api/synonyms", controller.UpsertSynonym)
+	router.GET("/api/autocomplete", controller.Autocomplete)
 	router.GET("/api/rules", controller.ListRules)
 	router.POST("/api/rules", controller.CreateRule)
 	router.PUT("/api/rules/:id", controller.UpdateRule)
@@ -133,6 +134,10 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         <option value="mobile">mobile</option>
         <option value="store">store</option>
       </select>
+      <input type="text" id="cep" placeholder="CEP (01310-100)" style="flex:0 0 130px;min-width:110px;" title="Calcular Entrega" onkeydown="if(event.key==='Enter') runSearch()" />
+      <label class="checkbox-wrap">
+        <input type="checkbox" id="max_sla_24h" /> 24h
+      </label>
       <label class="checkbox-wrap">
         <input type="checkbox" id="only_in_stock" /> Only in stock
       </label>
@@ -176,6 +181,8 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const onlyInStock = document.getElementById('only_in_stock').checked;
       const tenantId = document.getElementById('tenant_id') ? document.getElementById('tenant_id').value : 'default';
       const locale = document.getElementById('locale') ? document.getElementById('locale').value : '';
+      const cep = document.getElementById('cep') ? document.getElementById('cep').value.trim() : '';
+      const maxSla24h = document.getElementById('max_sla_24h') ? document.getElementById('max_sla_24h').checked : false;
       let url = '/api/search?q=' + encodeURIComponent(q) + '&alpha=' + encodeURIComponent(alpha);
       if (channel) {
         url += '&channel=' + encodeURIComponent(channel);
@@ -189,8 +196,19 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       if (locale) {
         url += '&locale=' + encodeURIComponent(locale);
       }
+      if (cep) {
+        url += '&cep=' + encodeURIComponent(cep);
+      }
+      if (maxSla24h) {
+        url += '&max_sla_hours=24';
+      }
       const res = await fetch(url);
       const data = await res.json();
+      if (!res.ok) {
+        document.getElementById('meta').textContent = 'Error: ' + (data.error || ('Request failed with status ' + res.status));
+        document.getElementById('results').innerHTML = '';
+        return;
+      }
       document.getElementById('backend-badge').textContent = 'Backend: ' + (data.backend_mode || 'spanner');
       if (document.getElementById('retrieval-badge')) {
         document.getElementById('retrieval-badge').textContent = 'Mode: ' + (data.retrieval_mode || 'hybrid');
@@ -261,13 +279,35 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         const vecScore = s.vector !== undefined ? s.vector : 0;
         const txtScore = s.text !== undefined ? s.text : 0;
         return '<div class="card">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;gap:6px;align-items:center;"><span class="' + stockClass + '">' + stockBadge + '</span>' + locBadge + '</div><span style="color:#94a3b8;font-size:12px;">' + (p.categories || []).join(', ') + '</span></div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="' + stockClass + '">' + stockBadge + '</span>' + locBadge + '<span class="delivery-badge" style="display:none;"></span></div><span style="color:#94a3b8;font-size:12px;">' + (p.categories || []).join(', ') + '</span></div>' +
           '<h3>' + p.title + '</h3>' +
           '<div style="color:#94a3b8;font-size:13px;">' + (p.description || '') + '</div>' +
           '<div class="price">$' + ((p.priceInfo && p.priceInfo.price) || '0.00') + '</div>' +
           '<div class="scores">hybrid=' + finalScore.toFixed(4) + ' | vec=' + vecScore.toFixed(4) + ' | txt=' + txtScore.toFixed(4) + '</div>' +
         '</div>';
       }).join('');
+      (data.results || []).forEach((p, i) => {
+        if (p.deliveryPromise && p.deliveryPromise.label) {
+          const card = container.children[i];
+          if (card) {
+            const badge = card.querySelector('.delivery-badge');
+            if (badge) {
+              let labelText = p.deliveryPromise.label;
+              if (p.deliveryPromise.free_shipping) {
+                labelText += ' · Frete grátis';
+              }
+              badge.textContent = labelText;
+              badge.style.display = 'inline-block';
+              badge.style.background = '#064e3b';
+              badge.style.border = '1px solid #10b981';
+              badge.style.color = '#6ee7b7';
+              badge.style.fontSize = '11px';
+              badge.style.padding = '2px 6px';
+              badge.style.borderRadius = '4px';
+            }
+          }
+        }
+      });
     }
     runSearch();
   </script>

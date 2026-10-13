@@ -22,6 +22,7 @@ type Controller struct {
 	cache        *services.EmbeddingCache // nil when the embedding service is unavailable
 	synonyms     *services.SynonymService
 	rules        *services.RuleService
+	autocomplete *services.AutocompleteService
 }
 
 func NewController(cfg *config.Config) (*Controller, error) {
@@ -60,6 +61,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 	}
 	rules := services.NewRuleService(ruleStore, 30*time.Second)
 	spannerSvc.SetRules(rules)
+	autocomplete := services.NewAutocompleteService(spannerSvc.Client(), services.DefaultSeedProducts(), 30*time.Second)
 	return &Controller{
 		config:       cfg,
 		spannerSvc:   spannerSvc,
@@ -67,6 +69,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		cache:        cache,
 		synonyms:     synonyms,
 		rules:        rules,
+		autocomplete: autocomplete,
 	}, nil
 }
 
@@ -397,4 +400,32 @@ func (c *Controller) DeleteRule(ctx *gin.Context) {
 		return
 	}
 	ctx.Status(http.StatusNoContent)
+}
+
+// Autocomplete: GET /api/autocomplete?q=<prefix>&locale=&tenant_id=&limit= (Issue #9, ADR-006).
+func (c *Controller) Autocomplete(ctx *gin.Context) {
+	start := time.Now()
+	q := ctx.Query("q")
+	if len(q) > 100 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "q too long (max 100)"})
+		return
+	}
+	limit := 8
+	if v, err := strconv.Atoi(ctx.Query("limit")); err == nil && v > 0 {
+		limit = v
+	}
+	if limit > 20 {
+		limit = 20
+	}
+	sugg, cached, err := c.autocomplete.Suggest(ctx.Request.Context(), tenantParam(ctx), strings.TrimSpace(ctx.Query("locale")), q, limit)
+	if err != nil {
+		log.Printf("WARN: autocomplete: %v", err)
+		sugg = []services.Suggestion{} // degrade to no suggestions, never 5xx on typeahead
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"query":       q,
+		"suggestions": sugg,
+		"cached":      cached,
+		"latency_ms":  float64(time.Since(start).Microseconds()) / 1000.0,
+	})
 }

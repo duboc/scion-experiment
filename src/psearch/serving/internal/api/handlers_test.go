@@ -408,3 +408,26 @@ func TestDeliveryPromiseSearch(t *testing.T) {
 		t.Fatal("no CEP => no delivery promise")
 	}
 }
+
+// Issue #9: /api/autocomplete endpoint.
+func TestAutocompleteEndpoint(t *testing.T) {
+	r := newTestRouter()
+	req := httptest.NewRequest(http.MethodGet, "/api/autocomplete?q=geladei&locale=pt-BR", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	var resp struct {
+		Suggestions []struct {
+			Text string `json:"text"`
+		} `json:"suggestions"`
+		LatencyMs float64 `json:"latency_ms"`
+	}
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &resp) != nil || len(resp.Suggestions) == 0 || !strings.HasPrefix(resp.Suggestions[0].Text, "geladeira") {
+		t.Fatalf("autocomplete: %d %s", w.Code, w.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/autocomplete?q="+strings.Repeat("x", 101), nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("long q = %d, want 400", w.Code)
+	}
+}
