@@ -196,7 +196,10 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			// Falling back to the in-memory engine here would mask the outage with
 			// deterministic 768-d vector scores.
 			return SearchOutcome{Results: res, RetrievalMode: RetrievalLexicalOnly}, nil
-		case len(res) > 0:
+		default:
+			// A successful Spanner query is authoritative even when it returns no rows
+			// (e.g. tenant/category filters exclude everything). Falling back to the
+			// in-memory seed engine here could leak products Spanner filtered out (#4).
 			mode := RetrievalHybridV1
 			if plan.column == vectorColumnV2 {
 				mode = RetrievalHybridV2
