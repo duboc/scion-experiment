@@ -199,3 +199,8 @@
 - **Date:** 2026-10-13
 - **Status:** PASS (reviewer, read-only worktree procedure)
 - **Checks:** go vet PASS; go test -race PASS; ADR-008 compliance confirmed (interleaved product_prices + 019b seed, effective price via split-local lookups scoped by tenant, exclusive assortment, effective-price filters and price facet, sort_by after availability/pins/buries, LTR skipped for price sorts, 400 validation, bound params).
+
+## #20 Session personalization + #22 UI (497fee6)
+- **Date:** 2026-10-13
+- **Status:** PASS (reviewer, read-only worktree procedure)
+- **Checks:** go vet PASS; go test -race PASS; npm run build PASS (pre-existing eslint warnings only); ADR-007 session personalization compliant; #22 UI price-table/sort selectors and struck-through base price present.

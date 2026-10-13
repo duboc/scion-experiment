@@ -85,6 +85,9 @@ func TestPricingSQL(t *testing.T) {
 			t.Errorf("SQL missing %q", frag)
 		}
 	}
+	if !strings.HasPrefix(optimizerHint, "@{OPTIMIZER_VERSION=") {
+		t.Error("hybrid query must carry the optimizer-version statement hint (SCORE needs v6+)")
+	}
 	if !strings.Contains(facetPriceSQL, "product_prices") {
 		t.Error("price facet must use the effective price")
 	}

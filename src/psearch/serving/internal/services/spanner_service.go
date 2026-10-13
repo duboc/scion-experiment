@@ -328,6 +328,9 @@ var catalogFilterSQL = `COALESCE(is_visible, TRUE)
 					AND ` + assortmentSQL + `
 					AND ` + deliveryFilterSQL
 
+// optimizerHint pins the hybrid query to the latest Spanner query optimizer.
+const optimizerHint = "@{OPTIMIZER_VERSION=latest_version} "
+
 // buildHybridSQL renders the RRF hybrid query. column is always one of the
 // package constants (never user input). Unavailable products (is_available =
 // FALSE or stock <= 0) are always ordered after available ones.
@@ -460,7 +463,11 @@ func matchesChannel(requested string, channels []string) bool {
 }
 
 func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64, plan vectorPlan, filters models.SearchFilters) ([]models.SearchResult, error) {
-	sql := buildHybridSQLWith(plan.column, plan.lexicalOnly, s.config.TextFolding)
+	// The correlated product_prices lookups (#22) change the plan shape; SCORE() in
+	// the fts leg then requires query optimizer version >= 6, which is newer than the
+	// database default. A statement hint is the least invasive fix (verified by
+	// deployer on psearch-db: sqlcheck 27/27).
+	sql := optimizerHint + buildHybridSQLWith(plan.column, plan.lexicalOnly, s.config.TextFolding)
 	queryText := query
 	if s.config.TextFolding {
 		queryText = FoldAccents(query)
