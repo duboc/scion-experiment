@@ -215,7 +215,12 @@ app.get('/api/eval', async (req, res) => {
       // is_sample=true whenever anything is not from a real measured source
       const isSample = Boolean(!hasRealReqs || !hasRealAlpha || !hasRealMetrics || reqData.is_sample);
 
-      const requirements = hasRealReqs ? reqData.requirements : defaultUnmeasuredRequirements;
+      const rawRequirements = hasRealReqs ? reqData.requirements : defaultUnmeasuredRequirements;
+      const requirements = rawRequirements.map(r => ({
+        ...r,
+        id: r.code || r.id,
+        name: r.title || r.name
+      }));
       const alphaCurve = hasRealAlpha ? reqData.alpha_curve : [];
       const diagnostics = Array.isArray(reqData.diagnostics) ? reqData.diagnostics : [];
       const goldenQueries = Array.isArray(reqData.golden_queries) ? reqData.golden_queries : [];
@@ -234,16 +239,22 @@ app.get('/api/eval', async (req, res) => {
         target_url: servingUrl,
         backend_mode: 'spanner',
         overall_ndcg_at_10: run.ndcg_at_10,
+        ndcg_at_10: run.ndcg_at_10,
         overall_mrr_at_10: run.mrr_at_10,
+        mrr_at_10: run.mrr_at_10,
         optimal_alpha: reqData.optimal_alpha ?? null,
         p50_latency_ms: run.p50_ms,
+        p50_ms: run.p50_ms,
         p95_latency_ms: run.p95_ms,
+        p95_ms: run.p95_ms,
         p99_latency_ms: run.p99_ms,
+        p99_ms: run.p99_ms,
         pass_count: passCount,
         partial_count: partialCount,
         pending_count: pendingCount,
         not_measured_count: notMeasuredCount,
         alpha_curve: alphaCurve,
+        alphaCurve: alphaCurve,
         requirements: requirements,
         diagnostics: diagnostics,
         golden_queries: goldenQueries
@@ -258,17 +269,27 @@ app.get('/api/eval', async (req, res) => {
       target_url: servingUrl,
       backend_mode: 'spanner',
       overall_ndcg_at_10: null,
+      ndcg_at_10: null,
       overall_mrr_at_10: null,
+      mrr_at_10: null,
       optimal_alpha: null,
       p50_latency_ms: null,
+      p50_ms: null,
       p95_latency_ms: null,
+      p95_ms: null,
       p99_latency_ms: null,
+      p99_ms: null,
       pass_count: 0,
       partial_count: 0,
       pending_count: 0,
       not_measured_count: 10,
       alpha_curve: [],
-      requirements: defaultUnmeasuredRequirements,
+      alphaCurve: [],
+      requirements: defaultUnmeasuredRequirements.map(r => ({
+        ...r,
+        id: r.code || r.id,
+        name: r.title || r.name
+      })),
       diagnostics: [],
       note: 'Spanner eval_runs table currently has no rows; metrics are unmeasured'
     });
@@ -293,8 +314,23 @@ app.get('/api/workbench', async (req, res) => {
     const resp = await fetch(target);
     const data = await resp.json();
     const elapsed = Date.now() - start;
+    const rawResults = Array.isArray(data.results) ? data.results : [];
+    const normalizedResults = rawResults.map(r => {
+      const isAvailable = r.is_available === true || r.availability === 'IN_STOCK' || (r.availableQuantity !== undefined && r.availableQuantity > 0);
+      const stock = r.availableQuantity ?? r.stock ?? 0;
+      const brand = r.brand || (Array.isArray(r.brands) ? r.brands.join(', ') : '');
+      const finalScore = (r.score && r.score.final_score !== undefined) ? r.score.final_score : r.final_score;
+      return {
+        ...r,
+        brand,
+        is_available: isAvailable,
+        stock,
+        final_score: finalScore
+      };
+    });
     res.json({
       ...data,
+      results: normalizedResults,
       probe_latency_ms: elapsed
     });
   } catch (err) {

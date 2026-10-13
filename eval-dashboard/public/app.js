@@ -294,16 +294,20 @@
           tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:1rem;">No matching catalog results for current query &amp; filter parameters.</td></tr>';
         } else {
           tbody.innerHTML = items.map((item, idx) => {
-            const availBadge = item.is_available
-              ? '<span class="badge badge--pass"><span class="badge-dot"></span>IN_STOCK (' + (item.stock ?? 0) + ')</span>'
+            const isAvail = item.is_available === true || item.availability === 'IN_STOCK' || (item.availableQuantity !== undefined && item.availableQuantity > 0);
+            const stockQty = item.availableQuantity ?? item.stock ?? (isAvail ? 'In Stock' : 0);
+            const availBadge = isAvail
+              ? '<span class="badge badge--pass"><span class="badge-dot"></span>IN_STOCK (' + stockQty + ')</span>'
               : '<span class="badge badge--pending">OUT_OF_STOCK (0)</span>';
+            const brandStr = item.brand || (Array.isArray(item.brands) ? item.brands.join(', ') : '');
+            const finalScore = (item.score && item.score.final_score !== undefined) ? item.score.final_score : item.final_score;
             return '<tr>' +
               '<td class="mono num">#' + (idx + 1) + '</td>' +
               '<td class="mono">' + escapeHTML(item.id) + '</td>' +
-              '<td><strong>' + escapeHTML(item.title) + '</strong> <span style="color:var(--text-muted);">· ' + escapeHTML(item.brand || '') + '</span></td>' +
+              '<td><strong>' + escapeHTML(item.title) + '</strong>' + (brandStr ? (' <span style="color:var(--text-muted);">· ' + escapeHTML(brandStr) + '</span>') : '') + '</td>' +
               '<td class="mono">' + escapeHTML(item.locale || 'en-US') + '</td>' +
               '<td>' + availBadge + '</td>' +
-              '<td class="mono num">' + (item.final_score !== undefined ? Number(item.final_score).toFixed(4) : '--') + '</td>' +
+              '<td class="mono num">' + (finalScore !== undefined ? Number(finalScore).toFixed(4) : '--') + '</td>' +
             '</tr>';
           }).join('');
         }
