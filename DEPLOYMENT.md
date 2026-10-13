@@ -388,3 +388,9 @@ Source: clean `git archive` of **`1fad8cfc8b220d01960cb2384d79a3527d510e8b`** (#
 
 Regressions: sansung → samsung auto-corrected, prod-010; geladera → geladeira; default intent max_price 200; tenis → prod-002 first; cep SP → 12 promises; LTR baseline; acme → 0 results with `hybrid_v2`; autocomplete gel; storefront/health 200. Logs clean (no SCORE/optimizer, WARN, fallback, PermissionDenied or ERROR).
 Follow-up: UI commit `299f7ec` (#20 session panel) landed after `1fad8cf` and ships as a separate small deploy.
+
+## #20 UI follow-up (session panel / storefront session field): LIVE 2026-10-13
+
+Source: clean `git archive` of **`299f7ec5ca66b9a83b16e3063757eeef26afecca`** (review `d6a2ab7`); the only image change since `1fad8cf` is `internal/api/routes.go` (React files aren't in the image). No DDL; env unchanged. sqlcheck 32 OK / 0 FAIL. Deploy → **`psearch-serving-00024-ltv`**, then `update-traffic --to-latest` (100%, follows latest). Rollback target: `00023-z7g`.
+- Storefront `/` → 200 with the session field (`session_id`), personalized badges, and click/purchase tracking to `/api/session/events`; the LTR toggle, "Você quis dizer" banner and price_table selector are still present
+- Unchanged API behavior: runner session personalized (001, 003, 002, …) vs baseline (001, 003, 008, …); b2b-corporate asc → prod-015 at 107.1; sansung → samsung → prod-010; cep SP → 12; bad session_id → 400; health 200. Logs clean
