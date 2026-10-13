@@ -135,13 +135,28 @@ Make each folder a checkout of the repository on its branch, as the Hub OS user 
 `factory.env` values; on the VM, type them in or export them first):
 
 ```bash
+# 1. Build project ($BUILD_PROJECT, tracking $BUILD_BRANCH / main)
 cd ~/.scion/projects/$BUILD_PROJECT && git init -b $BUILD_BRANCH && git remote add origin https://github.com/$GITHUB_REPO.git
 git -c credential.helper='!f(){ echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f' fetch origin
 git checkout -B $BUILD_BRANCH origin/$BUILD_BRANCH      # skip for an empty repository
 mkdir -p .git/info && printf '.scion/\n.agents/\nscratchpad/\n*.env\n.env*\n' >> .git/info/exclude
-# same for $EVAL_PROJECT with $EVAL_BRANCH
+
+# 2. Evaluation project ($EVAL_PROJECT, initialized as an independent orphan trunk with no shared ancestry)
+cd ~/.scion/projects/$EVAL_PROJECT && git init && git remote add origin https://github.com/$GITHUB_REPO.git
+git -c credential.helper='!f(){ echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f' fetch origin
+if git ls-remote --exit-code --heads origin "$EVAL_BRANCH" >/dev/null 2>&1; then
+  git checkout -B "$EVAL_BRANCH" "origin/$EVAL_BRANCH"
+else
+  git switch --orphan "$EVAL_BRANCH"
+  git commit --allow-empty -m "chore(eval): initialize independent $EVAL_BRANCH orphan trunk"
+  git -c credential.helper='!f(){ echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f' push -u origin "$EVAL_BRANCH"
+fi
+mkdir -p .git/info && printf '.scion/\n.agents/\nscratchpad/\n*.env\n.env*\n' >> .git/info/exclude
 ```
 *(Writing to `.git/info/exclude` instead of `.gitignore` keeps the working tree clean and prevents permanent untracked/dirty conflicts between agents).*
+
+> [!NOTE]
+> `$EVAL_BRANCH` is an **orphan branch** (`--orphan`): it shares no commit ancestry with `$BUILD_BRANCH` (`main`), so `git merge` and GitHub pull requests refuse to merge `$EVAL_BRANCH` into `$BUILD_BRANCH` (or vice versa), and the evaluation workspace never carries product application code (L25).
 
 Register the deployer identity in each project (via Web UI Project Settings → Service Accounts, or from a CLI context linked to that project), so deploy agents can run
 as it (Scion `assign` mode):
@@ -152,7 +167,7 @@ scion project service-accounts add "$DEPLOYER_SA_NAME@$SANDBOX_PROJECT.iam.gserv
 scion project service-accounts list          # note the ID; `verify <id>` re-checks impersonation
 ```
 
-**Check:** `scion project service-accounts list` shows the SA as verified in both projects.
+**Check:** `scion project service-accounts list` shows the SA as verified in both projects. Inside each project folder, `git status -sb` tracks its respective branch, and `git merge-base "origin/$BUILD_BRANCH" "origin/$EVAL_BRANCH"` exits with code 1 (proving independent orphan trunks with no shared ancestry).
 
 ## 7. Patch the Antigravity hooks (before any Antigravity agent starts)
 

@@ -343,3 +343,19 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
 - **Encoded in:** [`config/hub-settings.example.yaml`](config/hub-settings.example.yaml),
   [`scripts/factory-watchdog.py`](scripts/factory-watchdog.py),
   [operations-runbook.md](operations-runbook.md#after-a-scion-upgrade).
+
+## L25. Initialize `EVAL_BRANCH` as an orphan branch (`git switch --orphan`) so it can never be merged into `main`
+
+- **What we found:** When two parallel factories (`psearch` building the product and `psearch-eval` observing it) share a single GitHub repository, branching `eval-dashboard` (`EVAL_BRANCH`) off `main` (`BUILD_BRANCH`) creates shared Git ancestry. This introduces two serious failure modes:
+  1. The evaluation workspace inherits product application code, build files, and Dockerfiles (`cmd/`, `internal/`, `go.mod`, etc.) that are irrelevant to the eval dashboard and cause confusing git conflicts or mistaken test runs.
+  2. A confused agent or automated tool can attempt to merge, rebase, or open a pull request between the branches, risking product regressions or polluting the product history with eval tooling.
+- **Fix:**
+  - Initialize `EVAL_BRANCH` as an **orphan branch** using `git switch --orphan "$EVAL_BRANCH"` (or create an empty root commit and push).
+  - An orphan branch has 0 shared ancestor commits with `main` (`git merge-base origin/main origin/eval-dashboard` exits 1). Git and GitHub will refuse unrelated history merges by default.
+  - In existing repositories where `eval-dashboard` was branched off `main`, rewrite the branch root or strip stale application files from `eval-dashboard` history using `git filter-branch` while temporarily pausing branch protection rulesets.
+- **Encoded in:** [setup-runbook.md](setup-runbook.md#6-hub-projects-and-the-deployer-identity),
+  [architecture.md](architecture.md#components),
+  [agent-protocol.md](agent-protocol.md#git-in-a-shared-workspace),
+  [`templates/_shared/agents.md`](templates/_shared/agents.md),
+  [`templates/lead/system-prompt.md`](templates/lead/system-prompt.md),
+  [`templates/eval-lead/system-prompt.md`](templates/eval-lead/system-prompt.md).

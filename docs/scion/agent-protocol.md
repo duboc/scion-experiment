@@ -83,6 +83,8 @@ staging only its own files (`git add <files> && git commit -m "... (#N)" && git 
 stash uncommitted edits before rebasing (`git stash push -u -m "pre-rebase" && git pull --rebase origin <branch> && git push origin <branch> && git stash pop`),
 and destructive git commands are forbidden because they would destroy other agents' uncommitted work. The [v2 design](specs/factory-orchestration-v2-design.md) replaces this with one clone, branch and PR per issue.
 
+`BUILD_BRANCH` (`main`) and `EVAL_BRANCH` (`eval-dashboard`) are **independent orphan branches** (`git switch --orphan`) in `GITHUB_REPO` that share no Git ancestry and are **never merged into each other**. Each factory operates strictly within its own trunk: agents in `BUILD_PROJECT` commit to `main`, and agents in `EVAL_PROJECT` commit to `eval-dashboard`. Never open a pull request, merge, rebase, or cherry-pick between these two branches (L25).
+
 ## Adapting the protocol
 
 - Keep the protocol short and in one shared file; every rule you add competes for the agents' attention.
