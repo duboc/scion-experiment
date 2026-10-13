@@ -164,6 +164,13 @@
     - `go vet` and `go test -race`: PASS
     - ADR-007 (Conversational Query): PASS
 
+### Follow-up: 612d939
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go test -race`: PASS
+    - `parse_intent` is now on by default.
+
 ## #21: Zero-results Recovery (d674656)
 - **Date:** 2026-10-13
 - **Status:** PASS
