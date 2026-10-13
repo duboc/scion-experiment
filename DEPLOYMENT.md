@@ -183,3 +183,19 @@ Verification on `00013-5vm`:
 - `retrieval_mode=hybrid_v2` on all non-empty queries. Logs show no WARN, fallback, InvalidArgument, PermissionDenied, lexical, embedding cache store or ERROR
 
 **Finding (labeling bug, not a rollback trigger):** legitimate zero-result Spanner queries (`tenant_id=acme`; `category=Computers&brand=Nike`) report `retrieval_mode=memory_fallback`. `HybridSearch` only returns the Spanner outcome when `len(res) > 0`; on a successful empty result it falls through to `memoryHybridSearch`. There's no SQL error (logs clean, sqlcheck shows the same case as `hybrid_v2` rows=0). Risks: it breaks the "memory_fallback = SQL error" signal, and if the Spanner catalog diverges from the seed set, memory mode could return products Spanner correctly filtered out. Suggested fix: return the Spanner result (with `hybrid_v2`/`hybrid_v1`) whenever `err == nil`, even when empty.
+
+## #4 follow-up: empty Spanner results are authoritative: LIVE 2026-10-13
+
+Source: clean `git archive` of **`abf6432393b0dfe340396ae0e07875f330edddd2`** (only change in the image: `spanner_service.go`, where `case len(res) > 0` becomes `default`). Env unchanged (`TEXT_FOLDING=true`). No DDL.
+`cmd/sqlcheck`: 9/9 + facets OK, `hybrid_v2`, exit 0. Deploy → **`psearch-serving-00014-pc5`**, then `update-traffic --to-latest` (100%, follows latest). Rollback target: `00013-5vm`.
+
+| Check | Result |
+|---|---|
+| `q=shoes&tenant_id=acme` | ✅ 0 results, `results=[]`, **`retrieval_mode=hybrid_v2`** (was `memory_fallback` on 00013) |
+| `q=shoes&category=Computers&brand=Nike` | ✅ 0 results, **`hybrid_v2`** |
+| `q=tenis&alpha=0` | ✅ prod-002 first |
+| `q=tenis&locale=pt-BR` | ✅ 5 results, all pt-BR |
+| `category=Computers&brand=Acer` | ✅ prod-006 |
+| facets | ✅ 4 groups on every response; `facets_latency_ms` 5.7–15 ms (absent on empty results) |
+| `only_in_stock` / `channel=store` | ✅ 13 / 9 (prod-002 absent) |
+| Logs | ✅ one expected cold-start `WARN: embedding cache store read failed (treated as miss): DeadlineExceeded … getting session` (200 ms read budget on a new instance; agreed non-blocking); nothing else |
