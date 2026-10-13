@@ -1,24 +1,26 @@
 package models
 
 type SearchRequest struct {
-	Query       string   `json:"query" form:"q"`
-	Limit       *int     `json:"limit,omitempty" form:"limit"`
-	MinScore    *float64 `json:"min_score,omitempty" form:"min_score"`
-	Alpha       *float64 `json:"alpha,omitempty" form:"alpha"`
-	Category    string   `json:"category,omitempty" form:"category"`
-	Brand       string   `json:"brand,omitempty" form:"brand"`
-	OnlyInStock bool     `json:"only_in_stock,omitempty" form:"only_in_stock"`
-	Channel     string   `json:"channel,omitempty" form:"channel"`
-	TenantID    string   `json:"tenant_id,omitempty" form:"tenant_id"`
-	Locale      string   `json:"locale,omitempty" form:"locale"`
-	CEP         string   `json:"cep,omitempty" form:"cep"`
-	LTR         bool     `json:"ltr,omitempty" form:"ltr"`
-	MaxSLAHours int64    `json:"max_sla_hours,omitempty" form:"max_sla_hours"`
-	MinPrice    float64  `json:"min_price,omitempty" form:"min_price"`
-	MaxPrice    float64  `json:"max_price,omitempty" form:"max_price"`
-	ParseIntent *bool    `json:"parse_intent,omitempty" form:"parse_intent"`
-	PriceTable  string   `json:"price_table_id,omitempty" form:"price_table_id"`
-	SortBy      string   `json:"sort_by,omitempty" form:"sort_by"` // default true (ADR-007); false disables
+	Query             string   `json:"query" form:"q"`
+	Limit             *int     `json:"limit,omitempty" form:"limit"`
+	MinScore          *float64 `json:"min_score,omitempty" form:"min_score"`
+	Alpha             *float64 `json:"alpha,omitempty" form:"alpha"`
+	Category          string   `json:"category,omitempty" form:"category"`
+	Brand             string   `json:"brand,omitempty" form:"brand"`
+	OnlyInStock       bool     `json:"only_in_stock,omitempty" form:"only_in_stock"`
+	Channel           string   `json:"channel,omitempty" form:"channel"`
+	TenantID          string   `json:"tenant_id,omitempty" form:"tenant_id"`
+	Locale            string   `json:"locale,omitempty" form:"locale"`
+	CEP               string   `json:"cep,omitempty" form:"cep"`
+	LTR               bool     `json:"ltr,omitempty" form:"ltr"`
+	MaxSLAHours       int64    `json:"max_sla_hours,omitempty" form:"max_sla_hours"`
+	MinPrice          float64  `json:"min_price,omitempty" form:"min_price"`
+	MaxPrice          float64  `json:"max_price,omitempty" form:"max_price"`
+	ParseIntent       *bool    `json:"parse_intent,omitempty" form:"parse_intent"`
+	PriceTable        string   `json:"price_table_id,omitempty" form:"price_table_id"`
+	SortBy            string   `json:"sort_by,omitempty" form:"sort_by"`
+	SessionID         string   `json:"session_id,omitempty" form:"session_id"`
+	SessionProductIDs []string `json:"session_product_ids,omitempty" form:"session_product_ids"` // default true (ADR-007); false disables
 }
 
 // SearchFilters are the catalog filters applied server-side (ADR-002, Issues #3/#4/#5).
@@ -64,6 +66,8 @@ type SearchResponse struct {
 	QueryRelaxed     bool           `json:"query_relaxed,omitempty"`
 	PriceTableID     string         `json:"price_table_id,omitempty"` // Issue #22
 	SortBy           string         `json:"sort_by,omitempty"`
+	SessionID        string         `json:"session_id,omitempty"` // Issue #20 (ADR-007)
+	Personalized     bool           `json:"personalized,omitempty"`
 }
 
 type FacetBucket struct {

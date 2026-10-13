@@ -26,6 +26,7 @@ type Controller struct {
 	ltrModel     *services.LTRModel
 	intent       *services.QueryUnderstandingService
 	spell        *services.SpellCheckService
+	session      *services.SessionService
 }
 
 func NewController(cfg *config.Config) (*Controller, error) {
@@ -85,6 +86,11 @@ func NewController(cfg *config.Config) (*Controller, error) {
 	for _, syn := range services.DefaultSynonyms() {
 		spell.AddVocabulary([]models.SearchResult{{Title: syn.Term + " " + strings.Join(syn.Synonyms, " ")}}, nil)
 	}
+	var sessionStore services.SessionStore = services.NewMemorySessionStore()
+	if client := spannerSvc.Client(); client != nil {
+		sessionStore = services.SpannerSessionStore{Client: client}
+	}
+	session := services.NewSessionService(sessionStore, spannerSvc, cfg.SessionBoostWeight)
 	ltrModel := services.DefaultLTRModel()
 	if cfg.LTRModelJSON != "" {
 		if m, err := services.ParseLTRModel(cfg.LTRModelJSON); err != nil {
@@ -105,6 +111,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		ltrModel:     ltrModel,
 		intent:       intent,
 		spell:        spell,
+		session:      session,
 	}, nil
 }
 
@@ -164,6 +171,10 @@ func (c *Controller) Search(ctx *gin.Context) {
 		}
 		req.PriceTable = ctx.Query("price_table_id")
 		req.SortBy = ctx.Query("sort_by")
+		req.SessionID = ctx.Query("session_id")
+		if v := ctx.Query("session_product_ids"); v != "" {
+			req.SessionProductIDs = strings.Split(v, ",")
+		}
 		if v, err := strconv.ParseFloat(ctx.Query("min_price"), 64); err == nil {
 			req.MinPrice = v
 		}
@@ -359,6 +370,27 @@ intentDone:
 		}
 		ltrRes = services.Rerank(c.ltrModel, results, signals, outcome.Pins, outcome.Buries)
 	}
+	// ADR-007 (Issue #20): session-aware re-ranking by the session centroid.
+	personalized := false
+	if req.SessionID != "" || len(req.SessionProductIDs) > 0 {
+		var events []services.SessionEvent
+		if req.SessionID != "" && services.ValidSessionID(req.SessionID) {
+			if ev, err := c.session.Recent(ctx.Request.Context(), filters.TenantID, req.SessionID); err != nil {
+				log.Printf("WARN: session events unavailable: %v", err)
+			} else {
+				events = ev
+			}
+		}
+		for i, id := range req.SessionProductIDs {
+			if i >= 20 {
+				break
+			}
+			if id = strings.TrimSpace(id); id != "" {
+				events = append(events, services.SessionEvent{ProductID: id, EventType: "click"})
+			}
+		}
+		personalized = c.session.Personalize(ctx.Request.Context(), filters.TenantID, events, results, outcome.Pins, outcome.Buries, req.SortBy, ltrRes.ModelVersion != "")
+	}
 	if len(results) > limit {
 		results = results[:limit]
 	}
@@ -392,6 +424,8 @@ intentDone:
 		QueryRelaxed:     relaxed,
 		PriceTableID:     req.PriceTable,
 		SortBy:           req.SortBy,
+		SessionID:        req.SessionID,
+		Personalized:     personalized,
 		RetrievalMode:    outcome.RetrievalMode,
 	})
 }
@@ -573,4 +607,42 @@ func (c *Controller) Autocomplete(ctx *gin.Context) {
 		"cached":      cached,
 		"latency_ms":  float64(time.Since(start).Microseconds()) / 1000.0,
 	})
+}
+
+// RecordSessionEvent: POST /api/session/events {session_id, product_id, event_type, tenant_id?} (Issue #20).
+func (c *Controller) RecordSessionEvent(ctx *gin.Context) {
+	var e services.SessionEvent
+	if err := ctx.ShouldBindJSON(&e); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if e.TenantID == "" {
+		e.TenantID = tenantParam(ctx)
+	}
+	saved, err := c.session.Record(ctx.Request.Context(), e)
+	if err != nil {
+		if strings.Contains(err.Error(), "must") || strings.Contains(err.Error(), "required") {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		} else {
+			log.Printf("WARN: record session event: %v", err)
+			ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "event not recorded"})
+		}
+		return
+	}
+	ctx.JSON(http.StatusCreated, saved)
+}
+
+// ListSessionEvents: GET /api/session/events?session_id=... (newest first, last 20).
+func (c *Controller) ListSessionEvents(ctx *gin.Context) {
+	sid := ctx.Query("session_id")
+	if !services.ValidSessionID(sid) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid session_id"})
+		return
+	}
+	events, err := c.session.Recent(ctx.Request.Context(), tenantParam(ctx), sid)
+	if err != nil {
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "session unavailable"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"session_id": sid, "events": events, "count": len(events)})
 }

@@ -98,6 +98,10 @@ function ProductSearch({
     const [effectiveLocale, setEffectiveLocale] = useState(null);
     const [expandedTerms, setExpandedTerms] = useState([]);
     const [appliedRules, setAppliedRules] = useState([]);
+    const [priceTableId, setPriceTableId] = useState('');
+    const [effectivePriceTableId, setEffectivePriceTableId] = useState('');
+    const [sortBy, setSortBy] = useState('');
+    const [effectiveSortBy, setEffectiveSortBy] = useState('');
     const [serverFacets, setServerFacets] = useState(null);
     const [facetsLatencyMs, setFacetsLatencyMs] = useState(null);
     // State for the filters component - now a dynamic object
@@ -508,6 +512,12 @@ function ProductSearch({
             const extractedFiltersToUse = (searchParams && searchParams.extractedFilters !== undefined)
                 ? searchParams.extractedFilters
                 : activeExtractedFiltersRef.current;
+            const priceTableIdToUse = (searchParams && searchParams.priceTableId !== undefined)
+                ? searchParams.priceTableId
+                : priceTableId;
+            const sortByToUse = (searchParams && searchParams.sortBy !== undefined)
+                ? searchParams.sortBy
+                : sortBy;
 
             const payload = {
                 query: queryToUse,
@@ -554,6 +564,12 @@ function ProductSearch({
             }
             if (ltr) {
                 payload.ltr = true;
+            }
+            if (priceTableIdToUse) {
+                payload.price_table_id = priceTableIdToUse;
+            }
+            if (sortByToUse) {
+                payload.sort_by = sortByToUse;
             }
 
             const response = await axios.post(`${API_URL}/search`, payload);
@@ -629,6 +645,16 @@ function ProductSearch({
                 } else {
                     setLtrLatencyUs(null);
                 }
+                if (response.data.price_table_id !== undefined) {
+                    setEffectivePriceTableId(response.data.price_table_id);
+                } else {
+                    setEffectivePriceTableId('');
+                }
+                if (response.data.sort_by !== undefined) {
+                    setEffectiveSortBy(response.data.sort_by);
+                } else {
+                    setEffectiveSortBy('');
+                }
             }
 
             // Simple processing - just map products without modifying anything
@@ -663,6 +689,8 @@ function ProductSearch({
             setAutoCorrected(false);
             setQueryRelaxed(false);
             setDidYouMean('');
+            setEffectivePriceTableId('');
+            setEffectiveSortBy('');
             const serverErrMsg = error.response?.data?.error || error.response?.data?.message;
             const displayError = serverErrMsg || error.message || 'An error occurred while searching';
             setError(displayError);
@@ -671,7 +699,7 @@ function ProductSearch({
         } finally {
             setLoading(false);
         }
-    }, [activeSearchQuery, alpha, channel, onlyInStock, selectedCategory, selectedBrand, tenantId, locale, cep, maxSla24h, ltr]);
+    }, [activeSearchQuery, alpha, channel, onlyInStock, selectedCategory, selectedBrand, tenantId, locale, cep, maxSla24h, ltr, priceTableId, sortBy]);
 
     // Handler for filter changes from the Filters component - now works with dynamic filter IDs
     const handleFilterChange = useCallback((filterId, value, isChecked) => {
@@ -829,6 +857,12 @@ function ProductSearch({
             setParseIntent(options.parseIntent);
             parseIntentRef.current = options.parseIntent;
         }
+        if (options.priceTableId !== undefined) {
+            setPriceTableId(options.priceTableId);
+        }
+        if (options.sortBy !== undefined) {
+            setSortBy(options.sortBy);
+        }
         setParsedQuery(null);
         setActiveExtractedFilters(null);
         activeExtractedFiltersRef.current = null;
@@ -843,13 +877,15 @@ function ProductSearch({
             fetchProducts({
                 query: nextQuery,
                 parseIntent: options.parseIntent !== undefined ? options.parseIntent : parseIntentRef.current,
+                priceTableId: options.priceTableId !== undefined ? options.priceTableId : priceTableId,
+                sortBy: options.sortBy !== undefined ? options.sortBy : sortBy,
             });
         }
         // Update active search query which triggers API call
         setActiveSearchQuery(nextQuery);
         // Reset AI filter suggestions when a new search is performed
         setShowAIFilterSuggestions(true);
-    }, [setTenantId, setLocale, fetchProducts, activeSearchQuery]);
+    }, [setTenantId, setLocale, fetchProducts, activeSearchQuery, priceTableId, sortBy]);
 
     const handleRemoveExtractedFilter = useCallback((filterKey) => {
         const currentFilters = activeExtractedFiltersRef.current || {};
@@ -1025,7 +1061,26 @@ function ProductSearch({
                                         <Typography variant="h6" color="primary">
                                             ${product.priceInfo?.price}
                                         </Typography>
-                                        {product.priceInfo?.originalPrice &&
+                                        {product.priceInfo?.priceTableId ? (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', mb: 0.5 }}>
+                                                <Typography
+                                                    variant="body2"
+                                                    color="text.secondary"
+                                                    sx={{ textDecoration: 'line-through' }}
+                                                >
+                                                    ${product.priceInfo?.basePrice !== undefined && product.priceInfo?.basePrice !== null
+                                                        ? Number(product.priceInfo.basePrice).toFixed(2)
+                                                        : (product.priceInfo?.originalPrice || '')}
+                                                </Typography>
+                                                <Chip
+                                                    label={`Contrato: ${product.priceInfo.priceTableId}`}
+                                                    size="small"
+                                                    color="secondary"
+                                                    variant="outlined"
+                                                    sx={{ height: 20, fontSize: '0.7rem' }}
+                                                />
+                                            </Box>
+                                        ) : (product.priceInfo?.originalPrice &&
                                             product.priceInfo.originalPrice !== "0" &&
                                             parseFloat(product.priceInfo.originalPrice) > parseFloat(product.priceInfo.price) && (
                                                 <Typography
@@ -1035,7 +1090,7 @@ function ProductSearch({
                                                 >
                                                     ${product.priceInfo.originalPrice}
                                                 </Typography>
-                                            )}
+                                            ))}
                                         {(() => {
                                             const isStockIn = product.availability === 'IN_STOCK';
                                             const stockBadge = isStockIn
@@ -1217,6 +1272,10 @@ function ProductSearch({
                             setParseIntent(val);
                             parseIntentRef.current = val;
                         }}
+                        priceTableId={priceTableId}
+                        setPriceTableId={setPriceTableId}
+                        sortBy={sortBy}
+                        setSortBy={setSortBy}
                     />
 
                     {/* Display search result count and search metadata */}
@@ -1376,6 +1435,8 @@ function ProductSearch({
                                 {appliedRules && appliedRules.length > 0 && ` • applied_rules: ${appliedRules.join(', ')}`}
                                 {effectiveLtr && ltrModel && ` • ltr: ${ltrModel} (${ltrLatencyUs || 0}µs)`}
                                 {parsedQuery && parsedQuery.intent_source && parsedQuery.intent_source !== 'none' && ` • intent: ${parsedQuery.intent_source}`}
+                                {effectivePriceTableId && ` • price_table: ${effectivePriceTableId}`}
+                                {effectiveSortBy && ` • sort: ${effectiveSortBy}`}
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                                 {effectiveAlpha !== null && (
@@ -1404,6 +1465,12 @@ function ProductSearch({
                                 )}
                                 {parsedQuery && parsedQuery.intent_source && parsedQuery.intent_source !== 'none' && (
                                     <Chip size="small" color="info" variant="outlined" label={`intent: ${parsedQuery.intent_source}`} />
+                                )}
+                                {effectivePriceTableId && (
+                                    <Chip size="small" color="primary" variant="outlined" label={`price_table: ${effectivePriceTableId}`} />
+                                )}
+                                {effectiveSortBy && (
+                                    <Chip size="small" variant="outlined" label={`sort: ${effectiveSortBy}`} />
                                 )}
                             </Box>
                         </Box>

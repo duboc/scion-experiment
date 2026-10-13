@@ -35,6 +35,8 @@ func SetupRouter(router *gin.Engine, cfg *config.Config) {
 	router.GET("/api/synonyms", controller.ListSynonyms)
 	router.POST("/api/synonyms", controller.UpsertSynonym)
 	router.GET("/api/autocomplete", controller.Autocomplete)
+	router.POST("/api/session/events", controller.RecordSessionEvent)
+	router.GET("/api/session/events", controller.ListSessionEvents)
 	router.GET("/api/rules", controller.ListRules)
 	router.POST("/api/rules", controller.CreateRule)
 	router.PUT("/api/rules/:id", controller.UpdateRule)
@@ -113,6 +115,8 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <span class="badge" id="locale-badge" style="display:none;"></span>
       <span class="badge" id="ltr-badge" style="display:none;"></span>
       <span class="badge" id="intent-badge" style="display:none;"></span>
+      <span class="badge" id="price-table-badge" style="display:none;"></span>
+      <span class="badge" id="sort-badge" style="display:none;"></span>
     </div>
   </header>
   <main>
@@ -136,6 +140,17 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         <option value="web">web</option>
         <option value="mobile">mobile</option>
         <option value="store">store</option>
+      </select>
+      <select id="price_table_id" title="Tabela de preço">
+        <option value="">Varejo Padrão</option>
+        <option value="b2b-corporate">B2B Corporate</option>
+        <option value="b2b-gold">B2B Gold</option>
+        <option value="vip-club">VIP Club</option>
+      </select>
+      <select id="sort_by" title="Ordenar por">
+        <option value="">Relevância</option>
+        <option value="price_asc">Menor preço</option>
+        <option value="price_desc">Maior preço</option>
       </select>
       <input type="text" id="cep" placeholder="CEP (01310-100)" style="flex:0 0 130px;min-width:110px;" title="Calcular Entrega" onkeydown="if(event.key==='Enter') runSearch()" />
       <label class="checkbox-wrap">
@@ -196,9 +211,17 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const maxSla24h = document.getElementById('max_sla_24h') ? document.getElementById('max_sla_24h').checked : false;
       const ltr = document.getElementById('ltr') ? document.getElementById('ltr').checked : false;
       const parseIntent = document.getElementById('parse_intent') ? document.getElementById('parse_intent').checked : true;
+      const priceTableId = document.getElementById('price_table_id') ? document.getElementById('price_table_id').value : '';
+      const sortBy = document.getElementById('sort_by') ? document.getElementById('sort_by').value : '';
       let url = '/api/search?q=' + encodeURIComponent(q) + '&alpha=' + encodeURIComponent(alpha);
       if (channel) {
         url += '&channel=' + encodeURIComponent(channel);
+      }
+      if (priceTableId) {
+        url += '&price_table_id=' + encodeURIComponent(priceTableId);
+      }
+      if (sortBy) {
+        url += '&sort_by=' + encodeURIComponent(sortBy);
       }
       if (onlyInStock) {
         url += '&only_in_stock=true';
@@ -268,6 +291,22 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           document.getElementById('intent-badge').style.display = 'none';
         }
       }
+      if (document.getElementById('price-table-badge')) {
+        if (data.price_table_id) {
+          document.getElementById('price-table-badge').textContent = 'Table: ' + data.price_table_id;
+          document.getElementById('price-table-badge').style.display = 'inline-block';
+        } else {
+          document.getElementById('price-table-badge').style.display = 'none';
+        }
+      }
+      if (document.getElementById('sort-badge')) {
+        if (data.sort_by) {
+          document.getElementById('sort-badge').textContent = 'Sort: ' + data.sort_by;
+          document.getElementById('sort-badge').style.display = 'inline-block';
+        } else {
+          document.getElementById('sort-badge').style.display = 'none';
+        }
+      }
       const facetLat = data.facets_latency_ms !== undefined ? data.facets_latency_ms : (data.facets && data.facets.latency_ms);
       if (facetLat !== undefined && facetLat !== null) {
         document.getElementById('facets-latency').textContent = Number(facetLat).toFixed(1) + 'ms';
@@ -275,7 +314,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         document.getElementById('facets-latency').textContent = '';
       }
       document.getElementById('meta').textContent =
-        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none' ? ', intent=' + data.parsed_query.intent_source : '') + ')';
+        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none' ? ', intent=' + data.parsed_query.intent_source : '') + (data.price_table_id ? ', table=' + data.price_table_id : '') + (data.sort_by ? ', sort=' + data.sort_by : '') + ')';
       
       const expEl = document.getElementById('expanded-terms');
       if (expEl) {
@@ -415,7 +454,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           '<div style="display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="' + stockClass + '">' + stockBadge + '</span>' + locBadge + '<span class="rank-badge" style="display:none;"></span><span class="delivery-badge" style="display:none;"></span></div><span style="color:#94a3b8;font-size:12px;">' + (p.categories || []).join(', ') + '</span></div>' +
           '<h3>' + p.title + '</h3>' +
           '<div style="color:#94a3b8;font-size:13px;">' + (p.description || '') + '</div>' +
-          '<div class="price">$' + ((p.priceInfo && p.priceInfo.price) || '0.00') + '</div>' +
+          '<div class="price"><span class="price-val">$' + ((p.priceInfo && p.priceInfo.price) || '0.00') + '</span><span class="base-price" style="display:none;text-decoration:line-through;color:var(--muted);font-size:14px;font-weight:normal;margin-left:8px;"></span><span class="contract-badge" style="display:none;margin-left:8px;"></span></div>' +
           '<div class="scores">hybrid=' + finalScore.toFixed(4) + ' | vec=' + vecScore.toFixed(4) + ' | txt=' + txtScore.toFixed(4) + ltrScore + '</div>' +
         '</div>';
       }).join('');
@@ -458,6 +497,29 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
             badge.style.fontSize = '11px';
             badge.style.padding = '2px 6px';
             badge.style.borderRadius = '4px';
+          }
+        }
+        if (p.priceInfo && p.priceInfo.priceTableId) {
+          const baseEl = card.querySelector('.base-price');
+          if (baseEl) {
+            const baseVal = p.priceInfo.basePrice !== undefined && p.priceInfo.basePrice !== null
+              ? Number(p.priceInfo.basePrice).toFixed(2)
+              : p.priceInfo.originalPrice;
+            if (baseVal) {
+              baseEl.textContent = '$' + baseVal;
+              baseEl.style.display = 'inline';
+            }
+          }
+          const contractEl = card.querySelector('.contract-badge');
+          if (contractEl) {
+            contractEl.textContent = 'Contrato: ' + p.priceInfo.priceTableId;
+            contractEl.style.display = 'inline-block';
+            contractEl.style.background = '#1e293b';
+            contractEl.style.border = '1px solid #38bdf8';
+            contractEl.style.color = '#38bdf8';
+            contractEl.style.fontSize = '11px';
+            contractEl.style.padding = '2px 6px';
+            contractEl.style.borderRadius = '4px';
           }
         }
       });

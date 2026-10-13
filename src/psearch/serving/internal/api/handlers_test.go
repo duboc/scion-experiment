@@ -547,3 +547,40 @@ func TestContractPricingSearch(t *testing.T) {
 		}
 	}
 }
+
+// Issue #20: session events endpoint + personalized search.
+func TestSessionPersonalizationEndpoints(t *testing.T) {
+	r := newTestRouter()
+	post := func(body string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/session/events", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+	if code := post(`{"session_id":"bad","product_id":"prod-001","event_type":"click"}`); code != http.StatusBadRequest {
+		t.Fatalf("invalid session = %d", code)
+	}
+	for _, id := range []string{"prod-005", "prod-007"} {
+		if code := post(`{"session_id":"sess-laptop-01","product_id":"` + id + `","event_type":"purchase"}`); code != http.StatusCreated {
+			t.Fatalf("record = %d", code)
+		}
+	}
+	plain := doSearch(t, r, "q=shoes&limit=15")
+	pers := doSearch(t, r, "q=shoes&limit=15&session_id=sess-laptop-01")
+	if !pers.Personalized || pers.SessionID != "sess-laptop-01" || plain.Personalized {
+		t.Fatalf("personalized=%v session=%q plain=%v", pers.Personalized, pers.SessionID, plain.Personalized)
+	}
+	if ids(plain.Results) == ids(pers.Results) {
+		t.Fatal("session history should change the ranking")
+	}
+	if alt := doSearch(t, r, "q=shoes&limit=15&session_product_ids=prod-003"); !alt.Personalized {
+		t.Fatal("session_product_ids should personalize without stored events")
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/session/events?session_id=sess-laptop-01", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"count":2`) {
+		t.Fatalf("list events: %d %s", w.Code, w.Body.String())
+	}
+}
