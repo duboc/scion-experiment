@@ -50,13 +50,16 @@ flowchart TB
 
 | Component | Where | Role |
 |---|---|---|
-| Scion Hub | VM in `HUB_PROJECT`, user `HUB_OS_USER` | `scion server start --foreground --hosted --enable-hub --enable-web --web-port 8080 --enable-runtime-broker`: state (SQLite `~/.scion/hub.db`), web UI, and a co-located Docker runtime broker that runs every agent container. Nightly release channel with automatic updates. |
+| Scion Hub | VM in `HUB_PROJECT`, user `HUB_OS_USER` | `scion server start --foreground --hosted --enable-hub --enable-web --web-port 8080 --enable-runtime-broker`: state (SQLite `~/.scion/hub.db`), web UI, and a co-located Docker runtime broker that runs every agent container. Nightly release channel with `notify` update policy (controlled updates). |
 | IAP proxy | Cloud Run in `HUB_PROJECT` | The web UI and API are reached through Identity-Aware Proxy (`server.auth.mode: proxy`). Agents talk to the Hub over the VM's internal address (`server.hub.agent_endpoint`). |
 | Agent containers | Docker on the VM, named `<project>--<agent>` | One container per agent, with its harness (Claude Code, Antigravity, OpenCode, Hermes) in a tmux session `scion`. `/workspace` is the project folder `~/.scion/projects/<project>`. |
 | Harness configs | `~/.scion/harness-configs/<harness>/` on the VM | Image, provisioner, launch command and auth per harness. Note that in hosted mode, the Hub provisions agents from bundled configs in `~/.scion/workspace-storage/hubs/<hub-id>/harness-configs/global/` rather than `~/.scion/harness-configs/<harness>/` directly. Project pre-start hooks are used for durable post-provisioning customization. All harnesses use Vertex AI with the VM's identity, billed to `HUB_PROJECT` ([`config/hub-settings.example.yaml`](config/hub-settings.example.yaml)). |
 | Templates | Hub, per project | Role prompts and settings ([`templates/`](templates/)). |
 | Schedules | Hub | Admin-owned cron jobs that message each lead every 15 minutes (the heartbeat). |
+| Watchdog daemon | cron on the VM | [`factory-watchdog.py`](scripts/factory-watchdog.py) runs every 5 minutes: guards provisioners against drift, restores schedules, wakes suspended agents, restarts crashed workers (3/hr circuit breaker), and forwards PO escalations to Cloud Logging. |
 | Agent-status sync | cron on the VM | [`sync-factory-agents.py`](scripts/sync-factory-agents.py) copies agent state from `hub.db` to Spanner every minute, so the dashboard can show it without Hub access. |
+| Backups | cron & GCE snapshots | [`backup-hub.sh`](scripts/backup-hub.sh) creates daily online SQLite backups and state tarballs (14-day retention); GCE disk snapshot policy runs daily at 04:00 UTC. |
+| Alerts & Budgets | Cloud Monitoring in `HUB_PROJECT` | Log-based alert policy on `scion-factory-alerts` (Cloud Monitoring email notifications to PO). Monthly billing budgets ($150 Hub, $150 Sandbox) with 50%, 80%, 100% actual and 120% forecasted spend threshold alerts. |
 | GitHub repo | `GITHUB_REPO` | Issues are the backlog and the record of work; `BUILD_BRANCH` holds the product, `EVAL_BRANCH` the eval code. |
 | Sandbox | `SANDBOX_PROJECT` | Everything the factories build and run: the product service, its Spanner and BigQuery data, the dashboard, Firestore, a data bucket, the `github-token` secret. Kept apart from the Hub project so agents can't break the Hub. |
 
@@ -91,6 +94,9 @@ The PO escalation path is narrow on purpose: IAM grants, cost, scope. Everything
 
 - **Heartbeat:** every 15 minutes a schedule messages each lead ([`config/heartbeat-message.txt`](config/heartbeat-message.txt)).
   The lead re-checks its agents and the issues, nudges whoever is overdue, moves work forward, and sets its status.
+- **Watchdog & Circuit Breaker:** [`scripts/factory-watchdog.py`](scripts/factory-watchdog.py) runs every 5 minutes on the VM to catch provisioner drift, restore schedules, wake suspended agents, and restart crashed workers with a 3/hr circuit breaker.
+- **Push Alerts:** PO escalations and circuit-breaker triggers are forwarded to Cloud Logging (`scion-factory-alerts`) to send real-time email alerts to the PO.
+- **Controlled Updates:** `server.maintenance.update_policy: notify` prevents unannounced Hub updates from resetting provisioner configurations.
 - **Turn discipline:** every agent ends each turn with `sciontool status blocked | task_completed | ask_user`, so a
   quiet agent can be told apart from a dead one.
 - **Delivery checks:** agents only count a handoff as done when `scion message` printed `Message delivered` (or `Message sent to user:` for the PO).

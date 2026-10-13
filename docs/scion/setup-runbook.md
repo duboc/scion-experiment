@@ -39,7 +39,7 @@ What this factory used (deployed via Scion's `scripts/single-node-vm/deploy.sh`)
   `HUB_PROJECT` that SA has `roles/aiplatform.user` (all model calls), `roles/logging.logWriter`,
   `roles/monitoring.metricWriter` and `roles/cloudtrace.agent` (telemetry).
 - Built with `deploy.sh`: `machine_size: small`, `disk_size_gb: 200`, `admin_email: $PO_EMAIL`,
-  `release_channel: nightly`, `update_policy: auto`, `container_images.source: build`.
+  `release_channel: nightly`, `update_policy: notify` (use `notify` rather than `auto` so Scion updates do not restart the Hub unannounced or overwrite provisioners; see [operations-runbook.md](operations-runbook.md#after-a-scion-upgrade)), `container_images.source: build`.
 - Docker, git, `sqlite3` and python3 on the VM; the Hub runs as OS user `HUB_OS_USER`, which owns `~/.scion` and can
   use Docker.
 - systemd unit `scion-hub.service` running
@@ -210,7 +210,7 @@ scripts/run-on-hub.sh scripts/scion-admin.py schedule create --project "$EVAL_PR
 **Check:** after the next quarter hour, `schedule list` shows `runs=1 errors=0`, and the leads' terminals show they
 ran the heartbeat steps.
 
-## 10. Agent-status sync and backups
+## 10. Agent-status sync, backups, and watchdog
 
 Install the Hub -> Spanner status sync:
 
@@ -225,9 +225,26 @@ Install daily consistent Hub backups and cron:
 scripts/run-on-hub.sh scripts/backup-hub.sh --install-cron
 ```
 
-**Check:** `crontab -l` on the Hub VM lists both `sync_factory_agents.py` and `backup-hub.sh`, the sync first run prints `synced 10 agents`, `~/.scion/factory-sync.log` gains a line every minute, and `~/backups` contains initial database and state archives.
+Install the watchdog daemon (every 5 minutes):
 
-## 11. Start the work
+```bash
+scripts/run-on-hub.sh scripts/factory-watchdog.py --install-cron --apply
+```
+
+**Check:** `crontab -l` on the Hub VM lists `sync_factory_agents.py`, `backup-hub.sh`, and `factory-watchdog.py`. The sync first run prints `synced 10 agents`, `~/.scion/factory-sync.log` gains a line every minute, `~/backups` contains initial database and state archives, and `~/.scion/watchdog-state.json` contains active agent bookmarks.
+
+## 11. Push alerts and billing budgets
+
+Configure Cloud Monitoring email notifications for PO escalations and set monthly GCP billing budgets ($150 on Hub, $150 on Sandbox):
+
+```bash
+DRY_RUN=1 scripts/setup-alerts-and-budgets.sh   # preview actions
+scripts/setup-alerts-and-budgets.sh             # apply
+```
+
+**Check:** `gcloud beta monitoring channels list --project=$HUB_PROJECT` lists the email channel for `$ADMIN_EMAIL`, `gcloud alpha monitoring policies list --project=$HUB_PROJECT` shows policy `Scion Factory Watchdog & PO Escalation Alerts` enabled, and `gcloud billing budgets list --billing-account=$BA` lists the $150 budgets for both projects.
+
+## 12. Start the work
 
 Tell each lead to go, with the rules of autonomy spelled out:
 

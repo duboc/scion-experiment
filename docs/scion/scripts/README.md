@@ -6,8 +6,11 @@ VM at run time, and the GitHub token is only ever piped through stdin.
 
 | Script | Runs on | Changes things? | What it does |
 |---|---|---|---|
-| [`run-on-hub.sh`](run-on-hub.sh) | your machine | no (transport) | Ships a local script to the Hub VM base64-encoded and runs it as the Hub OS user (`.py` with python3, anything else with bash), forwarding the factory variables. Avoids the nested-quoting trap of `gcloud compute ssh --command` (L1). |
+| [`run-on-hub.sh`](run-on-hub.sh) | your machine | no (transport) | Streams a local script to the Hub VM over SSH stdin into a temporary file and runs it as the Hub OS user (`.py` with python3, anything else with bash), forwarding factory variables. Avoids nested quoting and argument length limits (L1, M7). |
 | [`factory-status.sh`](factory-status.sh) | Hub VM | no | One-screen health check: agents with phase/activity/idle minutes, schedules, recent messages, the PO inbox, failed dispatches, workspace git state, containers, optional terminal tails (`--panes N`). |
+| [`factory-watchdog.py`](factory-watchdog.py) | Hub VM (cron) | with `--apply` | Watchdog daemon running every 5 min: checks Antigravity provisioner drift, restores broken heartbeat schedules, wakes suspended agents, auto-restarts failed agents with a 3/hr circuit breaker, and forwards `user:<email>` PO inbox escalations to Cloud Logging. |
+| [`backup-hub.sh`](backup-hub.sh) | Hub VM (cron) | creates backups | Consistent SQLite online backup (`.backup`), tarball state archive of `~/.scion`, cron registration, and automated 14-day retention pruning. |
+| [`setup-alerts-and-budgets.sh`](setup-alerts-and-budgets.sh) | your machine | GCP | Provisions Cloud Monitoring email alert channel, log-based alert policy for `scion-factory-alerts` (PO escalations and circuit breaker trips), and $150 monthly billing budgets on Hub and Sandbox projects with threshold alerts. |
 | [`scion-admin.py`](scion-admin.py) | Hub VM | yes | PO/admin actions through the Hub API with a short-lived admin token: `projects`, `message`, `schedule list/create/update/pause/resume`, `experiments`. |
 | [`sync-factory-agents.py`](sync-factory-agents.py) | Hub VM (cron) | Spanner rows | Upserts live agent state from the Hub DB into Spanner `factory_agent_status` for the eval dashboard. `--dry-run` prints the SQL. |
 | [`install-sync-cron.sh`](install-sync-cron.sh) | your machine | Hub VM crontab | Installs/updates the sync script, its `sync.env` and the every-minute cron line; runs one sync. `--dry-run` prints the remote script. |

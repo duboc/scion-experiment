@@ -26,7 +26,7 @@ server:
     backend: local
   maintenance:
     release_channel: nightly
-    update_policy: auto                        # nightly auto-update can overwrite local patches to harness-configs
+    update_policy: notify                      # Set to 'notify' (not 'auto') so Scion updates do not restart the Hub or overwrite managed harness files unannounced; see operations-runbook.md
 harness_configs:
   antigravity:
     harness: antigravity
