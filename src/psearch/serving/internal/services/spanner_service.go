@@ -7,6 +7,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/spanner"
@@ -23,6 +24,8 @@ type SpannerService struct {
 	backendMode  string
 	synonyms     *SynonymService // optional query expansion (Issue #7)
 	rules        *RuleService    // optional merchandising rules (Issue #6)
+	inventory    []InventoryRow  // memory-mode regional inventory (Issue #8), lazily built
+	invOnce      sync.Once
 }
 
 // SetRules installs the merchandising rule service (Issue #6, ADR-004).
@@ -302,7 +305,8 @@ const catalogFilterSQL = `COALESCE(is_visible, TRUE)
 					AND IFNULL(tenant_id, 'default') = @tenant_id
 					AND (@locale = '' OR IFNULL(locale, '') = @locale)
 					AND (@category = '' OR LOWER(IFNULL(category, '')) = @category)
-					AND (@brand = '' OR LOWER(IFNULL(brand, '')) = @brand)`
+					AND (@brand = '' OR LOWER(IFNULL(brand, '')) = @brand)
+					AND ` + deliveryFilterSQL
 
 // buildHybridSQL renders the RRF hybrid query. column is always one of the
 // package constants (never user input). Unavailable products (is_available =
@@ -457,6 +461,8 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		"locale":         f.Locale,
 		"category":       f.Category,
 		"brand":          f.Brand,
+		"zip5":           f.Zip5,
+		"max_sla":        f.MaxSLAHours,
 		"alpha":          alpha,
 		"limit":          int64(limit),
 		"channel":        f.Channel,
@@ -623,7 +629,8 @@ func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, min
 		if filters.OnlyInStock && isUnavailable(items[i].prod.Availability, items[i].prod.AvailableQuantity) {
 			continue
 		}
-		if !matchesChannel(filters.Channel, items[i].prod.Channels) || !matchesCatalog(filters, items[i].prod) {
+		if !matchesChannel(filters.Channel, items[i].prod.Channels) || !matchesCatalog(filters, items[i].prod) ||
+			!s.deliverableInMemory(items[i].prod.ID, filters.Zip5, filters.MaxSLAHours) {
 			continue
 		}
 		items[i].vecRRF = 1.0 / float64(60+items[i].vecRank)

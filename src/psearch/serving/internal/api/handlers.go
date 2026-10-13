@@ -119,6 +119,11 @@ func (c *Controller) Search(ctx *gin.Context) {
 		req.Brand = ctx.Query("brand")
 		req.Locale = ctx.Query("locale")
 		req.TenantID = ctx.Query("tenant_id")
+		if v := ctx.Query("max_sla_hours"); v != "" {
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+				req.MaxSLAHours = n
+			}
+		}
 		req.Channel = ctx.Query("channel")
 		req.CEP = ctx.Query("cep")
 		if v := ctx.Query("only_in_stock"); v == "true" || v == "1" {
@@ -149,7 +154,18 @@ func (c *Controller) Search(ctx *gin.Context) {
 		alpha = 1
 	}
 
+	zip5, cepErr := services.NormalizeCEP(req.CEP)
+	if cepErr != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": cepErr.Error()})
+		return
+	}
+	if req.MaxSLAHours < 0 || req.MaxSLAHours > 24*60 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "max_sla_hours must be between 0 and 1440"})
+		return
+	}
 	filters := models.SearchFilters{
+		Zip5:        zip5,
+		MaxSLAHours: req.MaxSLAHours,
 		OnlyInStock: req.OnlyInStock,
 		Channel:     strings.ToLower(strings.TrimSpace(req.Channel)),
 		Category:    req.Category,
@@ -190,6 +206,22 @@ func (c *Controller) Search(ctx *gin.Context) {
 	candidates := len(results)
 	if len(results) > limit {
 		results = results[:limit]
+	}
+	if zip5 != "" && len(results) > 0 {
+		pageIDs := make([]string, 0, len(results))
+		for _, r := range results {
+			pageIDs = append(pageIDs, r.ID)
+		}
+		if promises, err := c.spannerSvc.DeliveryPromises(ctx.Request.Context(), pageIDs, zip5, req.MaxSLAHours); err != nil {
+			log.Printf("WARN: delivery promises unavailable: %v", err)
+		} else {
+			for i := range results {
+				if p, ok := promises[results[i].ID]; ok {
+					p.CEP = req.CEP
+					results[i].DeliveryPromise = p
+				}
+			}
+		}
 	}
 	tenant := strings.TrimSpace(req.TenantID)
 	if tenant == "" {

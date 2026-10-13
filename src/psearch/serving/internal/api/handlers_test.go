@@ -385,3 +385,26 @@ func TestRulesCRUD(t *testing.T) {
 		t.Fatal("rule still listed after delete")
 	}
 }
+
+// Issue #8: CEP + max_sla_hours filter, delivery promise on each result, invalid CEP -> 400.
+func TestDeliveryPromiseSearch(t *testing.T) {
+	r := newTestRouter()
+	resp := doSearch(t, r, "q=shoes&limit=15&cep=01310-100&max_sla_hours=24")
+	if len(resp.Results) == 0 {
+		t.Fatal("expected deliverable results for CEP 01310-100")
+	}
+	for _, res := range resp.Results {
+		if res.DeliveryPromise == nil || res.DeliveryPromise.SLAHours > 24 || res.DeliveryPromise.CEP != "01310-100" {
+			t.Fatalf("%s promise = %+v", res.ID, res.DeliveryPromise)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/search?q=shoes&cep=123", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid CEP = %d, want 400", w.Code)
+	}
+	if noCEP := doSearch(t, r, "q=shoes&limit=3"); noCEP.Results[0].DeliveryPromise != nil {
+		t.Fatal("no CEP => no delivery promise")
+	}
+}

@@ -13,6 +13,7 @@ type SearchRequest struct {
 	Locale      string   `json:"locale,omitempty" form:"locale"`
 	CEP         string   `json:"cep,omitempty" form:"cep"`
 	LTR         bool     `json:"ltr,omitempty" form:"ltr"`
+	MaxSLAHours int64    `json:"max_sla_hours,omitempty" form:"max_sla_hours"`
 }
 
 // SearchFilters are the catalog filters applied server-side (ADR-002, Issues #3/#4/#5).
@@ -23,6 +24,8 @@ type SearchFilters struct {
 	Brand       string // exact (case-insensitive) brand match; empty = all
 	TenantID    string // ADR-002 / Issue #4; empty = "default"
 	Locale      string // ADR-002 / Issue #4 (pt-BR, en-US, es-MX); empty = all locales
+	Zip5        string // ADR-005 / Issue #8: 5-digit CEP prefix; empty = no delivery filter
+	MaxSLAHours int64  // ADR-005: maximum delivery SLA in hours; 0 = any
 }
 
 type SearchResponse struct {
@@ -86,9 +89,10 @@ type DeliveryPromise struct {
 	RegionCode   string  `json:"region_code"`
 	CDID         string  `json:"cd_id"`
 	SellerID     string  `json:"seller_id"`
-	SLAHours     int     `json:"sla_hours"`
+	SLAHours     int64   `json:"sla_hours"`
 	FreeShipping bool    `json:"free_shipping"`
 	ShippingCost float64 `json:"shipping_cost"`
+	Label        string  `json:"label"` // e.g. "Chega amanhã - CD São Paulo" (ADR-005, Issue #8)
 }
 
 type Image struct {

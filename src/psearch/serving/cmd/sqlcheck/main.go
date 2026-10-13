@@ -70,6 +70,8 @@ func main() {
 		{"geladeira", 0, models.SearchFilters{Locale: "pt-BR"}},
 		{"notebook gamer", 0.5, models.SearchFilters{}},
 		{"running shoes", 0.5, models.SearchFilters{}}, // rule params non-empty (pin/bury/boost)
+		{"shoes", 0.5, models.SearchFilters{Zip5: "01310", MaxSLAHours: 24}},
+		{"notebook", 0.5, models.SearchFilters{Zip5: "20040"}},
 	}
 	failed := false
 	for _, c := range cases {
@@ -80,6 +82,13 @@ func main() {
 			continue
 		}
 		log.Printf("OK   q=%q alpha=%.1f filters=%+v rows=%d mode=%s", c.q, c.alpha, c.filters, n, mode)
+	}
+	// Delivery promises (Issue #8): interleaved regional_inventory JOIN skus.
+	if p, err := svc.DeliveryPromises(ctx, []string{"prod-001", "prod-002", "prod-003", "prod-004"}, "01310", 0); err != nil {
+		failed = true
+		log.Printf("FAIL delivery promises: %v", err)
+	} else {
+		log.Printf("OK   delivery promises for 01310: %d products", len(p))
 	}
 	// Facet queries (Issue #5) over the full catalog.
 	if f, err := svc.Facets(ctx, []string{"prod-001", "prod-002", "prod-004", "prod-012"}); err != nil {
