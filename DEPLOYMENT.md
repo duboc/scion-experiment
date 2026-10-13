@@ -199,3 +199,24 @@ Source: clean `git archive` of **`abf6432393b0dfe340396ae0e07875f330edddd2`** (o
 | facets | ✅ 4 groups on every response; `facets_latency_ms` 5.7–15 ms (absent on empty results) |
 | `only_in_stock` / `channel=store` | ✅ 13 / 9 (prod-002 absent) |
 | Logs | ✅ one expected cold-start `WARN: embedding cache store read failed (treated as miss): DeadlineExceeded … getting session` (200 ms read budget on a new instance; agreed non-blocking); nothing else |
+
+## #7 tenant/locale synonym expansion: LIVE 2026-10-13
+
+Source: clean `git archive` of **`6d62e7e257d1bf86c48cfa8c884f5cbd4b96b9c0`**. Env unchanged (v2, `TEXT_FOLDING=true`, no `ADMIN_TOKEN`).
+
+| Step | Result |
+|---|---|
+| DDL `015_search_synonyms.sql` | ✅ `search_synonyms` (PK `tenant_id, locale, term`) |
+| DML `015b_seed_synonyms.dml.sql` | ✅ "Statement modified 8 rows": pt-BR fone/geladeira/notebook/tenis, en-US fridge/laptop/sneakers/tv, weight 0.3 |
+| `cmd/sqlcheck` | ✅ `search_synonyms rows=8 expand(geladeira,pt-BR)=[fridge refrigerador refrigerator]`; 11 search cases + facets OK (`geladeira` a=0 → 5, `notebook gamer` → 15), `hybrid_v2`, exit 0 |
+| Deploy → **`psearch-serving-00015-dzf`**, then `update-traffic --to-latest` | ✅ 100%, follows latest. Rollback target: `00014-pc5` |
+
+Verification on `00015-dzf`:
+- `q=geladeira&locale=pt-BR&alpha=0` → **prod-011 "Geladeira…" first**, `expanded_terms=[fridge, refrigerador, refrigerator]`
+- prod-012 "Smart French Door Refrigerator" is **en-US**, so `locale=pt-BR` correctly excludes it. Without a locale (`q=geladeira&alpha=0`) it **appears with text score 0.0161 > 0 via the synonym, ordered last (OUT_OF_STOCK)**. Exact-first holds: prod-011 is at text rank 1
+- `q=laptop&locale=en-US` → `expanded_terms=[computer, notebook]`; prod-005 "…Laptop" first, prod-007 also text>0
+- `GET /api/synonyms?locale=pt-BR` → `count=4` (fone, geladeira, notebook, tenis). `POST /api/synonyms` → **403** (no or bogus token); table still 8 rows
+- Regressions: `tenis&alpha=0` → prod-002 first; `tenant_id=acme` → 0 results, `hybrid_v2`; pt-BR 5; Acer → prod-006; store 9; in-stock 13; facets 4 groups; cache miss 315 ms → hit 15 ms
+- Logs: no WARN, fallback, InvalidArgument, PermissionDenied, lexical or ERROR
+
+Notes: (a) with no `locale`, expansion uses synonyms from every locale of the tenant (e.g. `tenis` gets the pt-BR set), which may be intended; (b) an expansion can repeat the query phrase itself (`fone de ouvido` → `[fone de ouvido, headphones]`), which is harmless.
