@@ -24,10 +24,12 @@ type Suggestion struct {
 
 // autocompleteSQL uses the accent-folded n-gram TOKENLIST (migration 018) for
 // substring matching and prefers prefix matches, then CTR, then volume.
+// SEARCH_NGRAMS must not be OR-ed with non-indexed predicates (Spanner rejects that
+// query shape); with ngram_size_min=2 it already matches every >=2-char prefix.
 const autocompleteSQL = `SELECT suggestion_text, IFNULL(search_count, 0), IFNULL(ctr_score, 0), locale
 	FROM autocomplete_suggestions
 	WHERE tenant_id = @tenant AND (@locale = '' OR locale = @locale)
-		AND (SEARCH_NGRAMS(suggestion_ngrams, @q) OR STARTS_WITH(suggestion_folded, @q))
+		AND SEARCH_NGRAMS(suggestion_ngrams, @q)
 	ORDER BY IF(STARTS_WITH(suggestion_folded, @q), 0, 1), ctr_score DESC, search_count DESC, suggestion_text
 	LIMIT @limit`
 

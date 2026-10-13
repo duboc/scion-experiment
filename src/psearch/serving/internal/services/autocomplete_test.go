@@ -59,6 +59,9 @@ func TestAutocompleteSQL(t *testing.T) {
 	if !strings.Contains(autocompleteSQL, "SEARCH_NGRAMS(suggestion_ngrams, @q)") || !strings.Contains(autocompleteSQL, "ctr_score DESC, search_count DESC") {
 		t.Fatal("autocomplete SQL must use n-grams and rank by CTR then volume")
 	}
+	if strings.Contains(autocompleteSQL, "OR STARTS_WITH") {
+		t.Fatal("SEARCH_NGRAMS cannot be OR-ed with STARTS_WITH (unsupported query shape)")
+	}
 	if strings.Contains(autocompletePrefixSQL, "SEARCH_NGRAMS") {
 		t.Fatal("1-char prefix SQL must not use n-grams")
 	}
