@@ -20,7 +20,7 @@
 - **Status:** PASS
 - **Checks:**
     - `go vet` and `go test`: PASS
-    - Search responses now include `embedding_version` and `retrieval_mode`.
+    - Search responses now include `embedding_version` and `retrieal_mode`.
     - Degraded v2 searches correctly return `lexical_only_degraded` and do not fall back to the in-memory engine.
 
 ### Follow-up: a876979
@@ -64,3 +64,10 @@
     - ADR-003 (Facets): PASS
     - ADR-002 (Multilanguage): PASS
     - Security: PASS (Filters are bound parameters, facet expressions are constants)
+
+### Hotfix: abf6432
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test`: PASS
+    - Empty Spanner results are now authoritative and do not fall back to the in-memory engine.
