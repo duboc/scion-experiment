@@ -6,7 +6,7 @@ product owner (PO) only releases work, makes decisions and accepts results. Next
 factory and the product it ships.
 
 Everything here comes from running two such factories on one self-hosted Scion Hub in October 2026 (Scion nightly
-`20261002`): `psearch`, which builds a hybrid search service from 11 GitHub issues, and `psearch-eval`, which watches
+`20261002`): `psearch`, which builds a hybrid search service across 5 waves of GitHub issues (`#1`–`#11`, `#19`–`#22`), and `psearch-eval`, which watches
 it. The scripts and templates are parameterized, so you can build another factory from them.
 
 > [!IMPORTANT]

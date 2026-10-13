@@ -81,7 +81,7 @@ that waits for the PO stalls the factory for hours (L17).
 ```bash
 gh label create "$BUILD_PROJECT" -R "$GITHUB_REPO" --description "build factory backlog" --force
 gh label create "$EVAL_PROJECT" -R "$GITHUB_REPO" --description "eval factory backlog" --force
-for n in 1 2 3 4; do gh label create "wave-$n" -R "$GITHUB_REPO" --force; done
+for n in 1 2 3 4 5; do gh label create "wave-$n" -R "$GITHUB_REPO" --force; done
 ```
 
 (Run these with the values from `factory.env`, e.g. after `set -a; . config/factory.env; set +a`.)
