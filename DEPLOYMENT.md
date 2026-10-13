@@ -299,3 +299,25 @@ Source: clean `git archive` of **`5d5c13619c2ee8fb5bee972bba5452d94759ab67`** (a
 - `/api/search?q=shoes&ltr=true&limit=5` unchanged from 00018: `ltr=true`, `ltr_model=baseline-2026-10`, `ltr_latency_us=36`; identical stage1/stage2 ranks and `ltr_score`s (prod-015 6→5). Without `ltr`: no ltr fields
 - Regressions: tenis → prod-002 first; geladeira pt-BR → prod-011 first; acme → 0 results, `hybrid_v2`; cep SP → 12 promises; boost OK; OOS last; facets 4; autocomplete `gel` → geladeira; health 200
 - Logs: clean
+
+## Wave 5 #19 conversational query understanding (parser-only): LIVE 2026-10-13
+
+Source: clean `git archive` of **`7a958efb372ea4e1fb3ad2203b32e355953c20bd`** (#19 `b35ce14`, review `7a958ef`). Env unchanged; **`INTENT_LLM_FALLBACK` unset (false, parser only)**; `ADMIN_TOKEN` unset.
+
+| Step | Result |
+|---|---|
+| DDL `020_query_intent_cache.sql` | ✅ `query_intent_cache` (PK `query_hash`) |
+| `cmd/sqlcheck` | ✅ 25 OK, 0 FAIL, exit 0. New: `tenis de corrida` with `MaxPrice:200` → 5 rows; `notebook` with `MinPrice:1000 MaxPrice:1700` → 6 rows; `catalog vocabulary entries=15` |
+| Deploy → **`psearch-serving-00020-552`**, then `update-traffic --to-latest` | ✅ 100%, follows latest. Rollback target: `00019-dsr` |
+
+Verification on `00020-552`:
+- `q=tenis+de+corrida+ate+200+reais&parse_intent=true` → `parsed_query={original_query, clean_query:"tenis de corrida", extracted_filters:{max_price:200}, intent_source:"parser"}`; 5 results, all `numericPrice` ≤ 200 (169.9, 189.9, 149.5, 119, 95)
+- `q=running+shoes+adidas+under+200&parse_intent=true` → `extracted_filters={brand:"Adidas", max_price:200}`, `clean_query:"running shoes"` → **prod-001 only**
+- `…&parse_intent=true&max_price=2000` → explicit param overrides: 15 results up to 1650. Note: `parsed_query.extracted_filters` still reports the parsed `max_price:200`, not the applied value
+- `min_price=500&max_price=100` → **400** `min_price/max_price must be >= 0 and min_price <= max_price`
+- Without `parse_intent` → no `parsed_query`
+- `query_intent_cache` stays at 0 rows (parser intents are cached in-process only; the persistent store is for LLM results, and the fallback is off)
+- Regressions: tenis → prod-002 first; geladeira pt-BR → prod-011; acme → 0 results, `hybrid_v2`; cep SP → 12 promises; `ltr=true` → baseline-2026-10; boost OK; OOS last; facets 4; autocomplete `gel` → geladeira; storefront 200; health 200
+- Logs: clean
+
+Process note: during this rollout lead's uncommitted edits in `/workspace` were reverted by someone (not deployer: only read-only git plus `git archive` into `/tmp`). The image came from the archive of `7a958ef`, so it wasn't affected.
