@@ -22,12 +22,12 @@
 
 Observed on 2026-10-09/10:
 
-1. **Leads only react.** A lead ends its turn "waiting for backend…", and nothing wakes it if that message never arrives. The Hub `schedules` table is empty. After the last commit (2026-10-10 00:07Z), the psearch factory produced no commits or comments for ~19 hours.
+1. **Leads only react.** A lead ends its turn "waiting for backend…", and nothing wakes it if that message never arrives. The Hub `schedules` table is empty. After the last commit (2026-10-10 00:07Z), the psearch factory produced no commits or comments for ~19 hours (at time of initial drafting; ~60 hours total until resolved).
 2. **Worker notifications go to the PO, not the leads.** All 10 agents' subscriptions (`COMPLETED`, `WAITING_FOR_INPUT`, `LIMITS_EXCEEDED`, `STALLED`, `ERROR`) target the admin user, because the agents were created as admin.
 3. **Hub activity is noise.** 8 of 10 agents showed `stalled`. A Claude lead that ends its turn without `sciontool status blocked` is flagged `STALLED` after ~5 minutes, and the current prompts forbid `sciontool status`.
 4. **State lives in agent chat memory.** 11 open issues, no status or owner labels, no PRs. #1 has zero comments despite being dispatched; the lead implemented #11 itself after two failed backend attempts.
 5. **One shared `/workspace`.** Neither Hub project has a git remote, so every agent mounts the same folder, work is serialized through a commit slot, and parallel issues are impossible.
-6. **A lost handoff deadlocked the factory for ~23 hours.** At 00:05Z the lead told the deployer to hold #11 "until my GO" and waited for the reviewer's verdict. At 00:07Z the reviewer (Hermes) wrote "lead <- reviewer: … FAIL" in its own output but never ran `scion message`, so the Hub recorded no message. Lead, deployer and reviewer all waited on each other, and nothing woke them. The `FAIL` itself was wrong: the reviewer looked for files that don't exist (`ADR-001.md`, `011-gemini-v2-embeddings.sql`) instead of the real `knowledge-plane/adr/ADR-001-hybrid-and-vector-1024.md` and `src/iac/migrations/011_add_embedding_v2_gemini_1024.sql`.
+6. **A lost handoff deadlocked the factory for ~23 hours** (at time of drafting; ~60 hours total until resolved). At 00:05Z the lead told the deployer to hold #11 "until my GO" and waited for the reviewer's verdict. At 00:07Z the reviewer (Hermes) wrote "lead <- reviewer: … FAIL" in its own output but never ran `scion message`, so the Hub recorded no message. Lead, deployer and reviewer all waited on each other, and nothing woke them. The `FAIL` itself was wrong: the reviewer looked for files that don't exist (`ADR-001.md`, `011-gemini-v2-embeddings.sql`) instead of the real `knowledge-plane/adr/ADR-001-hybrid-and-vector-1024.md` and `src/iac/migrations/011_add_embedding_v2_gemini_1024.sql`.
 
 ## 2. Goals, non-goals, success criteria
 
@@ -176,7 +176,7 @@ This replaces the "Do NOT run `sciontool status`" instruction in every template.
 - **GCP sandbox credentials:** only on `deployer` and `eval-deployer`.
 - **Runaway guard:** worker templates get `max_duration: 4h`; leads, reviewer and deployers are unlimited.
 - **OpenCode model pin:** the `backend` template's `opencode-launch.sh` stops deleting `~/.cache/opencode/models.json` and instead writes a pinned cache containing only Vertex `gemini-2.5-pro` and `gemini-2.5-flash`.
-- **Antigravity hooks run with telemetry off:** the Hub's Antigravity harness provisioner (`~/.scion/harness-configs/antigravity/provision.py`) generates hook commands as `… | SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity`. With cloud telemetry on, `sciontool hook` prints its decision but doesn't exit; `agy` kills it after its 10-second hook timeout and aborts every tool call (reproduced on `eval-lead` on 2026-10-12: >15 s with telemetry on, <1 s with it off). Template-level `telemetry.enabled: false` doesn't help: the Hub-injected `SCION_TELEMETRY_ENABLED=true` overrides it (the `frontend` template already disables telemetry, yet runs with it on).
+- **Antigravity hooks run with telemetry off:** the Hub's Antigravity harness provisioner (`~/.scion/workspace-storage/hubs/<hub-id>/harness-configs/global/antigravity/provision.py` and agent homes `<agent-home>/.scion/harness/provision.py`) generates hook commands as `… | SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity`. In addition, durable project pre-start hooks in the database (`project_pre_start_hooks: agy-telemetry-off`) and agent pre-start scripts (`30-project-custom`) enforce this setting across container starts and recreations. With cloud telemetry on, `sciontool hook` prints its decision but doesn't exit; `agy` kills it after its 10-second hook timeout and aborts every tool call (reproduced on `eval-lead` on 2026-10-12: >15 s with telemetry on, <1 s with it off). Template-level `telemetry.enabled: false` doesn't help: the Hub-injected `SCION_TELEMETRY_ENABLED=true` overrides it (the `frontend` template already disables telemetry, yet runs with it on).
 - **PO notifications:** only the leads, with triggers `ERROR`, `CRASHED`, `OFFLINE` and `LIMITS_EXCEEDED`.
 
 ## 6. Lead loop and `factoryctl`
@@ -236,7 +236,7 @@ A worker is *stuck* when its issue has had no agent comment or push for 60 minut
 | Step | Trigger | Action |
 |---|---|---|
 | 1. Nudge | Stuck | `scion message <worker> "Status check for #N: post progress or report blocked"` |
-| 2. Interrupt or wake | 30 minutes after step 1, still stuck | `scion message --interrupt` if running, `--wake` if not |
+| 2. Interrupt or wake | 30 minutes after step 1, still stuck | `scion message --interrupt` if running, `--wake` if suspended (`scion resume` if stopped) |
 | 3. Replace | 30 minutes after step 2, or crashed, or limits exceeded | `scion delete <worker>`, then start `<worker>-r2` on the same branch with a handoff brief (issue comments plus branch state) |
 | 4. Escalate | After 2 replacements on the same issue | `status:blocked`, a diagnosis comment, and a Scion inbox message to the PO |
 
@@ -251,7 +251,7 @@ The reviewer and deployer follow the same ladder, except step 3 restarts the age
 ### 6.7 Watching the leads
 
 - A second schedule wakes each project's deployer at minutes 7 and 37 of every hour. The deployer runs `factoryctl board --check-lead`: the lead is *stale* when the board footer is older than 45 minutes or the lead shows `STALLED`, `CRASHED` or `OFFLINE`.
-- Stale: `scion message --wake lead "WATCHDOG: run your cycle"`. Still stale on the next watchdog run: `--interrupt`. Still stale after that: a Scion inbox message to the PO.
+- Stale: `scion message --wake lead "WATCHDOG: run your cycle"` (or `scion resume lead` if stopped). Still stale on the next watchdog run: `--interrupt`. Still stale after that: a Scion inbox message to the PO.
 - Agents can only message agents in their own project, so each project watches its own lead.
 
 ### 6.8 Schedules

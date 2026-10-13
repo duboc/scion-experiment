@@ -41,14 +41,21 @@ trap 'rm -f "$remote"' EXIT
 cat > "$remote" <<EOF
 set -euo pipefail
 dir="\$HOME/factory-sync"
-mkdir -p "\$dir"
+mkdir -p "\$dir" "\$HOME/.scion"
 echo '$payload' | base64 -d > "\$dir/sync_factory_agents.py"
 chmod 755 "\$dir/sync_factory_agents.py"
-cat > "\$dir/sync.env" <<'ENV'
-${sync_env}ENV
+
+gcloud_bin_dir="\$(dirname "\$(command -v gcloud || echo "/usr/bin/gcloud")")"
+sync_env_content="PATH=\${gcloud_bin_dir}:/usr/local/bin:/usr/bin:/bin"$'\n'"${sync_env}"
+
+echo "\$sync_env_content" > "\$dir/sync.env"
+echo "\$sync_env_content" > "\$HOME/.scion/sync.env"
+chmod 600 "\$dir/sync.env" "\$HOME/.scion/sync.env"
+
 line="* * * * * set -a; . \$dir/sync.env; set +a; /usr/bin/python3 \$dir/sync_factory_agents.py >> \$HOME/.scion/factory-sync.log 2>&1"
-{ crontab -l 2>/dev/null | grep -v 'factory-sync/' || true; echo "\$line"; } | crontab -
-echo "crontab:"; crontab -l | grep 'factory-sync/'
+{ crontab -l 2>/dev/null | grep -v 'sync_factory_agents.py' || true; echo "\$line"; } | crontab -
+echo "crontab:"
+crontab -l
 echo "first run:"
 set -a; . "\$dir/sync.env"; set +a
 /usr/bin/python3 "\$dir/sync_factory_agents.py"

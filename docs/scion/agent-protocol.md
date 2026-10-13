@@ -9,7 +9,7 @@ the design so you can adapt it without losing what makes it work.
 1. **GitHub is the memory.** Agents lose context (restarts, compaction, replacement). Anything another agent or the PO
    needs must be on the issue: plan, evidence, decisions, what's next.
 2. **Only delivered messages count.** An agent's own output is invisible to everyone else. A handoff exists when
-   `scion message` printed `Message delivered`, not before (L4).
+   `scion message` printed `Message delivered` (or `Message sent to user:<email>.` when messaging the PO), not before (L4).
 3. **Every turn ends with a status.** `blocked`, `task_completed` or `ask_user` tells the Hub, and anyone looking,
    whether an agent is waiting on purpose or dead (L5).
 4. **Something always wakes the leads.** Agents only react to input, so a heartbeat schedule prompts each lead every
@@ -72,15 +72,16 @@ response. For a review: files reviewed, commands run, verdict, and for a FAIL th
 ## Liveness rules for leads
 
 - Anyone the lead waits on, silent for more than 30 minutes: `scion message` (check delivery).
-- Still silent 30 minutes later: `scion message --interrupt`; a stopped agent gets `--wake`.
+- Still silent 30 minutes later: `scion message --interrupt <agent> "..."`. Note: `--wake` only resumes suspended agents; if an agent is stopped, run `scion resume <agent>` (or ask the PO to start it).
 - Don't ping agents you aren't waiting on (L19).
 - PO decisions pending: remind every 2 hours; meanwhile work on other issues.
 
 ## Git in a shared workspace
 
 All agents of a project share one checkout, so one agent at a time commits (the "commit slot", granted by the lead),
-and only its own files; destructive git commands are forbidden because they would destroy other agents' uncommitted
-work. The [v2 design](specs/factory-orchestration-v2-design.md) replaces this with one clone, branch and PR per issue.
+staging only its own files (`git add <files> && git commit -m "... (#N)" && git push origin <branch>`); if push is rejected,
+stash uncommitted edits before rebasing (`git stash push -u -m "pre-rebase" && git pull --rebase origin <branch> && git push origin <branch> && git stash pop`),
+and destructive git commands are forbidden because they would destroy other agents' uncommitted work. The [v2 design](specs/factory-orchestration-v2-design.md) replaces this with one clone, branch and PR per issue.
 
 ## Adapting the protocol
 

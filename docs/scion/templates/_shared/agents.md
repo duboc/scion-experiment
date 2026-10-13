@@ -18,8 +18,7 @@ these rules; your role prompt adds what is specific to you.
 
 - The only way to reach another agent is `scion message <agent> "<you> -> <agent>: <text>"`. Text you write in your
   own output reaches nobody: a verdict you only print is lost, and everyone waiting for it stalls.
-- Check that every `scion message` prints `Message delivered`. If it doesn't, retry once; if it still fails, comment on
-  the issue and tell your lead.
+- Check that every `scion message <agent>` prints `Message delivered` (meaning the Hub accepted and buffered the message). When messaging a human, `scion message user:${PO_EMAIL}` prints `Message sent to user:${PO_EMAIL}.`. If delivery fails, retry once; if it still fails, comment on the issue and tell your lead.
 - For long or multi-line messages, write the text to a file and send it with
   `scion message <agent> --body-file <file>`, which avoids shell quoting problems.
 - Reach the PO (a human) with `scion message user:${PO_EMAIL} "<text>"`, and only for what your role prompt says to
@@ -49,16 +48,18 @@ action, only set the status.
 All agents of a project share one checkout at `/workspace` (branch `${BUILD_BRANCH}` in `${BUILD_PROJECT}`,
 `${EVAL_BRANCH}` in `${EVAL_PROJECT}`).
 
-- Commit only when your lead gives you the commit slot. Then commit only your own files:
-  `git add <files> && git commit -m "<type>(<scope>): <summary> (#N)" && git pull --rebase origin <branch> && git push origin <branch>`,
-  and send the lead the SHA.
+- Commit only when your lead gives you the commit slot. Then stage and commit only your own files:
+  `git add <files> && git commit -m "<type>(<scope>): <summary> (#N)" && git push origin <branch>`.
+  If `git push` is rejected (non-fast-forward), run:
+  `git stash push -u -m "pre-rebase" && git pull --rebase origin <branch> && git push origin <branch> && git stash pop`
+  (or ask the lead for help) instead of running an unguarded `git pull --rebase` on a dirty shared worktree. Send the lead the pushed commit SHA.
 - Never run `git add -A`, `git reset --hard`, `git checkout -- .`, `git clean` or a force push: other agents'
   uncommitted work lives in the same folder.
 - Never commit secrets, `.env` files or build output.
 
 ## Cloud
 
-- Only the deploy agents hold sandbox deploy credentials. Everyone else asks the deployer, through the lead.
+- Only `deployer` / `eval-deployer` carry the dedicated deploy service account (`DEPLOYER_SA`). All other agents inherit the Hub VM default service account (`passthrough` mode) for Spanner/Firestore/GCS test and evaluation queries, and must never run `gcloud run deploy` or IAM mutations. To deploy, request the deployer through the lead.
 - Every `gcloud` command targets `--project=${SANDBOX_PROJECT}`. Never change `${HUB_PROJECT}`: it hosts the Hub.
 - Cloud Run services run as a dedicated runtime service account with only the roles they need, never as the default
   compute service account.

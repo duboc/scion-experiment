@@ -2,8 +2,8 @@
 # Run a local script on the Scion Hub VM as the Hub's OS user.
 #
 # Why: passing multi-line scripts or markdown through `gcloud compute ssh --command "..."` gets mangled by the
-# outer shell (backticks run as commands, quotes break). This helper ships the script base64-encoded, so its
-# content is never interpreted locally. See lessons-learned.md (L1).
+# outer shell (backticks run as commands, quotes break). This helper streams the script over SSH stdin into a
+# temporary file on the VM. See lessons-learned.md (L1).
 #
 # Usage:
 #   scripts/run-on-hub.sh scripts/factory-status.sh [args...]
@@ -36,8 +36,6 @@ shift
 interp=bash
 [[ "$script" == *.py ]] && interp=python3
 
-payload="$(base64 < "$script" | tr -d '\n')"
-
 forward=()
 for var in SANDBOX_PROJECT SANDBOX_REGION SPANNER_INSTANCE SPANNER_DATABASE BUILD_PROJECT EVAL_PROJECT \
            FACTORY_PROJECTS BILLING_PROJECT GITHUB_REPO PO_EMAIL HUB_LOCAL_URL; do
@@ -52,11 +50,18 @@ if [[ $# -gt 0 ]]; then
 fi
 
 user="${HUB_OS_USER:-scion}"
-remote="set -e; f=\$(sudo -u $user mktemp); trap 'sudo -u $user rm -f \"\$f\"' EXIT; \
-echo $payload | base64 -d | sudo -u $user tee \"\$f\" >/dev/null; \
-sudo -u $user env ${forward[*]} $interp \"\$f\" $args"
+if [[ ! "$user" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+  echo "invalid HUB_OS_USER: $user" >&2
+  exit 2
+fi
 
-gcloud compute ssh "$HUB_VM" --project "$HUB_PROJECT" --zone "$HUB_ZONE" --command "$remote" 2> >(
+remote="set -e; tmp=\$(sudo -u $user mktemp /tmp/scion-run-XXXXXX); \
+trap 'sudo -u $user rm -f \"\$tmp\"' EXIT; \
+sudo -u $user tee \"\$tmp\" >/dev/null; \
+sudo -u $user chmod 700 \"\$tmp\"; \
+sudo -u $user env ${forward[*]} $interp \"\$tmp\" $args"
+
+gcloud compute ssh "$HUB_VM" --project "$HUB_PROJECT" --zone "$HUB_ZONE" --command "$remote" < "$script" 2> >(
   grep -v -e 'NumPy' -e 'increasing_the_tcp' -e 'External IP address was not found' \
           -e '^WARNING: *$' -e 'enterprise-certificate-proxy' >&2
 )

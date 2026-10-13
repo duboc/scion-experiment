@@ -148,7 +148,7 @@ if [[ "$with_spanner" == 1 ]]; then
       continue
     fi
     stmt="$(sed -e '/^[[:space:]]*--/d' "$ddl_file" | awk -v t="$table" 'BEGIN{RS=";"} $0 ~ ("CREATE TABLE " t " ") {print; exit}')"
-    run gcloud spanner databases ddl update "$SPANNER_DATABASE" --instance="$SPANNER_INSTANCE" --project="$P" --ddl="$stmt"
+    run gcloud spanner databases ddl update "$SPANNER_DATABASE" --instance="$SPANNER_INSTANCE" --project="$P" --ddl="$stmt" </dev/null
   done < <(grep -o 'CREATE TABLE [a-z_]*' "$ddl_file" | awk '{print $3}')
   for sa in "$RUNTIME_SA" "$HUB_VM_SA"; do
     run gcloud spanner databases add-iam-policy-binding "$SPANNER_DATABASE" --instance="$SPANNER_INSTANCE" \

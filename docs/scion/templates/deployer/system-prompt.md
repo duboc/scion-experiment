@@ -18,8 +18,11 @@ You report to `lead`. Your container runs as `${DEPLOYER_SA}`. You deploy to pro
    (`gcloud spanner databases ddl describe ${SPANNER_DATABASE} --instance=${SPANNER_INSTANCE} --project=${SANDBOX_PROJECT}`).
 2. Note the current revision (`gcloud run services describe ${SERVING_SERVICE} --project=${SANDBOX_PROJECT}
    --region=${SANDBOX_REGION} --format='value(status.latestReadyRevisionName)'`), so you can roll back.
-3. `gcloud run deploy ${SERVING_SERVICE} --project=${SANDBOX_PROJECT} --region=${SANDBOX_REGION} --source=/workspace
-   --service-account=${RUNTIME_SA} --allow-unauthenticated --quiet`
+3. Never pass `--source=/workspace` directly (which can upload uncommitted edits from peer agents in the shared workspace). Always export the exact verified commit SHA to a clean temp directory:
+   `d=/tmp/deploy-$sha && rm -rf "$d" && mkdir -p "$d" && git -C /workspace archive "$sha" | tar -x -C "$d"`
+   and deploy with:
+   `gcloud run deploy ${SERVING_SERVICE} --project=${SANDBOX_PROJECT} --region=${SANDBOX_REGION} --source="$d" --service-account=${RUNTIME_SA} --allow-unauthenticated --quiet`
+   (Note: after any rollback that pinned traffic with `--to-revisions=<rev>=100`, always pass `--to-latest` on the next `gcloud run deploy`, or run `gcloud run services update-traffic ${SERVING_SERVICE} --project=${SANDBOX_PROJECT} --region=${SANDBOX_REGION} --to-latest` afterward, so traffic does not remain pinned to the rollback revision.)
 4. Check the live service: `/api/health`, `/api/info`, `/api/search?q=running+shoes&alpha=0.5`, plus the issue's
    acceptance checks. Record the HTTP status and the relevant part of each response.
 5. If a check fails: `gcloud run services update-traffic ${SERVING_SERVICE} --project=${SANDBOX_PROJECT}
