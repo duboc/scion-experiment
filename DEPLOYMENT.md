@@ -220,3 +220,22 @@ Verification on `00015-dzf`:
 - Logs: no WARN, fallback, InvalidArgument, PermissionDenied, lexical or ERROR
 
 Notes: (a) with no `locale`, expansion uses synonyms from every locale of the tenant (e.g. `tenis` gets the pt-BR set), which may be intended; (b) an expansion can repeat the query phrase itself (`fone de ouvido` → `[fone de ouvido, headphones]`), which is harmless.
+
+## #6 merchandising rules + 8 boost signals: LIVE 2026-10-13
+
+Source: clean `git archive` of **`0b54d5204b3d4539f66323a39806949a6b261ed7`** (#6 plus the #7 synonym-chip UI). Env unchanged (v2, `TEXT_FOLDING=true`); `BOOST_WEIGHT` not set (default 0.002); **`ADMIN_TOKEN` unset**.
+
+| Step | Result |
+|---|---|
+| DDL `016` part a: 8 `ADD COLUMN` (clicks, orders, discount_pct, popularity_score, margin_pct, ctr, conversion_rate, recency_score) | ✅ |
+| DDL `016` part b: `CREATE TABLE merchandising_rules` (PK `tenant_id, rule_id`) | ✅ (the split matches the original file exactly) |
+| DML `016b` | ✅ "Statement modified 15 rows"; `clicks IS NULL` = 0, all 8 signals non-null on 15/15; `merchandising_rules` = 0 rows |
+| `cmd/sqlcheck` | ✅ synonyms 8, `merchandising_rules rows=0`, 12 search cases (incl. in-memory pin/bury/boost rule params) + facets OK, `hybrid_v2`, exit 0 |
+| Deploy → **`psearch-serving-00016-jtj`**, then `update-traffic --to-latest` | ✅ 100%, follows latest. Rollback target: `00015-dzf` |
+
+Verification on `00016-jtj`:
+- `score.boost` on **15/15 results** for `running shoes` and `shoes`: range 0.000387–0.001064 (> 0, ≤ 0.002); `rule_multiplier=1`; `final_score = hybrid + boost` (exact). Boost reorders near-ties, e.g. `shoes`: prod-008 (boost 0.001064) is above prod-002
+- `GET /api/rules` → 200 `{"count":0,"rules":[]}`. `POST /api/rules`, `PUT /api/rules/x`, `DELETE /api/rules/x` → **403**; table still 0 rows
+- Regressions: `tenis&alpha=0` → prod-002 first; `geladeira&locale=pt-BR` → prod-011 first with `[fridge, refrigerador, refrigerator]`; without a locale, prod-012 last (OOS); `acme` → 0 results, `hybrid_v2`; Acer → prod-006; store 9; in-stock 13; facets 4 groups; OOS (004, 012) last everywhere; cache miss 248 ms → hit 18.5 ms
+- Logs: no WARN, fallback, InvalidArgument, PermissionDenied, lexical or ERROR. **The cold-start `embedding cache store read failed` WARN is gone** (new 1500 ms first-read budget)
+- Rule effects (pin/bury/boost) aren't exercised in prod without an admin token, which is expected; they're covered by unit tests and the sqlcheck rule-params case. The multiplier clamp hardening (`2586e94`) ships with the next deploy.
