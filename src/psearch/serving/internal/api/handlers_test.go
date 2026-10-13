@@ -475,8 +475,15 @@ func TestParseIntentSearch(t *testing.T) {
 	if explicit.ParsedQuery.ExtractedFilters["max_price"] != float64(100) || len(explicit.Results) == 0 {
 		t.Fatal("explicit max_price must override the extracted one")
 	}
-	if off := doSearch(t, r, "q=tenis+ate+200"); off.ParsedQuery != nil {
-		t.Fatal("parse_intent is opt-in")
+	if off := doSearch(t, r, "q=tenis+ate+200&parse_intent=false"); off.ParsedQuery != nil {
+		t.Fatal("parse_intent=false must disable intent parsing")
+	}
+	auto := doSearch(t, r, "q=tenis+de+corrida+ate+200+reais&limit=15")
+	if auto.ParsedQuery == nil || auto.ParsedQuery.ExtractedFilters["max_price"] != float64(200) {
+		t.Fatalf("intent parsing must be on by default (ADR-007): %+v", auto.ParsedQuery)
+	}
+	if plain := doSearch(t, r, "q=geladeira"); plain.ParsedQuery != nil {
+		t.Fatal("queries without extractable filters keep the response unchanged")
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/search?q=x&min_price=500&max_price=100", nil)
 	w := httptest.NewRecorder()

@@ -158,7 +158,10 @@ func (c *Controller) Search(ctx *gin.Context) {
 		req.Locale = ctx.Query("locale")
 		req.TenantID = ctx.Query("tenant_id")
 		req.LTR = ctx.Query("ltr") == "true" || ctx.Query("ltr") == "1"
-		req.ParseIntent = ctx.Query("parse_intent") == "true" || ctx.Query("parse_intent") == "1"
+		if v := ctx.Query("parse_intent"); v != "" {
+			b := v == "true" || v == "1"
+			req.ParseIntent = &b
+		}
 		if v, err := strconv.ParseFloat(ctx.Query("min_price"), 64); err == nil {
 			req.MinPrice = v
 		}
@@ -229,8 +232,14 @@ func (c *Controller) Search(ctx *gin.Context) {
 	// plus structured filters; explicit request filters win.
 	var parsed *models.ParsedQuery
 	searchQuery := req.Query
-	if req.ParseIntent && strings.TrimSpace(req.Query) != "" {
+	// Enabled by default; parse_intent=false opts out. When nothing is extracted the
+	// query is left untouched and parsed_query is omitted (unless explicitly requested).
+	explicitIntent := req.ParseIntent != nil && *req.ParseIntent
+	if (req.ParseIntent == nil || *req.ParseIntent) && strings.TrimSpace(req.Query) != "" {
 		in, source := c.intent.Understand(ctx.Request.Context(), filters.TenantID, req.Query)
+		if !in.HasFilters() && !explicitIntent {
+			goto intentDone
+		}
 		filters = services.ApplyIntent(filters, in)
 		searchQuery = in.CleanQuery
 		extracted := map[string]interface{}{}
@@ -251,6 +260,7 @@ func (c *Controller) Search(ctx *gin.Context) {
 		}
 		parsed = &models.ParsedQuery{OriginalQuery: req.Query, CleanQuery: in.CleanQuery, ExtractedFilters: extracted, IntentSource: source}
 	}
+intentDone:
 	// Facets are aggregated over a wider candidate set (top facetCandidates) than
 	// the page returned to the client (Issue #5, ADR-003).
 	const facetCandidates = 100

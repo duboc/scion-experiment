@@ -16,7 +16,7 @@ type SearchRequest struct {
 	MaxSLAHours int64    `json:"max_sla_hours,omitempty" form:"max_sla_hours"`
 	MinPrice    float64  `json:"min_price,omitempty" form:"min_price"`
 	MaxPrice    float64  `json:"max_price,omitempty" form:"max_price"`
-	ParseIntent bool     `json:"parse_intent,omitempty" form:"parse_intent"`
+	ParseIntent *bool    `json:"parse_intent,omitempty" form:"parse_intent"` // default true (ADR-007); false disables
 }
 
 // SearchFilters are the catalog filters applied server-side (ADR-002, Issues #3/#4/#5).
