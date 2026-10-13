@@ -337,3 +337,23 @@ Deploy → `psearch-serving-00021-x6b` (100%), verified, then **rolled back**: `
 | #19 `q=geladeira` | ✅ no `parsed_query` |
 
 **Root cause of the #21 failure:** recovery only auto-corrects when the corrected query has lexical hits (`services.LexicalHits(alt.Results) > 0`). "samsung" appears only in `products.brand`; prod-010's title/description ("Galaxy S25 Ultra 5G 512GB Smartphone" / "Flagship Android phone…") don't contain it, and the search index covers only title/description tokens. Read-only checks: `SEARCH(title_tokens_folded|description_tokens_folded, 'samsung')` → 0 rows; `q=samsung&parse_intent=false&alpha=0` → no text hits, prod-010 not on top. Fix options: (a) after spell-correcting, re-run the intent parser on the corrected query, so `samsung` → brand filter → prod-010, and accept the correction when that yields results; (b) index brand/category text (e.g. a `brand_tokens` TOKENLIST added to `products_text_idx` and to the fts WHERE), which needs DDL.
+
+## Wave 5 #21 spell recovery (entity fix) + #19 default-on + UI: LIVE 2026-10-13
+
+Source: clean `git archive` of **`4ab84038d7445eb846a1eb685ebbfb577512eb52`** (`612d939` + `b306c09` test + **`4ab8403` handlers.go entity re-parse** + UI `07c75d5`/`d1b602b`/`8ba9d06`). No DDL; env unchanged.
+Pre-check: `b306c09` alone contained only a unit test (the handlers.go change had been lost to a working-tree revert), so the rollout was held until `4ab8403`.
+`cmd/sqlcheck`: 27 OK, 0 FAIL (`spell 'sansung' -> "samsung"`, `relaxed OR query rows=15`). Deploy → **`psearch-serving-00022-nll`**, then `update-traffic --to-latest` (**unpinned** from 00020; 100%, follows latest). Rollback target: `00020-552`.
+
+| Check on `00022-nll` | Result |
+|---|---|
+| #21 `q=sansung&alpha=0` | ✅ `did_you_mean=samsung`, **`auto_corrected=true`**, **prod-010 first** (brand filter from re-parse; same without alpha) |
+| #21 `q=geladera` | ✅ `did_you_mean=geladeira`, `auto_corrected=true`, prod-011 first |
+| #21 `q=samsung` | ✅ untouched (no did_you_mean); parser `brand:Samsung` → prod-010 |
+| #19 default-on `q=tenis+de+corrida+ate+200+reais` (no param) | ✅ `parsed_query.extracted_filters.max_price=200`; 5 results, max 189.9 |
+| #19 `parse_intent=false` | ✅ no `parsed_query` |
+| #19 `q=geladeira` | ✅ no `parsed_query` |
+| Storefront `/` | ✅ 200; contains the "Você quis dizer" banner, did_you_mean/relaxed handling, the `parse_intent` toggle, filter chips, and the LTR checkbox |
+| Regressions | ✅ tenis → prod-002 first; geladeira pt-BR → prod-011; acme → 0 results, `hybrid_v2`; cep SP → 12 promises; LTR baseline; adidas<200 → prod-001; autocomplete gel; bad price → 400; boost OK; facets 4; health 200 |
+| Logs | ✅ clean |
+
+Observation: when a correction resolves to an entity (sansung → brand Samsung), the response carries `did_you_mean`/`auto_corrected` but no `parsed_query`, so the UI shows no brand chip for the applied filter. Consider surfacing it.
