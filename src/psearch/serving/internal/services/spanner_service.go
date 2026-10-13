@@ -275,23 +275,47 @@ func buildHybridSQL(column string, lexicalOnly bool) string {
 		union = `
 			SELECT 'text' AS source, 1.0 AS weight, rank, product_id, title, product_data, is_available, stock FROM fts`
 	}
+	// The aggregate query is wrapped so the unavailable-last ORDER BY works on
+	// plain columns (ordering by ANY_VALUE(...) directly nests aggregates, which
+	// Spanner rejects: "Aggregations of aggregations are not allowed").
 	return `
 		WITH` + ann + fts + `
-		SELECT
-			SUM(weight / (60.0 + rank)) AS rrf_score,
-			MAX(IF(source = 'vector', 1.0 / (60.0 + rank), 0.0)) AS vector_score,
-			MAX(IF(source = 'text', 1.0 / (60.0 + rank), 0.0)) AS text_score,
-			product_id,
-			ANY_VALUE(title) AS title,
-			ANY_VALUE(product_data) AS product_data,
-			ANY_VALUE(is_available) AS is_available,
-			ANY_VALUE(stock) AS stock
-		FROM (` + union + `
+		SELECT rrf_score, vector_score, text_score, product_id, title, product_data, is_available, stock
+		FROM (
+			SELECT
+				SUM(weight / (60.0 + rank)) AS rrf_score,
+				MAX(IF(source = 'vector', 1.0 / (60.0 + rank), 0.0)) AS vector_score,
+				MAX(IF(source = 'text', 1.0 / (60.0 + rank), 0.0)) AS text_score,
+				product_id,
+				ANY_VALUE(title) AS title,
+				ANY_VALUE(product_data) AS product_data,
+				ANY_VALUE(is_available) AS is_available,
+				ANY_VALUE(stock) AS stock
+			FROM (` + union + `
+			)
+			GROUP BY product_id
 		)
-		GROUP BY product_id
-		ORDER BY IF(IFNULL(ANY_VALUE(is_available), TRUE) AND IFNULL(ANY_VALUE(stock), 1) > 0, 0, 1) /* unavailable_rank */, rrf_score DESC
+		ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */, rrf_score DESC
 		LIMIT @limit
 	`
+}
+
+// CheckSpannerQuery runs the real Spanner hybrid query (no memory fallback) and
+// returns its error, so operators can validate SQL against psearch-db before a
+// rollout (cmd/sqlcheck). Read-only.
+func (s *SpannerService) CheckSpannerQuery(ctx context.Context, query string, alpha float64, filters models.SearchFilters) (int, string, error) {
+	if s.client == nil {
+		return 0, "", fmt.Errorf("no Spanner client (memory mode)")
+	}
+	plan := s.planVectorQuery(ctx, query)
+	res, err := s.spannerHybridSearch(ctx, query, s.config.DefaultLimit, 0, alpha, plan, filters)
+	mode := RetrievalHybridV1
+	if plan.lexicalOnly {
+		mode = RetrievalLexicalOnly
+	} else if plan.column == vectorColumnV2 {
+		mode = RetrievalHybridV2
+	}
+	return len(res), mode, err
 }
 
 // isUnavailable implements the ADR-002 availability rule shared by Spanner and memory modes.
