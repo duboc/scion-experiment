@@ -29,3 +29,12 @@
 - **Checks:**
     - `go vet` and `go test`: PASS
     - Empty search results are now serialized as `[]` instead of `null`.
+
+## #1 (alpha) & #3 (availability) (7b404be)
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test`: PASS
+    - ADR-001 (Alpha): PASS
+    - ADR-002 (Availability): PASS
+    - UI build: PASS
