@@ -1,0 +1,263 @@
+# Lessons learned
+
+What went wrong while building and running the `psearch` / `psearch-eval` factories (October 2026), why, and where the
+fix now lives. Dates are UTC. "Encoded in" points to the script, template rule or runbook that prevents a repeat.
+
+| # | Lesson | Area |
+|---|---|---|
+| [L1](#l1-nested-ssh-quoting-runs-your-text-as-commands) | Nested SSH quoting runs your text as commands | operations |
+| [L2](#l2-the-web-terminal-button-stopped-working) | The web terminal button stopped working | Hub |
+| [L3](#l3-opencode-picked-models-that-dont-exist) | OpenCode picked models that don't exist | harness |
+| [L4](#l4-a-printed-verdict-deadlocked-the-factory-for-about-60-hours) | A printed verdict deadlocked the factory for ~60 hours | protocol |
+| [L5](#l5-leads-looked-stalled-and-nothing-woke-them) | Leads looked stalled and nothing woke them | protocol |
+| [L6](#l6-antigravity-couldnt-run-any-tool-telemetry-hook-hang) | Antigravity couldn't run any tool (telemetry hook hang) | harness |
+| [L7](#l7-the-default-compute-service-account-is-not-a-runtime-identity) | The default compute SA is not a runtime identity | GCP |
+| [L8](#l8-workspaces-shared-folder-today-worktrees-later) | Workspaces: shared folder today, worktrees later | Scion |
+| [L9](#l9-agents-fabricated-telemetry-and-claimed-storage-that-didnt-exist) | Agents fabricated telemetry and claimed storage that didn't exist | protocol |
+| [L10](#l10-admin-api-access-from-scripts) | Admin API access from scripts | Hub |
+| [L11](#l11-schedules-heartbeats-semantics) | Schedules (heartbeats) semantics | Hub |
+| [L12](#l12-spanner-calls-from-the-vm-failed-on-quota-project) | Spanner calls from the VM failed on quota project | GCP |
+| [L13](#l13-interactive-gcloud-prompts-hang-automation) | Interactive gcloud prompts hang automation | GCP |
+| [L14](#l14-a-shared-github-token-means-no-pr-approvals) | A shared GitHub token means no PR approvals | GitHub |
+| [L15](#l15-the-lead-wrote-the-code-itself) | The lead wrote the code itself | protocol |
+| [L16](#l16-hand-written-hub-db-rows-broke-templates) | Hand-written Hub DB rows broke templates | Hub |
+| [L17](#l17-pre-provision-the-identities-the-backlog-will-need) | Pre-provision the identities the backlog will need | process |
+| [L18](#l18-hub-activity-is-a-hint-not-the-truth) | Hub activity is a hint, not the truth | observability |
+| [L19](#l19-heartbeats-can-turn-into-chatter) | Heartbeats can turn into chatter | protocol |
+| [L20](#l20-local-patches-dont-survive-upgrades-silently) | Local patches don't survive upgrades silently | operations |
+
+---
+
+## L1. Nested SSH quoting runs your text as commands
+
+- **When:** throughout; worst on 2026-10-12 while sending messages to agents.
+- **Symptom:** `zsh: command not found: lead`, truncated messages, half-written files.
+- **Cause:** `gcloud compute ssh --command "... scion message lead \"... `lead` ...\""` passes through two or three shells.
+  Backticks and `$(...)` inside the text run as commands; nested quotes end early.
+- **Fix:** ship content base64-encoded and decode it remotely (`echo <b64> | base64 -d | sudo -u scion bash`).
+- **Encoded in:** [`scripts/run-on-hub.sh`](scripts/run-on-hub.sh). Agents use `scion message --body-file` for long text
+  ([`_shared/agents.md`](templates/_shared/agents.md)).
+
+## L2. The web terminal button stopped working
+
+- **When:** 2026-10-09.
+- **Symptom:** the agent's Terminal button in the web UI did nothing or showed a blank terminal.
+- **Cause:** the `web.terminal_workspace` experiment (beta, on by default) holds a cross-tab `navigator.locks` lock,
+  which a hidden tab can keep forever, and `initTerminal` waits on `requestAnimationFrame`, which background tabs
+  throttle.
+- **Fix:** turn the experiment off: `scripts/run-on-hub.sh scripts/scion-admin.py experiments --set
+  web.terminal_workspace=false`; users reload the page.
+- **Encoded in:** [operations-runbook.md](operations-runbook.md#web-terminal-button-does-nothing).
+
+## L3. OpenCode picked models that don't exist
+
+- **When:** 2026-10-08/09 (`backend`).
+- **Symptom:** every model call returned 404; OpenCode switched to image or text-to-speech variants.
+- **Cause:** OpenCode resolves models from the models.dev catalog in `~/.cache/opencode/models.json`. That catalog marks
+  Gemini 2.5 as deprecated and lists several "Gemini 2.5 Pro" variants; the name matched a TTS variant first. The Scion
+  provisioner pre-fetches the full catalog at every start, the stock launcher then deleted it, and OpenCode refreshes it
+  in the background (the live `backend` had a fresh 5.4 MB catalog again on 2026-10-12, three days after the pin).
+- **Fix:** the launcher writes a pinned catalog with only `google-vertex/gemini-2.5-pro` and `gemini-2.5-flash` on every
+  start, then runs `opencode -m google-vertex/gemini-2.5-pro`. To reload a running agent without recreating it:
+  `docker exec -u scion <project>--backend tmux respawn-pane -k -t scion:0.0 "sh /home/scion/.local/bin/opencode-launch.sh"`.
+- **Encoded in:** [`templates/backend/home/.local/bin/opencode-launch.sh`](templates/backend/home/.local/bin/opencode-launch.sh),
+  [`config/opencode-models.json`](config/opencode-models.json).
+
+## L4. A printed verdict deadlocked the factory for about 60 hours
+
+- **When:** 2026-10-10 00:05Z to 2026-10-12 12:03Z.
+- **Symptom:** no commits or comments for about 60 hours; every agent idle.
+- **Cause:** the lead told the deployer to hold issue #11 "until my GO" and waited for the reviewer. The reviewer
+  (Hermes) wrote `lead <- reviewer: ... FAIL` in its own output but never ran `scion message`, so nobody received it.
+  Lead, deployer and reviewer then waited on each other, and nothing woke them up. The FAIL was also wrong: the reviewer
+  looked for guessed file names (`ADR-001.md`, `011-gemini-v2-embeddings.sql`) instead of the real
+  `knowledge-plane/adr/ADR-001-hybrid-and-vector-1024.md` and `src/iac/migrations/011_add_embedding_v2_gemini_1024.sql`.
+- **Fix:** the PO sent the lead the verdict with the correct paths; the reviewer re-checked and delivered PASS through
+  `scion message`; heartbeats were added (L5).
+- **Encoded in:** "check for `Message delivered`" and "use real paths" in [`_shared/agents.md`](templates/_shared/agents.md);
+  the reviewer's FAIL must cite a file and line or a failing command ([`reviewer`](templates/reviewer/system-prompt.md));
+  GitHub as the record of every handoff.
+
+## L5. Leads looked stalled and nothing woke them
+
+- **When:** found 2026-10-10, fixed 2026-10-12.
+- **Symptom:** 8 of 10 agents showed `stalled` in the Hub; leads stopped after "waiting for backend..." and never came
+  back on their own.
+- **Cause:**
+  - A Claude agent that ends its turn without `sciontool status blocked` is flagged STALLED after about 5 minutes. The
+    first templates said "Do NOT run `sciontool status`".
+  - Agents only react to input. No schedule existed, so a lost message meant a permanent wait.
+  - Hub notifications about an agent go to its creator. The admin created all agents, so worker notifications went to
+    the PO, not the leads. Repeated identical notifications are deduplicated.
+- **Fix:** admin-owned heartbeat schedules (`*/15 * * * *`) that message each lead, and the rule to end every turn
+  with a status. Since then the heartbeats have fired every 15 minutes without errors.
+- **Encoded in:** [`config/heartbeat-message.txt`](config/heartbeat-message.txt),
+  [setup-runbook.md](setup-runbook.md#9-heartbeats), "End every turn with a status" in
+  [`_shared/agents.md`](templates/_shared/agents.md).
+
+## L6. Antigravity couldn't run any tool (telemetry hook hang)
+
+- **When:** 2026-10-12 12:17Z (fixed 12:31Z, durable fix 12:38Z).
+- **Symptom:** every tool call of the Antigravity agents failed; the eval team produced nothing.
+- **Cause:** with Hub telemetry and cloud export on, `sciontool hook --dialect=antigravity` prints `{"decision":"allow"}`
+  but doesn't exit (it waits on the export to `monitoring.googleapis.com`). Antigravity kills hooks after 10 seconds and
+  aborts the tool call. Reproduced: more than 15 s with telemetry on, under 1 s with `SCION_TELEMETRY_ENABLED=false`;
+  `OTEL_SDK_DISABLED=true` didn't help. Template settings can't fix it: the Hub injects `SCION_TELEMETRY_ENABLED=true`
+  into every agent and that wins (all 10 agents ran with it, including those whose template disabled telemetry).
+- **Fix:** run the hook with telemetry off: `... | SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity`,
+  in the harness provisioner (future starts) and in each project's `.agents/hooks.json` (running agents).
+- **Encoded in:** [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py). The proper fix is upstream:
+  `sciontool hook` must never block (see the [v2 design](specs/factory-orchestration-v2-design.md), follow-ups).
+
+## L7. The default compute service account is not a runtime identity
+
+- **When:** 2026-10-12 12:30Z (rolled back), fixed 22:46Z.
+- **Symptom:** switching `psearch-serving` to Gemini embeddings returned 403 from Vertex AI; the deployer rolled back.
+- **Cause:** Cloud Run ran as the project's default compute service account, which lacked `roles/aiplatform.user`.
+- **Fix:** a dedicated runtime SA with exactly what the code uses (`roles/aiplatform.user` on the project,
+  `roles/spanner.databaseUser` on the database); the deployer has `roles/iam.serviceAccountUser` on it.
+- **Also learned:** `gemini-embedding-2` is served at location `global` through `:embedContent` (`:predict` returns 404),
+  with `outputDimensionality: 1024`. Spanner full-text search doesn't fold accents: "tenis" doesn't match "Tênis"
+  (relevant to the multilanguage issue).
+- **Encoded in:** [`scripts/setup-sandbox.sh`](scripts/setup-sandbox.sh) creates the runtime SA up front; the deployer
+  deploys with `--service-account` ([`deployer`](templates/deployer/system-prompt.md)).
+
+## L8. Workspaces: shared folder today, worktrees later
+
+- **When:** researched 2026-10-10.
+- **What we found:**
+  - A Hub-managed project without a git remote mounts one shared folder (`~/.scion/projects/<slug>`) as `/workspace`
+    in every agent. Parallel issues are impossible and commits must be serialized (the "commit slot").
+  - A project's `git_remote` can't be changed later: switching to a git-backed mode means creating new projects.
+  - Clone-per-agent works for git-backed projects today. Worktree-per-agent has gaps on a VM broker: it needs host git
+    2.47 or newer (the VM had 2.34.1 and silently fell back), the repository's `.git` is not mounted for
+    broker-provisioned worktrees, there are no push credentials or git identity in the container, the base clone is
+    never fetched, and deleting an agent leaks its worktree (created by UUID, deleted by slug).
+- **Decision:** keep the shared workspace with a commit slot for now; move to clone-per-agent with one branch and PR
+  per issue in v2; fix worktree-per-agent in Scion as a separate project.
+- **Encoded in:** "Git in the shared workspace" in [`_shared/agents.md`](templates/_shared/agents.md);
+  [v2 design](specs/factory-orchestration-v2-design.md).
+
+## L9. Agents fabricated telemetry and claimed storage that didn't exist
+
+- **When:** found 2026-10-12 22:46Z, fixed by 23:25Z.
+- **Symptom:** the eval dashboard showed plausible agent counters and a "GitHub repository & branch telemetry" panel that
+  stayed empty.
+- **Cause:** the eval agents hard-coded counters in `ingest_telemetry.py` and `public/telemetry.json`, reported
+  Firestore and bucket storage that had never been created, and the dashboard called `/api/backlog`, a route that
+  didn't exist (the server returned `index.html`). Nobody checked the claims against the source.
+- **Fix:** real sources only: a Hub-to-Spanner sync of agent state every minute; the GitHub API with the token from
+  Secret Manager; probe results only from real runs in `eval_runs`; counters the Hub doesn't report shown as "n/a".
+  Firestore and the bucket were then created for real.
+- **Encoded in:** "Never invent numbers" in [`_shared/agents.md`](templates/_shared/agents.md); the data-source table in
+  [`eval-lead`](templates/eval-lead/system-prompt.md); [`scripts/sync-factory-agents.py`](scripts/sync-factory-agents.py).
+  Verify any delivery with `curl` against the live service before you accept it.
+
+## L10. Admin API access from scripts
+
+- **What we found:**
+  - Personal access tokens (`scion_pat_...`) are rejected on hub-admin routes (`/api/v1/admin/*`) and can't author
+    schedules.
+  - An admin user JWT can be minted on the VM from `SCION_SERVER_SESSION_SECRET` in `~/.scion/hub.env`; it is
+    equivalent to an admin web session, so keep it short-lived and on the VM.
+  - `scion list` on the VM fails outside a project context, and the project settings point at the public (IAP) URL.
+    For reads, use the Hub DB read-only (`sqlite3 'file:...hub.db?mode=ro'`) or the localhost API.
+  - Docker on the VM belongs to the Hub OS user (`sudo -u scion docker ...`). Read an agent's terminal with
+    `docker exec -u scion <project>--<agent> tmux capture-pane -p -t scion:0.0 -S -50`.
+- **Encoded in:** [`scripts/scion-admin.py`](scripts/scion-admin.py), [`scripts/factory-status.sh`](scripts/factory-status.sh).
+
+## L11. Schedules (heartbeats) semantics
+
+- Each fire is re-authorized against the schedule's creator. A schedule created by an agent stops working if that agent
+  is deleted, so the admin creates them.
+- Cron expressions are in UTC; the minimum useful interval is about a minute.
+- To change a schedule's message, PATCH its `payload` (a JSON string with `agentName` and `message`).
+- A schedule can report a successful fire while the message didn't reach the harness, and scheduled messages and
+  notifications are not stored as message rows. Judge a heartbeat by its effect (the lead acts, GitHub moves), not by
+  the run count alone.
+- **Encoded in:** `schedule` subcommands of [`scripts/scion-admin.py`](scripts/scion-admin.py);
+  [operations-runbook.md](operations-runbook.md#a-lead-doesnt-react-to-heartbeats).
+
+## L12. Spanner calls from the VM failed on quota project
+
+- **When:** 2026-10-12 22:55Z.
+- **Symptom:** `gcloud spanner databases execute-sql` from the Hub VM was denied although the VM SA had database access.
+- **Cause:** the VM SA's quota project defaults to the Hub project, where the call isn't allowed.
+- **Fix:** `--billing-project=<sandbox>` on every call, plus `roles/serviceusage.serviceUsageConsumer` for the VM SA on
+  the sandbox.
+- **Encoded in:** [`scripts/sync-factory-agents.py`](scripts/sync-factory-agents.py) (`BILLING_PROJECT`),
+  [`scripts/setup-sandbox.sh`](scripts/setup-sandbox.sh).
+
+## L13. Interactive gcloud prompts hang automation
+
+- **When:** first on 2026-10-09, and again on 2026-10-13 while testing `setup-sandbox.sh` in dry-run mode against a
+  project that doesn't exist: `gcloud firestore databases describe` waited for an answer to "API not enabled, enable
+  and retry?" forever.
+- **Fix:** enable APIs explicitly before using them, and set `CLOUDSDK_CORE_DISABLE_PROMPTS=1` in every script and in
+  the deploy agents' environment.
+- **Encoded in:** [`scripts/setup-sandbox.sh`](scripts/setup-sandbox.sh), the deployer templates' `env`.
+
+## L14. A shared GitHub token means no PR approvals
+
+- **What we found:** all agents push and comment with the PO's personal access token, so GitHub sees the PO as the
+  author of every PR and doesn't let the "reviewer" approve or request changes on its own PR.
+- **Decision:** the reviewer posts a signed verdict comment; no branch protection requires approvals. A GitHub App
+  (bot identity) is the long-term fix.
+- **Encoded in:** [v2 design](specs/factory-orchestration-v2-design.md), "Pull requests".
+
+## L15. The lead wrote the code itself
+
+- **When:** 2026-10-09/10 (issue #11).
+- **Symptom:** after two failed backend attempts, the lead implemented #11 itself; nobody orchestrated meanwhile.
+- **Fix:** the lead never writes product code; it re-briefs the worker with what went wrong, or escalates.
+- **Encoded in:** [`lead`](templates/lead/system-prompt.md).
+
+## L16. Hand-written Hub DB rows broke templates
+
+- **When:** found 2026-10-12.
+- **Symptom:** the five eval templates (`eval-lead`, `eval-deployer`, `factory-analyst`, `search-evaluator`,
+  `ui-craftsman`) all point at the `frontend` template's storage path in the Hub DB.
+- **Cause:** the templates were registered by inserting rows straight into the Hub's SQLite DB with a copied storage
+  path, so starting or reincarnating an eval agent from its template is expected to load the frontend files.
+- **Fix:** re-push each template through the Scion CLI so it gets its own files (`scion templates push`).
+- **Encoded in:** [templates/README.md](templates/README.md); scripts open the DB read-only and write only through the
+  API ([scripts/README.md](scripts/README.md)).
+
+## L17. Pre-provision the identities the backlog will need
+
+- **When:** 2026-10-12. The #11 rollout waited about 10 hours (12:30Z to 22:29Z) for an IAM decision; the lead
+  correctly escalated and reminded the PO every 2 hours.
+- **Lesson:** the PO's response time is the factory's slowest step. Decide the identities and grants the backlog needs
+  during setup (runtime SA, data stores, secrets) so agents don't wait on them, and keep escalations to genuine
+  decisions.
+- **Encoded in:** [`scripts/setup-sandbox.sh`](scripts/setup-sandbox.sh), [setup-runbook.md](setup-runbook.md).
+
+## L18. Hub activity is a hint, not the truth
+
+- **What we found:**
+  - Activity is only as good as the harness's hooks. The Hermes reviewer shows `stalled` with its last activity three
+    days old, although it reviewed and messaged the lead that morning: Hermes doesn't report activity events here.
+  - Agents that finished a turn correctly still show `stalled` if they skipped `sciontool status` (L5).
+  - The Hub doesn't populate turn and model-call counters (they stay 0); that's "unknown", not "zero".
+- **Lesson:** decide liveness from evidence (GitHub comments and commits, delivered messages, the agent's terminal), and
+  use Hub activity only as a pointer to where to look.
+- **Encoded in:** [`scripts/factory-status.sh`](scripts/factory-status.sh) shows all of these side by side;
+  [operations-runbook.md](operations-runbook.md).
+
+## L19. Heartbeats can turn into chatter
+
+- **When:** 2026-10-12 23:45Z.
+- **Symptom:** on each heartbeat the eval lead sent `HEARTBEAT_PING` to all three specialists, and each answered with a
+  `PONG`/`ACK`: six messages and four model turns every 15 minutes with no work behind them.
+- **Fix:** the heartbeat says to ping only agents you are waiting on, and to do nothing but set the status when nothing
+  needs action.
+- **Encoded in:** [`config/heartbeat-message.txt`](config/heartbeat-message.txt), "Messaging" in
+  [`_shared/agents.md`](templates/_shared/agents.md).
+
+## L20. Local patches don't survive upgrades silently
+
+- **What we found:** the Hub runs the nightly release channel with automatic updates. The Antigravity hook fix (L6)
+  patches a file under `~/.scion/harness-configs/`, which an update may replace.
+- **Lesson:** keep every local patch in a script with a check mode, and run the checks after each update.
+- **Encoded in:** [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py) (check by default),
+  [operations-runbook.md](operations-runbook.md#after-a-scion-upgrade).

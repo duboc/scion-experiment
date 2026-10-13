@@ -1,0 +1,71 @@
+# Scion software factory playbook
+
+How to set up and run a **software factory on [Scion](https://github.com/GoogleCloudPlatform/scion)**: a team of
+LLM agents that works through a GitHub backlog on its own (plan, implement, review, deploy, verify) while a human
+product owner (PO) only releases work, makes decisions and accepts results. Next to it, a second team measures the
+factory and the product it ships.
+
+Everything here comes from running two such factories on one self-hosted Scion Hub in October 2026 (Scion nightly
+`20261002`): `psearch`, which builds a hybrid search service from 11 GitHub issues, and `psearch-eval`, which watches
+it. The scripts and templates are parameterized, so you can build another factory from them.
+
+> [!IMPORTANT]
+> No secrets or real project IDs live in this folder. Your values go in `config/factory.env`, which is git-ignored.
+> Scripts read the GitHub token and the Hub session secret at run time and never print or store them.
+
+## Map
+
+| Document | Read it when |
+|---|---|
+| [architecture.md](architecture.md) | you want the big picture: components, identities, data flows, trade-offs |
+| [setup-runbook.md](setup-runbook.md) | you are building a new factory (step by step, with a check after each step) |
+| [operations-runbook.md](operations-runbook.md) | a factory is running and something looks wrong, or you need a routine task |
+| [agent-protocol.md](agent-protocol.md) | you want to understand or change the rules the agents follow |
+| [lessons-learned.md](lessons-learned.md) | before you change anything: 20 failures, their causes and fixes |
+| [templates/](templates/README.md) | role prompts and settings for the ten agents, plus the shared protocol |
+| [scripts/](scripts/README.md) | the tooling: status, admin actions, sandbox setup, sync, patches |
+| [config/](config/) | `factory.env.example`, the heartbeat text, the Hub settings excerpt, the Spanner DDL |
+| [specs/factory-orchestration-v2-design.md](specs/factory-orchestration-v2-design.md) | the next design (draft): one worker and PR per issue, status labels, watchdogs |
+
+## Quick start
+
+1. Copy `config/factory.env.example` to `config/factory.env` and fill it in.
+2. Set up the Hub VM and the Scion server behind IAP (setup-runbook step 2).
+3. Disable the `web.terminal_workspace` experiment.
+4. `DRY_RUN=1 scripts/setup-sandbox.sh --with-spanner --with-bigquery`, then run it for real with `GITHUB_TOKEN`
+   exported.
+5. Create the GitHub labels and store the token as the Hub secret `GITHUB_TOKEN`.
+6. Create the two Hub projects, make their folders checkouts of the repo, register the deployer identity.
+7. `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py --apply` (before any Antigravity agent starts).
+8. `scripts/render-templates.py`, push the templates, start the ten agents.
+9. Create the two heartbeat schedules.
+10. `scripts/install-sync-cron.sh`.
+11. Send each lead the GO message.
+12. From then on: `scripts/run-on-hub.sh scripts/factory-status.sh` once a day, and answer the PO inbox.
+
+Details and checks for every step: [setup-runbook.md](setup-runbook.md).
+
+## What keeps a factory running
+
+Most of the work was not building the factory but keeping it from stopping. The rules that made the difference:
+
+1. **Something always wakes the leads**: an admin-owned schedule messages each lead every 15 minutes.
+2. **Only delivered messages count**: agents check for `Message delivered`; printed text reaches nobody (one lost
+   verdict stopped the factory for about 60 hours).
+3. **Every turn ends with a status** (`sciontool status blocked | task_completed | ask_user`), so idle and dead agents
+   can be told apart.
+4. **GitHub is the memory**: plans, evidence and decisions go on the issues, so agents can be restarted or replaced.
+5. **Evidence over claims**: no invented numbers; verify every "it exists" against the source.
+6. **Narrow escalation**: the PO decides IAM, cost and scope; leads decide the rest and keep going.
+7. **Grant identities up front**: an IAM question waiting on the PO stalled a rollout for 10 hours.
+
+## Status
+
+| Part | State |
+|---|---|
+| Shared-workspace factory (this protocol, these templates) | running; templates here are the improved version of what the agents run |
+| Heartbeats, agent-status sync, Antigravity hook patch, sandbox setup | running and verified |
+| `factory-status.sh`, `scion-admin.py` (read commands), `sync-factory-agents.py --dry-run`, `patch-antigravity-hooks.py` (check) | run against the live Hub |
+| `setup-sandbox.sh`, `install-sync-cron.sh` | verified in dry-run mode against the live environment |
+| Template upload with `scion templates push` | supported path, not exercised on this Hub |
+| v2 design (per-issue workers, `factoryctl`, watchdogs) | draft, not implemented |
