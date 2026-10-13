@@ -508,3 +508,18 @@ func TestZeroResultsRecovery(t *testing.T) {
 		t.Fatal("queries with lexical hits are untouched")
 	}
 }
+
+// Issue #21 regression (rev 00021-x6b): a correction that resolves to a brand-only
+// entity must be accepted even when the corrected word has no title/description hit.
+func TestSpellCorrectionToBrandEntity(t *testing.T) {
+	r := newTestRouter()
+	resp := doSearch(t, r, "q=sansung&limit=5&alpha=0&parse_intent=false")
+	if resp.DidYouMean != "samsung" || !resp.AutoCorrected {
+		t.Fatalf("did_you_mean=%q auto=%v", resp.DidYouMean, resp.AutoCorrected)
+	}
+	for _, res := range resp.Results {
+		if len(res.Brands) == 0 || res.Brands[0] != "Samsung" {
+			t.Fatalf("brand entity filter not applied after correction: %s", ids(resp.Results))
+		}
+	}
+}

@@ -275,8 +275,17 @@ intentDone:
 	if err == nil && strings.TrimSpace(searchQuery) != "" && services.LexicalHits(outcome.Results) == 0 {
 		if corrected, changed := c.spell.Correct(ctx.Request.Context(), filters.TenantID, searchQuery); changed {
 			didYouMean = corrected
-			if alt, aerr := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), corrected, candidateLimit, minScore, alpha, filters); aerr == nil && services.LexicalHits(alt.Results) > 0 {
-				outcome, searchQuery, autoCorrected = alt, corrected, true
+			// The corrected token may be an entity that is only indexed as a structured
+			// column (e.g. brand "samsung"), not in title/description tokens. Re-parse
+			// the corrected query so such entities become filters (ADR-007/008).
+			altQuery, altFilters := corrected, filters
+			entity := false
+			if in := c.intent.Parse(corrected); in.Brand != "" || in.Category != "" {
+				altQuery, altFilters, entity = in.CleanQuery, services.ApplyIntent(filters, in), true
+			}
+			if alt, aerr := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), altQuery, candidateLimit, minScore, alpha, altFilters); aerr == nil &&
+				(services.LexicalHits(alt.Results) > 0 || (entity && len(alt.Results) > 0)) {
+				outcome, searchQuery, filters, autoCorrected = alt, altQuery, altFilters, true
 			}
 		}
 		if !autoCorrected && len(strings.Fields(searchQuery)) > 1 {
