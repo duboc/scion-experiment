@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, memo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import {
     Container,
@@ -28,7 +28,10 @@ import {
     AppBar,
     Toolbar,
     Button,
-    InputAdornment,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
     ThemeProvider,
     createTheme,
 } from '@mui/material';
@@ -46,7 +49,12 @@ import axios from 'axios';
 import config from './config';
 const API_URL = config.apiUrl;
 
-function ProductSearch() {
+function ProductSearch({
+    tenantId: propTenantId,
+    setTenantId: propSetTenantId,
+    locale: propLocale,
+    setLocale: propSetLocale,
+}) {
     const navigate = useNavigate();
     // Simplified search state - only track the active search query
     const [activeSearchQuery, setActiveSearchQuery] = useState(''); // For actual API requests
@@ -57,8 +65,16 @@ function ProductSearch() {
     const [alpha, setAlpha] = useState(0.5);
     const [channel, setChannel] = useState('');
     const [onlyInStock, setOnlyInStock] = useState(false);
+    const [internalTenantId, setInternalTenantId] = useState('default');
+    const [internalLocale, setInternalLocale] = useState('');
+    const tenantId = propTenantId !== undefined ? propTenantId : internalTenantId;
+    const setTenantId = propSetTenantId || setInternalTenantId;
+    const locale = propLocale !== undefined ? propLocale : internalLocale;
+    const setLocale = propSetLocale || setInternalLocale;
     const [effectiveAlpha, setEffectiveAlpha] = useState(null);
     const [retrievalMode, setRetrievalMode] = useState(null);
+    const [effectiveTenantId, setEffectiveTenantId] = useState(null);
+    const [effectiveLocale, setEffectiveLocale] = useState(null);
     const [serverFacets, setServerFacets] = useState(null);
     const [facetsLatencyMs, setFacetsLatencyMs] = useState(null);
     // State for the filters component - now a dynamic object
@@ -466,7 +482,11 @@ function ProductSearch() {
                 min_score: 0.01,
                 alpha: typeof alpha === 'number' ? alpha : 0.5,
                 only_in_stock: Boolean(onlyInStock),
+                tenant_id: tenantId || 'default',
             };
+            if (locale) {
+                payload.locale = locale;
+            }
             if (channel && channel !== 'All' && channel !== 'all') {
                 payload.channel = channel;
             }
@@ -487,6 +507,12 @@ function ProductSearch() {
                 }
                 if (response.data.retrieval_mode !== undefined) {
                     setRetrievalMode(response.data.retrieval_mode);
+                }
+                if (response.data.tenant_id !== undefined) {
+                    setEffectiveTenantId(response.data.tenant_id);
+                }
+                if (response.data.locale !== undefined) {
+                    setEffectiveLocale(response.data.locale);
                 }
                 if (response.data.facets && Object.keys(response.data.facets).length > 0) {
                     setServerFacets(response.data.facets);
@@ -537,7 +563,7 @@ function ProductSearch() {
         } finally {
             setLoading(false);
         }
-    }, [activeSearchQuery, alpha, channel, onlyInStock, selectedCategory, selectedBrand]);
+    }, [activeSearchQuery, alpha, channel, onlyInStock, selectedCategory, selectedBrand, tenantId, locale]);
 
     // Handler for filter changes from the Filters component - now works with dynamic filter IDs
     const handleFilterChange = useCallback((filterId, value, isChecked) => {
@@ -674,11 +700,17 @@ function ProductSearch() {
         if (options.onlyInStock !== undefined) {
             setOnlyInStock(options.onlyInStock);
         }
+        if (options.tenantId !== undefined) {
+            setTenantId(options.tenantId);
+        }
+        if (options.locale !== undefined) {
+            setLocale(options.locale);
+        }
         // Update active search query which triggers API call
         setActiveSearchQuery(typeof searchText === 'string' ? searchText : searchText?.query || '');
         // Reset AI filter suggestions when a new search is performed
         setShowAIFilterSuggestions(true);
-    }, []);
+    }, [setTenantId, setLocale]);
 
     useEffect(() => {
         if (activeSearchQuery.trim()) {
@@ -849,13 +881,24 @@ function ProductSearch() {
                                                     ? `IN_STOCK (${product.availableQuantity} unid.)`
                                                     : 'IN_STOCK')
                                                 : 'OUT_OF_STOCK';
+                                            const prodLocale = product.locale || product.Locale;
                                             return (
-                                                <Chip
-                                                    label={stockBadge}
-                                                    color={isStockIn ? 'success' : 'error'}
-                                                    size="small"
-                                                    sx={{ mt: 1 }}
-                                                />
+                                                <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap', mt: 1 }}>
+                                                    <Chip
+                                                        label={stockBadge}
+                                                        color={isStockIn ? 'success' : 'error'}
+                                                        size="small"
+                                                    />
+                                                    {prodLocale && (
+                                                        <Chip
+                                                            label={prodLocale}
+                                                            size="small"
+                                                            variant="outlined"
+                                                            color="info"
+                                                            sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
+                                                        />
+                                                    )}
+                                                </Box>
                                             );
                                         })()}
                                     </Box>
@@ -958,6 +1001,10 @@ function ProductSearch() {
                         setChannel={setChannel}
                         onlyInStock={onlyInStock}
                         setOnlyInStock={setOnlyInStock}
+                        tenantId={tenantId}
+                        setTenantId={setTenantId}
+                        locale={locale}
+                        setLocale={setLocale}
                     />
 
                     {/* Display search result count and search metadata */}
@@ -981,6 +1028,8 @@ function ProductSearch() {
                                 {products.length ? `Found ${products.length} products` : 'No products found. Try a search!'}
                                 {effectiveAlpha !== null && ` • effective_alpha: ${effectiveAlpha}`}
                                 {retrievalMode && ` • retrieval_mode: ${retrievalMode}`}
+                                {effectiveTenantId && ` • tenant: ${effectiveTenantId}`}
+                                {effectiveLocale && ` • locale: ${effectiveLocale}`}
                                 {facetsLatencyMs !== null && ` • facets: ${Number(facetsLatencyMs).toFixed(1)}ms`}
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -989,6 +1038,12 @@ function ProductSearch() {
                                 )}
                                 {retrievalMode && (
                                     <Chip size="small" color="primary" variant="outlined" label={`retrieval_mode: ${retrievalMode}`} />
+                                )}
+                                {effectiveTenantId && (
+                                    <Chip size="small" variant="outlined" label={`tenant: ${effectiveTenantId}`} />
+                                )}
+                                {effectiveLocale && (
+                                    <Chip size="small" color="info" variant="outlined" label={`locale: ${effectiveLocale}`} />
                                 )}
                                 {facetsLatencyMs !== null && (
                                     <Chip size="small" variant="outlined" label={`facets: ${Number(facetsLatencyMs).toFixed(1)}ms`} />
@@ -1161,46 +1216,85 @@ const theme = createTheme({
 });
 
 function App() {
+    const [tenantId, setTenantId] = useState('default');
+    const [locale, setLocale] = useState('');
+
     return (
         <ThemeProvider theme={theme}>
             <Router>
                 <Box sx={{ flexGrow: 1, bgcolor: 'background.default', minHeight: '100vh' }}>
                     <AppBar position="static" sx={{ backgroundColor: '#4285F4' }}>
-                        <Toolbar>
+                        <Toolbar sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
                                 PSearch
                             </Typography>
-            <Button
-                component={Link}
-                to="/"
-                color="inherit"
-                startIcon={<SearchIcon />}
-                sx={{ mr: 2 }}
-            >
-                Search
-            </Button>
-            <Button
-                component={Link}
-                to="/source-ingestion"
-                color="inherit"
-                startIcon={<FileUploadIcon />}
-                sx={{ mr: 2 }}
-            >
-                Source Ingestion
-            </Button>
-            <Button
-                component={Link}
-                to="/manage"
-                color="inherit"
-                startIcon={<SettingsIcon />}
-            >
-                Manage Rules
-            </Button>
+                            <TextField
+                                id="header-tenant-input"
+                                label="Tenant"
+                                size="small"
+                                value={tenantId}
+                                onChange={(e) => setTenantId(e.target.value)}
+                                inputProps={{ 'aria-label': 'Tenant' }}
+                                sx={{
+                                    width: 120,
+                                    '& .MuiInputBase-root': { color: 'white', bgcolor: 'rgba(255,255,255,0.15)' },
+                                    '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.85)' },
+                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.4)' },
+                                    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'white' },
+                                }}
+                            />
+                            <FormControl size="small" sx={{
+                                minWidth: 120,
+                                '& .MuiInputBase-root': { color: 'white', bgcolor: 'rgba(255,255,255,0.15)' },
+                                '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.85)' },
+                                '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.4)' },
+                                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'white' },
+                                '& .MuiSvgIcon-root': { color: 'white' },
+                            }}>
+                                <InputLabel id="header-locale-select-label" sx={{ color: 'rgba(255,255,255,0.85)' }}>Locale</InputLabel>
+                                <Select
+                                    labelId="header-locale-select-label"
+                                    id="header-locale-select"
+                                    value={locale}
+                                    label="Locale"
+                                    onChange={(e) => setLocale(e.target.value)}
+                                    inputProps={{ 'aria-label': 'Locale' }}
+                                >
+                                    <MenuItem value="">All</MenuItem>
+                                    <MenuItem value="pt-BR">pt-BR</MenuItem>
+                                    <MenuItem value="en-US">en-US</MenuItem>
+                                    <MenuItem value="es-MX">es-MX</MenuItem>
+                                </Select>
+                            </FormControl>
+                            <Button
+                                component={Link}
+                                to="/"
+                                color="inherit"
+                                startIcon={<SearchIcon />}
+                            >
+                                Search
+                            </Button>
+                            <Button
+                                component={Link}
+                                to="/source-ingestion"
+                                color="inherit"
+                                startIcon={<FileUploadIcon />}
+                            >
+                                Source Ingestion
+                            </Button>
+                            <Button
+                                component={Link}
+                                to="/manage"
+                                color="inherit"
+                                startIcon={<SettingsIcon />}
+                            >
+                                Manage Rules
+                            </Button>
                         </Toolbar>
                     </AppBar>
 
                     <Routes>
-                        <Route path="/" element={<ProductSearch />} />
+                        <Route path="/" element={<ProductSearch tenantId={tenantId} setTenantId={setTenantId} locale={locale} setLocale={setLocale} />} />
                         <Route path="/source-ingestion" element={<SourceIngestion />} />
                         <Route path="/manage" element={<RuleManager />} />
                         <Route path="/product/:productId" element={<ProductDetails />} />
