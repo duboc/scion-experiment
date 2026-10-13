@@ -76,6 +76,10 @@ function ProductSearch({
     const [parsedQuery, setParsedQuery] = useState(null);
     const [activeExtractedFilters, setActiveExtractedFilters] = useState(null);
     const [cleanQueryBase, setCleanQueryBase] = useState('');
+    const [autoCorrected, setAutoCorrected] = useState(false);
+    const [queryRelaxed, setQueryRelaxed] = useState(false);
+    const [didYouMean, setDidYouMean] = useState('');
+    const [responseQuery, setResponseQuery] = useState('');
     const activeExtractedFiltersRef = useRef(activeExtractedFilters);
     activeExtractedFiltersRef.current = activeExtractedFilters;
     const parseIntentRef = useRef(parseIntent);
@@ -513,8 +517,8 @@ function ProductSearch({
                 only_in_stock: Boolean(onlyInStock),
                 tenant_id: tenantId || 'default',
             };
-            if (parseIntentToUse) {
-                payload.parse_intent = true;
+            if (parseIntentToUse !== undefined) {
+                payload.parse_intent = Boolean(parseIntentToUse);
             }
             if (extractedFiltersToUse) {
                 if (extractedFiltersToUse.min_price !== undefined && extractedFiltersToUse.min_price !== null && Number(extractedFiltersToUse.min_price) > 0) {
@@ -557,6 +561,10 @@ function ProductSearch({
             console.log("API Response:", JSON.stringify(response.data, null, 2));
 
             if (response.data) {
+                setResponseQuery(response.data.query || queryToUse);
+                setAutoCorrected(Boolean(response.data.auto_corrected));
+                setDidYouMean(response.data.did_you_mean || '');
+                setQueryRelaxed(Boolean(response.data.query_relaxed));
                 if (response.data.parsed_query) {
                     setParsedQuery(response.data.parsed_query);
                     const ext = response.data.parsed_query.extracted_filters || {};
@@ -652,6 +660,9 @@ function ProductSearch({
             // Show AI filter suggestions if we have products and a search query
             setShowAIFilterSuggestions(processedResults.length > 0 && activeSearchQuery.trim() !== '');
         } catch (error) {
+            setAutoCorrected(false);
+            setQueryRelaxed(false);
+            setDidYouMean('');
             const serverErrMsg = error.response?.data?.error || error.response?.data?.message;
             const displayError = serverErrMsg || error.message || 'An error occurred while searching';
             setError(displayError);
@@ -823,11 +834,22 @@ function ProductSearch({
         activeExtractedFiltersRef.current = null;
         setCleanQueryBase('');
         cleanQueryBaseRef.current = '';
+        setAutoCorrected(false);
+        setQueryRelaxed(false);
+        setDidYouMean('');
+        setResponseQuery('');
+        const nextQuery = typeof searchText === 'string' ? searchText : searchText?.query || '';
+        if (nextQuery === activeSearchQuery && nextQuery.trim()) {
+            fetchProducts({
+                query: nextQuery,
+                parseIntent: options.parseIntent !== undefined ? options.parseIntent : parseIntentRef.current,
+            });
+        }
         // Update active search query which triggers API call
-        setActiveSearchQuery(typeof searchText === 'string' ? searchText : searchText?.query || '');
+        setActiveSearchQuery(nextQuery);
         // Reset AI filter suggestions when a new search is performed
         setShowAIFilterSuggestions(true);
-    }, [setTenantId, setLocale]);
+    }, [setTenantId, setLocale, fetchProducts, activeSearchQuery]);
 
     const handleRemoveExtractedFilter = useCallback((filterKey) => {
         const currentFilters = activeExtractedFiltersRef.current || {};

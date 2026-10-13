@@ -178,6 +178,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <div style="flex:1;min-width:0;">
         <div class="meta" id="meta">Loading catalog...</div>
         <div id="expanded-terms" style="color:var(--muted);font-size:13px;margin:-8px 0 16px 0;display:none;"></div>
+        <div id="recovery-banner" style="display:none;margin:-8px 0 16px 0;padding:10px 14px;background:var(--card);border:1px solid #38bdf8;border-radius:8px;font-size:14px;color:var(--text);"></div>
         <div id="parsed-query-chips" style="display:none;margin:-8px 0 16px 0;gap:8px;flex-wrap:wrap;align-items:center;"></div>
         <div class="grid" id="results"></div>
       </div>
@@ -219,12 +220,16 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       }
       if (parseIntent) {
         url += '&parse_intent=true';
+      } else {
+        url += '&parse_intent=false';
       }
       const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) {
         document.getElementById('meta').textContent = 'Error: ' + (data.error || ('Request failed with status ' + res.status));
         document.getElementById('results').innerHTML = '';
+        const banner = document.getElementById('recovery-banner');
+        if (banner) banner.style.display = 'none';
         return;
       }
       document.getElementById('backend-badge').textContent = 'Backend: ' + (data.backend_mode || 'spanner');
@@ -280,6 +285,51 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         } else {
           expEl.textContent = '';
           expEl.style.display = 'none';
+        }
+      }
+
+      const banner = document.getElementById('recovery-banner');
+      if (banner) {
+        while (banner.firstChild) banner.removeChild(banner.firstChild);
+        if (data.auto_corrected && data.did_you_mean) {
+          banner.style.display = 'block';
+          const textNode = document.createTextNode('Mostrando resultados para "' + data.did_you_mean + '". ');
+          banner.appendChild(textNode);
+          const link = document.createElement('a');
+          link.href = '#';
+          link.textContent = 'Buscar por "' + (data.query || q) + '"';
+          link.style.color = 'var(--accent)';
+          link.style.textDecoration = 'underline';
+          link.style.cursor = 'pointer';
+          link.onclick = function(e) {
+            e.preventDefault();
+            document.getElementById('q').value = data.query || q;
+            const parseCheckbox = document.getElementById('parse_intent');
+            if (parseCheckbox) parseCheckbox.checked = false;
+            runSearch();
+          };
+          banner.appendChild(link);
+        } else if (!data.auto_corrected && data.did_you_mean) {
+          banner.style.display = 'block';
+          const textNode = document.createTextNode('Você quis dizer: ');
+          banner.appendChild(textNode);
+          const link = document.createElement('a');
+          link.href = '#';
+          link.textContent = data.did_you_mean + '?';
+          link.style.color = 'var(--accent)';
+          link.style.textDecoration = 'underline';
+          link.style.cursor = 'pointer';
+          link.onclick = function(e) {
+            e.preventDefault();
+            document.getElementById('q').value = data.did_you_mean;
+            runSearch();
+          };
+          banner.appendChild(link);
+        } else if (data.query_relaxed) {
+          banner.style.display = 'block';
+          banner.textContent = 'Nenhum resultado com todos os termos — mostrando resultados com qualquer um deles';
+        } else {
+          banner.style.display = 'none';
         }
       }
 

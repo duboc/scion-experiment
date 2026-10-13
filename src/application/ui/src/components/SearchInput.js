@@ -38,6 +38,7 @@ import SearchIcon from '@mui/icons-material/Search';
 // and provides controls for alpha (hybrid weight), channel, and availability
 const SearchInput = memo(({
     onSearch,
+    query: controlledQuery,
     alpha: controlledAlpha,
     setAlpha: controlledSetAlpha,
     channel: controlledChannel,
@@ -55,7 +56,13 @@ const SearchInput = memo(({
     parseIntent: controlledParseIntent,
     setParseIntent: controlledSetParseIntent,
 }) => {
-    const [inputValue, setInputValue] = useState('');
+    const [inputValue, setInputValue] = useState(controlledQuery || '');
+
+    useEffect(() => {
+        if (controlledQuery !== undefined) {
+            setInputValue(controlledQuery);
+        }
+    }, [controlledQuery]);
     const [internalAlpha, setInternalAlpha] = useState(0.5);
     const [internalChannel, setInternalChannel] = useState('');
     const [internalOnlyInStock, setInternalOnlyInStock] = useState(false);
