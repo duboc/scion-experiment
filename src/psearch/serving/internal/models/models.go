@@ -16,7 +16,9 @@ type SearchRequest struct {
 	MaxSLAHours int64    `json:"max_sla_hours,omitempty" form:"max_sla_hours"`
 	MinPrice    float64  `json:"min_price,omitempty" form:"min_price"`
 	MaxPrice    float64  `json:"max_price,omitempty" form:"max_price"`
-	ParseIntent *bool    `json:"parse_intent,omitempty" form:"parse_intent"` // default true (ADR-007); false disables
+	ParseIntent *bool    `json:"parse_intent,omitempty" form:"parse_intent"`
+	PriceTable  string   `json:"price_table_id,omitempty" form:"price_table_id"`
+	SortBy      string   `json:"sort_by,omitempty" form:"sort_by"` // default true (ADR-007); false disables
 }
 
 // SearchFilters are the catalog filters applied server-side (ADR-002, Issues #3/#4/#5).
@@ -30,6 +32,8 @@ type SearchFilters struct {
 	Zip5        string  // ADR-005 / Issue #8: 5-digit CEP prefix; empty = no delivery filter
 	MaxSLAHours int64   // ADR-005: maximum delivery SLA in hours; 0 = any
 	RelaxText   bool    // ADR-008 (#21): run the text leg with OR between terms
+	PriceTable  string  // ADR-008 (#22): contract price table; "" = list price
+	SortBy      string  // ADR-008 (#22): relevance | price_asc | price_desc
 	MinPrice    float64 // ADR-007/008: minimum price (0 = none)
 	MaxPrice    float64 // ADR-007/008: maximum price (0 = none)
 }
@@ -58,6 +62,8 @@ type SearchResponse struct {
 	DidYouMean       string         `json:"did_you_mean,omitempty"` // Issue #21 (ADR-008)
 	AutoCorrected    bool           `json:"auto_corrected,omitempty"`
 	QueryRelaxed     bool           `json:"query_relaxed,omitempty"`
+	PriceTableID     string         `json:"price_table_id,omitempty"` // Issue #22
+	SortBy           string         `json:"sort_by,omitempty"`
 }
 
 type FacetBucket struct {
@@ -120,6 +126,8 @@ type PriceInfo struct {
 	OriginalPrice      string  `json:"originalPrice"`
 	Price              string  `json:"price"`
 	NumericPrice       float64 `json:"numericPrice,omitempty"`
+	BasePrice          float64 `json:"basePrice,omitempty"`    // list price before contract pricing (ADR-008)
+	PriceTableID       string  `json:"priceTableId,omitempty"` // contract table applied (ADR-008)
 	PriceEffectiveTime string  `json:"priceEffectiveTime"`
 	PriceExpireTime    string  `json:"priceExpireTime"`
 }

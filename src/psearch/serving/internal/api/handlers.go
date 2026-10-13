@@ -162,6 +162,8 @@ func (c *Controller) Search(ctx *gin.Context) {
 			b := v == "true" || v == "1"
 			req.ParseIntent = &b
 		}
+		req.PriceTable = ctx.Query("price_table_id")
+		req.SortBy = ctx.Query("sort_by")
 		if v, err := strconv.ParseFloat(ctx.Query("min_price"), 64); err == nil {
 			req.MinPrice = v
 		}
@@ -216,7 +218,14 @@ func (c *Controller) Search(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "min_price/max_price must be >= 0 and min_price <= max_price"})
 		return
 	}
+	req.PriceTable, req.SortBy = strings.TrimSpace(req.PriceTable), strings.TrimSpace(req.SortBy)
+	if err := services.ValidatePricing(req.PriceTable, req.SortBy); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	filters := models.SearchFilters{
+		PriceTable:  req.PriceTable,
+		SortBy:      req.SortBy,
 		MinPrice:    req.MinPrice,
 		MaxPrice:    req.MaxPrice,
 		Zip5:        zip5,
@@ -312,7 +321,7 @@ intentDone:
 		ids = append(ids, r.ID)
 	}
 	facetStart := time.Now()
-	facets, ferr := c.spannerSvc.Facets(ctx.Request.Context(), ids)
+	facets, ferr := c.spannerSvc.Facets(ctx.Request.Context(), ids, filters.PriceTable, filters.TenantID)
 	facetsMs := float64(time.Since(facetStart).Microseconds()) / 1000.0
 	if ferr != nil {
 		log.Printf("WARN: facets unavailable: %v", ferr)
@@ -341,7 +350,8 @@ intentDone:
 		}
 	}
 	var ltrRes services.LTRResult
-	if req.LTR && len(results) > 0 {
+	priceSorted := req.SortBy == "price_asc" || req.SortBy == "price_desc"
+	if req.LTR && len(results) > 0 && !priceSorted { // an explicit price sort wins over LTR
 		// ADR-006 stage 2: in-memory re-ranking of the stage-1 top-100 candidates.
 		signals, err := c.spannerSvc.CandidateSignals(ctx.Request.Context(), ids)
 		if err != nil {
@@ -380,6 +390,8 @@ intentDone:
 		DidYouMean:       didYouMean,
 		AutoCorrected:    autoCorrected,
 		QueryRelaxed:     relaxed,
+		PriceTableID:     req.PriceTable,
+		SortBy:           req.SortBy,
 		RetrievalMode:    outcome.RetrievalMode,
 	})
 }

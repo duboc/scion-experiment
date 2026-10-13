@@ -26,6 +26,13 @@ type SpannerService struct {
 	rules        *RuleService    // optional merchandising rules (Issue #6)
 	inventory    []InventoryRow  // memory-mode regional inventory (Issue #8), lazily built
 	invOnce      sync.Once
+	pricing      *memoryPricing // memory-mode contract prices (Issue #22)
+	priceOnce    sync.Once
+}
+
+func (s *SpannerService) memPricing() *memoryPricing {
+	s.priceOnce.Do(func() { s.pricing = newMemoryPricing(DefaultPriceRows(s.seedProducts)) })
+	return s.pricing
 }
 
 // SetRules installs the merchandising rule service (Issue #6, ADR-004).
@@ -309,15 +316,16 @@ func (s *SpannerService) planVectorQuery(ctx context.Context, query string) vect
 // hidden products are never returned; channel and only-available filters are
 // optional (empty channel / false flag disables them). NULL columns default to
 // visible, all channels, available.
-const catalogFilterSQL = `COALESCE(is_visible, TRUE)
+var catalogFilterSQL = `COALESCE(is_visible, TRUE)
 					AND (@channel = '' OR @channel IN UNNEST(IFNULL(channels, ['web', 'mobile', 'store'])))
 					AND (NOT @only_available OR (IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0))
 					AND IFNULL(tenant_id, 'default') = @tenant_id
 					AND (@locale = '' OR IFNULL(locale, '') = @locale)
 					AND (@category = '' OR LOWER(IFNULL(category, '')) = @category)
 					AND (@brand = '' OR LOWER(IFNULL(brand, '')) = @brand)
-					AND (@min_price <= 0 OR IFNULL(price, 0) >= @min_price)
-					AND (@max_price <= 0 OR IFNULL(price, 0) <= @max_price)
+					AND (@min_price <= 0 OR IFNULL(` + effectivePriceSQL("products") + `, 0) >= @min_price)
+					AND (@max_price <= 0 OR IFNULL(` + effectivePriceSQL("products") + `, 0) <= @max_price)
+					AND ` + assortmentSQL + `
 					AND ` + deliveryFilterSQL
 
 // buildHybridSQL renders the RRF hybrid query. column is always one of the
@@ -377,7 +385,7 @@ func buildHybridSQLWith(column string, lexicalOnly, folded bool) string {
 	// Spanner rejects: "Aggregations of aggregations are not allowed").
 	return `
 		WITH` + ann + fts + `
-		SELECT rrf_score, vector_score, text_score, product_id, title, product_data, is_available, stock, boost_score, rule_mult
+		SELECT rrf_score, vector_score, text_score, product_id, title, product_data, is_available, stock, boost_score, rule_mult, effective_price
 		FROM (
 			/* ADR-004: final = rrf_score + boost_signal_score + merchandising_rule_delta,
 			   rule_delta = (rule_mult - 1) * rrf_score; pins first, buries last (within availability) */
@@ -387,7 +395,8 @@ func buildHybridSQLWith(column string, lexicalOnly, folded bool) string {
 					WHERE (r.brand = '' OR LOWER(IFNULL(p.brand, '')) = r.brand)
 						AND (r.category = '' OR LOWER(IFNULL(p.category, '')) = r.category)), 1.0) AS rule_mult,
 				IFNULL((SELECT MIN(o) FROM UNNEST(@pin_ids) AS pid WITH OFFSET AS o WHERE pid = a.product_id), 1000) AS pin_rank,
-				IF(a.product_id IN UNNEST(@bury_ids), 1, 0) AS buried
+				IF(a.product_id IN UNNEST(@bury_ids), 1, 0) AS buried,
+				` + effectivePriceSQL("p") + ` AS effective_price
 			FROM (
 			SELECT
 				SUM(weight / (60.0 + rank)) AS rrf_score,
@@ -405,7 +414,9 @@ func buildHybridSQLWith(column string, lexicalOnly, folded bool) string {
 			JOIN products AS p ON p.product_id = a.product_id
 		)
 		ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */,
-			pin_rank, buried, rrf_score * rule_mult + boost_score DESC /* final_score */,
+			pin_rank, buried,
+			IF(@sort_by = 'price_asc', effective_price, NULL) ASC, IF(@sort_by = 'price_desc', effective_price, NULL) DESC,
+			rrf_score * rule_mult + boost_score DESC /* final_score */,
 			vector_score DESC, text_score DESC, product_id
 		LIMIT @limit
 	`
@@ -478,6 +489,8 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		"brand":          f.Brand,
 		"zip5":           f.Zip5,
 		"min_price":      f.MinPrice,
+		"price_table":    f.PriceTable,
+		"sort_by":        priceSortKey(f.SortBy),
 		"max_price":      f.MaxPrice,
 		"max_sla":        f.MaxSLAHours,
 		"alpha":          alpha,
@@ -509,7 +522,8 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		var isAvailable spanner.NullBool
 		var stock spanner.NullInt64
 		var boostScore, ruleMult float64
-		if err := row.Columns(&rrfScore, &vecScore, &txtScore, &productID, &title, &productDataJSON, &isAvailable, &stock, &boostScore, &ruleMult); err != nil {
+		var effPrice spanner.NullFloat64
+		if err := row.Columns(&rrfScore, &vecScore, &txtScore, &productID, &title, &productDataJSON, &isAvailable, &stock, &boostScore, &ruleMult, &effPrice); err != nil {
 			return nil, err
 		}
 		if rrfScore < minScore {
@@ -536,6 +550,9 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 			} else {
 				item.Availability = "IN_STOCK"
 			}
+		}
+		if effPrice.Valid {
+			applyEffectivePrice(&item, effPrice.Float64, f.PriceTable)
 		}
 		effAlpha := alpha
 		if plan.lexicalOnly {
@@ -646,6 +663,11 @@ func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, min
 		if filters.OnlyInStock && isUnavailable(items[i].prod.Availability, items[i].prod.AvailableQuantity) {
 			continue
 		}
+		eff := s.memPricing().effective(filters.PriceTable, items[i].prod.ID, items[i].prod.PriceInfo.NumericPrice)
+		if !s.memPricing().visible(filters.PriceTable, items[i].prod.ID) ||
+			(filters.MinPrice > 0 && eff < filters.MinPrice) || (filters.MaxPrice > 0 && eff > filters.MaxPrice) {
+			continue
+		}
 		if !matchesChannel(filters.Channel, items[i].prod.Channels) || !matchesCatalog(filters, items[i].prod) ||
 			!s.deliverableInMemory(items[i].prod.ID, filters.Zip5, filters.MaxSLAHours) {
 			continue
@@ -670,6 +692,7 @@ func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, min
 		if len(res.Categories) > 0 {
 			category = res.Categories[0]
 		}
+		applyEffectivePrice(&res, s.memPricing().effective(filters.PriceTable, res.ID, res.PriceInfo.NumericPrice), filters.PriceTable)
 		mult := rules.Multiplier(brand, category)
 		res.Score = map[string]float64{
 			"hybrid":          items[i].rrfScore,
@@ -695,6 +718,11 @@ func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, min
 		}
 		if bi, bj := containsID(rules.Buries, out[i].ID), containsID(rules.Buries, out[j].ID); bi != bj {
 			return !bi // buried products last (within availability group)
+		}
+		if filters.SortBy == "price_asc" || filters.SortBy == "price_desc" {
+			if pi, pj := out[i].PriceInfo.NumericPrice, out[j].PriceInfo.NumericPrice; pi != pj {
+				return (pi < pj) == (filters.SortBy == "price_asc")
+			}
 		}
 		if out[i].Score["final_score"] != out[j].Score["final_score"] {
 			return out[i].Score["final_score"] > out[j].Score["final_score"]
@@ -744,13 +772,7 @@ func matchesCatalog(f models.SearchFilters, p models.SearchResult) bool {
 	if f.Brand != "" && !containsFold(p.Brands, f.Brand) {
 		return false
 	}
-	if f.MinPrice > 0 && p.PriceInfo.NumericPrice < f.MinPrice {
-		return false
-	}
-	if f.MaxPrice > 0 && p.PriceInfo.NumericPrice > f.MaxPrice {
-		return false
-	}
-	return true
+	return true // price filters use the effective (contract) price, applied by the caller
 }
 
 func containsFold(values []string, want string) bool {

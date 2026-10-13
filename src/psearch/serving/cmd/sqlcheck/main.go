@@ -126,7 +126,7 @@ func main() {
 		log.Printf("OK   relaxed OR query rows=%d mode=%s", n, mode)
 	}
 	// Facet queries (Issue #5) over the full catalog.
-	if f, err := svc.Facets(ctx, []string{"prod-001", "prod-002", "prod-004", "prod-012"}); err != nil {
+	if f, err := svc.Facets(ctx, []string{"prod-001", "prod-002", "prod-004", "prod-012"}, "b2b-gold", "default"); err != nil {
 		failed = true
 		log.Printf("FAIL facets: %v", err)
 	} else {

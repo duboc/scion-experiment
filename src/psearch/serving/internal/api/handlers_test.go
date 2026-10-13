@@ -523,3 +523,27 @@ func TestSpellCorrectionToBrandEntity(t *testing.T) {
 		}
 	}
 }
+
+// Issue #22: contract price table, price sort, validation.
+func TestContractPricingSearch(t *testing.T) {
+	r := newTestRouter()
+	resp := doSearch(t, r, "q=laptop&price_table_id=b2b-corporate&sort_by=price_asc&limit=15")
+	if resp.PriceTableID != "b2b-corporate" || resp.SortBy != "price_asc" || len(resp.Results) == 0 {
+		t.Fatalf("pricing response: table=%q sort=%q n=%d", resp.PriceTableID, resp.SortBy, len(resp.Results))
+	}
+	r0 := resp.Results[0]
+	if r0.PriceInfo.BasePrice == 0 || r0.PriceInfo.NumericPrice >= r0.PriceInfo.BasePrice {
+		t.Fatalf("contract price must be below base: %+v", r0.PriceInfo)
+	}
+	if retail := doSearch(t, r, "q=laptop&limit=3"); retail.Results[0].PriceInfo.PriceTableID != "" {
+		t.Fatal("no price_table_id => list prices")
+	}
+	for _, bad := range []string{"q=x&sort_by=cheap", "q=x&price_table_id=Bad%20Table"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/search?"+bad, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("%s = %d, want 400", bad, w.Code)
+		}
+	}
+}
