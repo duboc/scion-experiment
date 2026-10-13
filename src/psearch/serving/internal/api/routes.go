@@ -85,6 +85,11 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     select { padding: 10px 14px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 14px; }
     .checkbox-wrap { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); cursor: pointer; user-select: none; }
     input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+    .facet-group { margin-bottom: 14px; }
+    .facet-title { font-size: 13px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px; }
+    .facet-list { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+    .facet-item { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
+    .facet-count { background: #0f172a; padding: 1px 6px; border-radius: 999px; font-size: 11px; color: #cbd5e1; }
   </style>
 </head>
 <body>
@@ -118,8 +123,34 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       </label>
       <button onclick="runSearch()">Search</button>
     </div>
-    <div class="meta" id="meta">Loading catalog...</div>
-    <div class="grid" id="results"></div>
+    <div style="display:flex;gap:24px;margin-top:20px;align-items:flex-start;">
+      <aside id="facet-sidebar" style="width:230px;flex-shrink:0;background:var(--card);padding:16px;border-radius:12px;border:1px solid #334155;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="margin:0;font-size:15px;color:var(--accent);">Facets</h3>
+          <span id="facets-latency" style="font-size:11px;color:var(--muted);"></span>
+        </div>
+        <div class="facet-group">
+          <div class="facet-title">Department</div>
+          <div class="facet-list" id="facets-cat-list">-</div>
+        </div>
+        <div class="facet-group">
+          <div class="facet-title">Brands</div>
+          <div class="facet-list" id="facets-brand-list">-</div>
+        </div>
+        <div class="facet-group">
+          <div class="facet-title">Price Ranges</div>
+          <div class="facet-list" id="facets-price-list">-</div>
+        </div>
+        <div class="facet-group">
+          <div class="facet-title">Availability</div>
+          <div class="facet-list" id="facets-avail-list">-</div>
+        </div>
+      </aside>
+      <div style="flex:1;min-width:0;">
+        <div class="meta" id="meta">Loading catalog...</div>
+        <div class="grid" id="results"></div>
+      </div>
+    </div>
   </main>
   <script>
     async function runSearch() {
@@ -140,8 +171,28 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       if (document.getElementById('retrieval-badge')) {
         document.getElementById('retrieval-badge').textContent = 'Mode: ' + (data.retrieval_mode || 'hybrid');
       }
+      const facetLat = data.facets_latency_ms !== undefined ? data.facets_latency_ms : (data.facets && data.facets.latency_ms);
+      if (facetLat !== undefined && facetLat !== null) {
+        document.getElementById('facets-latency').textContent = Number(facetLat).toFixed(1) + 'ms';
+      } else {
+        document.getElementById('facets-latency').textContent = '';
+      }
       document.getElementById('meta').textContent =
-        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + ')';
+        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + ')';
+      
+      const facets = data.facets || {};
+      const renderFacetList = (list) => {
+        if (!list || !list.length) return '<span style="color:#64748b;font-size:11px;">(none)</span>';
+        return list.map(item => {
+          const val = typeof item === 'object' ? item.value : item;
+          const cnt = typeof item === 'object' ? item.count : 0;
+          return '<div class="facet-item"><span>' + val + '</span><span class="facet-count">' + cnt + '</span></div>';
+        }).join('');
+      };
+      document.getElementById('facets-cat-list').innerHTML = renderFacetList(facets.categories);
+      document.getElementById('facets-brand-list').innerHTML = renderFacetList(facets.brands);
+      document.getElementById('facets-price-list').innerHTML = renderFacetList(facets.price_ranges);
+      document.getElementById('facets-avail-list').innerHTML = renderFacetList(facets.availability);
       const container = document.getElementById('results');
       container.innerHTML = (data.results || []).map(p => {
         const s = p.score || {};

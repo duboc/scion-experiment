@@ -59,6 +59,8 @@ function ProductSearch() {
     const [onlyInStock, setOnlyInStock] = useState(false);
     const [effectiveAlpha, setEffectiveAlpha] = useState(null);
     const [retrievalMode, setRetrievalMode] = useState(null);
+    const [serverFacets, setServerFacets] = useState(null);
+    const [facetsLatencyMs, setFacetsLatencyMs] = useState(null);
     // State for the filters component - now a dynamic object
     const [selectedFilters, setSelectedFilters] = useState({});
     // Store filter configurations
@@ -341,13 +343,118 @@ function ProductSearch() {
         return finalFilters;
     }, []);
 
-    // Use memoized filter configurations
+    // Generate filter configurations from server-side facets
+    const generateFilterConfigsFromFacets = useCallback((facets) => {
+        if (!facets || typeof facets !== 'object') return [];
+
+        const configs = [];
+
+        if (Array.isArray(facets.categories) && facets.categories.length > 0) {
+            configs.push({
+                id: 'categories',
+                title: 'Department',
+                priority: 100,
+                type: 'checkbox',
+                options: facets.categories.map(c => ({
+                    label: typeof c === 'object' ? c.value : c,
+                    value: typeof c === 'object' ? c.value : c,
+                    count: typeof c === 'object' ? c.count : undefined,
+                }))
+            });
+        }
+
+        if (Array.isArray(facets.brands) && facets.brands.length > 0) {
+            configs.push({
+                id: 'brands',
+                title: 'Brands',
+                priority: 90,
+                type: 'checkbox',
+                options: facets.brands.map(b => ({
+                    label: typeof b === 'object' ? b.value : b,
+                    value: typeof b === 'object' ? b.value : b,
+                    count: typeof b === 'object' ? b.count : undefined,
+                }))
+            });
+        }
+
+        if (Array.isArray(facets.price_ranges) && facets.price_ranges.length > 0) {
+            configs.push({
+                id: 'prices',
+                title: 'Price',
+                priority: 80,
+                type: 'checkbox',
+                options: facets.price_ranges.map(p => {
+                    const val = typeof p === 'object' ? p.value : p;
+                    const count = typeof p === 'object' ? p.count : undefined;
+                    let label = val;
+                    if (typeof val === 'string') {
+                        if (val.endsWith('+')) {
+                            label = `$${val.slice(0, -1)}+`;
+                        } else if (val.includes('-')) {
+                            const parts = val.split('-');
+                            label = `$${parts[0]} - $${parts[1]}`;
+                        }
+                    }
+                    return {
+                        label,
+                        value: val,
+                        count,
+                    };
+                })
+            });
+        }
+
+        if (Array.isArray(facets.availability) && facets.availability.length > 0) {
+            configs.push({
+                id: 'availability',
+                title: 'Availability',
+                priority: 70,
+                type: 'checkbox',
+                options: facets.availability.map(a => {
+                    const val = typeof a === 'object' ? a.value : a;
+                    const count = typeof a === 'object' ? a.count : undefined;
+                    let label = val;
+                    let optVal = val;
+                    if (val === 'IN_STOCK' || val === true || val === 'true') {
+                        label = 'In Stock';
+                        optVal = 'IN_STOCK';
+                    } else if (val === 'OUT_OF_STOCK' || val === false || val === 'false') {
+                        label = 'Out of Stock';
+                        optVal = 'OUT_OF_STOCK';
+                    }
+                    return {
+                        label,
+                        value: optVal,
+                        count,
+                    };
+                })
+            });
+        }
+
+        return configs;
+    }, []);
+
+    // Use memoized filter configurations: prioritize serverFacets, fall back to generateFilterConfigs
     useEffect(() => {
+        if (serverFacets) {
+            const facetConfigs = generateFilterConfigsFromFacets(serverFacets);
+            if (facetConfigs.length > 0) {
+                setFilterConfigs(facetConfigs);
+                return;
+            }
+        }
         const configs = generateFilterConfigs(products);
         setFilterConfigs(configs);
-    }, [products, generateFilterConfigs]);
+    }, [products, serverFacets, generateFilterConfigs, generateFilterConfigsFromFacets]);
 
     // The ProductImage component has been moved to its own file for better performance
+
+    const selectedCategory = (selectedFilters.categories && selectedFilters.categories.length > 0)
+        ? selectedFilters.categories[0]
+        : '';
+    const selectedBrand = (selectedFilters.brands && selectedFilters.brands.length > 0)
+        ? selectedFilters.brands[0]
+        : '';
 
     const fetchProducts = useCallback(async () => {
         setLoading(true);
@@ -363,6 +470,12 @@ function ProductSearch() {
             if (channel && channel !== 'All' && channel !== 'all') {
                 payload.channel = channel;
             }
+            if (selectedCategory) {
+                payload.category = selectedCategory;
+            }
+            if (selectedBrand) {
+                payload.brand = selectedBrand;
+            }
 
             const response = await axios.post(`${API_URL}/search`, payload);
 
@@ -374,6 +487,19 @@ function ProductSearch() {
                 }
                 if (response.data.retrieval_mode !== undefined) {
                     setRetrievalMode(response.data.retrieval_mode);
+                }
+                if (response.data.facets && Object.keys(response.data.facets).length > 0) {
+                    setServerFacets(response.data.facets);
+                } else {
+                    setServerFacets(null);
+                }
+                const fLat = response.data.facets_latency_ms !== undefined
+                    ? response.data.facets_latency_ms
+                    : (response.data.facets && response.data.facets.latency_ms);
+                if (fLat !== undefined && fLat !== null) {
+                    setFacetsLatencyMs(fLat);
+                } else {
+                    setFacetsLatencyMs(null);
                 }
             }
 
@@ -411,7 +537,7 @@ function ProductSearch() {
         } finally {
             setLoading(false);
         }
-    }, [activeSearchQuery, alpha, channel, onlyInStock]); // Changed dependency from searchQuery to activeSearchQuery
+    }, [activeSearchQuery, alpha, channel, onlyInStock, selectedCategory, selectedBrand]);
 
     // Handler for filter changes from the Filters component - now works with dynamic filter IDs
     const handleFilterChange = useCallback((filterId, value, isChecked) => {
@@ -474,8 +600,12 @@ function ProductSearch() {
                 case 'prices':
                     // Pre-parse the price ranges to avoid repeated parsing
                     const priceRanges = selectedValues.map(range => {
-                        const [min, max] = range.split('-').map(parseFloat);
-                        return { min, max };
+                        if (typeof range === 'string' && range.endsWith('+')) {
+                            const min = parseFloat(range.slice(0, -1));
+                            return { min, max: Infinity };
+                        }
+                        const [min, max] = String(range).split('-').map(parseFloat);
+                        return { min: isNaN(min) ? 0 : min, max: isNaN(max) ? Infinity : max };
                     });
 
                     return product => {
@@ -533,6 +663,8 @@ function ProductSearch() {
     const handleSearch = useCallback((searchText, options = {}) => {
         // Reset all filters when a new search is performed
         setSelectedFilters({});
+        setServerFacets(null);
+        setFacetsLatencyMs(null);
         if (options.alpha !== undefined) {
             setAlpha(options.alpha);
         }
@@ -773,6 +905,7 @@ function ProductSearch() {
                             filterConfigs={filterConfigs}
                             selectedFilters={selectedFilters}
                             onFilterChange={handleFilterChange}
+                            facetsLatencyMs={facetsLatencyMs}
                         />
                     </Card>
                 </Grid>
@@ -806,6 +939,7 @@ function ProductSearch() {
                             filterConfigs={filterConfigs}
                             selectedFilters={selectedFilters}
                             onFilterChange={handleFilterChange}
+                            facetsLatencyMs={facetsLatencyMs}
                         />
                     </Card>
                 </Grid>
@@ -847,13 +981,17 @@ function ProductSearch() {
                                 {products.length ? `Found ${products.length} products` : 'No products found. Try a search!'}
                                 {effectiveAlpha !== null && ` • effective_alpha: ${effectiveAlpha}`}
                                 {retrievalMode && ` • retrieval_mode: ${retrievalMode}`}
+                                {facetsLatencyMs !== null && ` • facets: ${Number(facetsLatencyMs).toFixed(1)}ms`}
                             </Typography>
-                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                                 {effectiveAlpha !== null && (
                                     <Chip size="small" variant="outlined" label={`effective_alpha: ${effectiveAlpha}`} />
                                 )}
                                 {retrievalMode && (
                                     <Chip size="small" color="primary" variant="outlined" label={`retrieval_mode: ${retrievalMode}`} />
+                                )}
+                                {facetsLatencyMs !== null && (
+                                    <Chip size="small" variant="outlined" label={`facets: ${Number(facetsLatencyMs).toFixed(1)}ms`} />
                                 )}
                             </Box>
                         </Box>
