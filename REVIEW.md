@@ -163,3 +163,10 @@
 - **Checks:**
     - `go vet` and `go test -race`: PASS
     - ADR-007 (Conversational Query): PASS
+
+## #21: Zero-results Recovery (d674656)
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test -race`: PASS
+    - ADR-008 (Zero-results Recovery): PASS
