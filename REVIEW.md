@@ -96,3 +96,11 @@
     - `go test` and `npm run build`: PASS
     - Rule multipliers are clamped in the backend.
     - UI uses `/api/rules` and sessionStorage for the admin token.
+
+## #8: Delivery Promises (dea13c8)
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test -race`: PASS
+    - ADR-005 (Delivery Promises): PASS
+    - Security: PASS (Bound parameters used for CEP and SLA)
