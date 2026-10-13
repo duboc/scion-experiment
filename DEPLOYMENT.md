@@ -139,3 +139,22 @@ Deploy → **`psearch-serving-00011-p6t`**, `--to-latest`, 100% (follows latest;
 | Logs (`00011-p6t`) | ✅ no `WARN` / `fallback` / `InvalidArgument` / `PermissionDenied` / `lexical` / 403 / ERROR; metrics noise gone |
 
 Observation (not a blocker): at alpha=0 only text matches score (`final_score>0`). The remaining rows have `final_score=0` and keep an arbitrary tie order (e.g. prod-008 before prod-007 despite a lower vector RRF). A tie-break on `vector_score`, or dropping zero-score rows at alpha=0, would make this deterministic.
+
+## #2 two-tier embedding cache, embedding-version endpoint, deterministic ranking: LIVE 2026-10-13
+
+Source: **clean `git archive` of `23bf1f7fe3509555903eb2bcba5e1a569c088b44`** in `/tmp/deploy-23bf1f7` (PO rule; not `/workspace`). SA `psearch-serving@`. Env unchanged (`ACTIVE_EMBEDDING_VERSION=v2`, `SPANNER_DISABLE_BUILTIN_METRICS=true`, …). **`ADMIN_TOKEN` unset**, so the POST endpoint is disabled.
+
+| Step | Result |
+|---|---|
+| DDL `013_embedding_cache.sql` | ✅ `embedding_cache` table created (PK `content_sha256, model_id`) |
+| `cmd/sqlcheck` (from archive, v2 env) | ✅ 6/6 OK, `mode=hybrid_v2`, exit 0 (rows 15/15/15/13/9/12). `embedding_cache` count stayed 0 afterwards (baseline) |
+| Deploy → **`psearch-serving-00012-65q`** | ✅ 100%, then `update-traffic --to-latest` (follows latest). Note: `gcloud run deploy` doesn't accept `--to-latest`, so it has to be done with `update-traffic`. Rollback target: `00011-p6t` |
+
+Verification on `00012-65q`:
+- `/api/health` 200. `/api/info`: `vector_dimensions=1024`, `embedding_dimension=1024`, `embedding_cache={enabled:true, max_entries:1000, …}`
+- `GET /api/config/embedding-version` → 200 `{"active_embedding_version":"v2","available":["v1","v2"],"scope":"instance","vector_dimensions":1024}`
+- `POST /api/config/embedding-version` → **403 `{"error":"forbidden"}`** (no token and a bogus token); GET afterwards is still v2
+- Cache, fresh query `mochila impermeavel para trilha`: 1st `cache_hit` absent, **253.6 ms**; 2nd `cache_hit=true`, **18.4 ms**; 3rd `cache_hit=true`, 33.2 ms. `notebook gamer` repeat: `cache_hit=true`, 13.6 ms. Stats: `misses=2, memory_hits=5, entries=2`
+- Spanner tier: `embedding_cache` has **2 rows** (`gemini-embedding-2`, dims 1024, `ARRAY_LENGTH=1024`) written about 20 s after the misses. The async write landed under request-based CPU, and the `psearch-serving@` databaseUser role covers it
+- Ranking: `running shoes` alpha=0 gives an identical order over 3 calls (zero-score tail now tie-broken); alpha=0 vs 1 still differ; Wave 1 regressions OK (`shoes` OOS last, `only_in_stock` 13, `channel=store` 9 without prod-002)
+- `retrieval_mode=hybrid_v2` on all queries. Logs show no `WARN`, `embedding cache store`, `PermissionDenied`, `fallback`, `lexical`, `InvalidArgument` or ERROR (no cold-start read timeout either)
