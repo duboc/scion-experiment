@@ -1,18 +1,24 @@
 package models
 
 type SearchRequest struct {
-	Query        string   `json:"query" form:"q"`
-	Limit        *int     `json:"limit,omitempty" form:"limit"`
-	MinScore     *float64 `json:"min_score,omitempty" form:"min_score"`
-	Alpha        *float64 `json:"alpha,omitempty" form:"alpha"`
-	Category     string   `json:"category,omitempty" form:"category"`
-	Brand        string   `json:"brand,omitempty" form:"brand"`
-	OnlyInStock  bool     `json:"only_in_stock,omitempty" form:"only_in_stock"`
-	Channel      string   `json:"channel,omitempty" form:"channel"`
-	TenantID     string   `json:"tenant_id,omitempty" form:"tenant_id"`
-	Locale       string   `json:"locale,omitempty" form:"locale"`
-	CEP          string   `json:"cep,omitempty" form:"cep"`
-	LTR          bool     `json:"ltr,omitempty" form:"ltr"`
+	Query       string   `json:"query" form:"q"`
+	Limit       *int     `json:"limit,omitempty" form:"limit"`
+	MinScore    *float64 `json:"min_score,omitempty" form:"min_score"`
+	Alpha       *float64 `json:"alpha,omitempty" form:"alpha"`
+	Category    string   `json:"category,omitempty" form:"category"`
+	Brand       string   `json:"brand,omitempty" form:"brand"`
+	OnlyInStock bool     `json:"only_in_stock,omitempty" form:"only_in_stock"`
+	Channel     string   `json:"channel,omitempty" form:"channel"`
+	TenantID    string   `json:"tenant_id,omitempty" form:"tenant_id"`
+	Locale      string   `json:"locale,omitempty" form:"locale"`
+	CEP         string   `json:"cep,omitempty" form:"cep"`
+	LTR         bool     `json:"ltr,omitempty" form:"ltr"`
+}
+
+// SearchFilters are the catalog filters applied server-side (ADR-002, Issue #3).
+type SearchFilters struct {
+	OnlyInStock bool
+	Channel     string
 }
 
 type SearchResponse struct {

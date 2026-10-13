@@ -4,3 +4,5 @@ scratchpad/
 node_modules/
 *.env
 .env*
+src/application/ui/build/
+__pycache__/

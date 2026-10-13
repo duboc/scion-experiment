@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -89,6 +90,9 @@ func (c *Controller) Search(ctx *gin.Context) {
 		req.Locale = ctx.Query("locale")
 		req.Channel = ctx.Query("channel")
 		req.CEP = ctx.Query("cep")
+		if v := ctx.Query("only_in_stock"); v == "true" || v == "1" {
+			req.OnlyInStock = true
+		}
 	} else {
 		if err := ctx.ShouldBindJSON(&req); err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -108,8 +112,13 @@ func (c *Controller) Search(ctx *gin.Context) {
 	if req.Alpha != nil {
 		alpha = *req.Alpha
 	}
+	if alpha < 0 {
+		alpha = 0
+	} else if alpha > 1 {
+		alpha = 1
+	}
 
-	outcome, err := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), req.Query, limit, minScore, alpha)
+	outcome, err := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), req.Query, limit, minScore, alpha, models.SearchFilters{OnlyInStock: req.OnlyInStock, Channel: strings.ToLower(strings.TrimSpace(req.Channel))})
 	results := outcome.Results
 	if results == nil {
 		results = []models.SearchResult{} // always serialize as [] (never null)

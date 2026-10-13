@@ -120,7 +120,7 @@ func (s *SpannerService) SeedIfEmpty(ctx context.Context) error {
 			stock = int64(*p.AvailableQuantity)
 		}
 		muts = append(muts, spanner.InsertOrUpdate("products",
-			[]string{"product_id", "product_data", "title", "description", "category", "brand", "price", "is_available", "stock", "embedding", "timestamp"},
+			[]string{"product_id", "product_data", "title", "description", "category", "brand", "price", "is_available", "stock", "is_visible", "channels", "embedding", "timestamp"},
 			[]interface{}{
 				p.ID,
 				spanner.NullJSON{Value: json.RawMessage(rawJSON), Valid: true},
@@ -131,6 +131,8 @@ func (s *SpannerService) SeedIfEmpty(ctx context.Context) error {
 				p.PriceInfo.NumericPrice,
 				p.Availability == "IN_STOCK",
 				stock,
+				true,
+				p.Channels,
 				emb,
 				spanner.CommitTimestamp,
 			},
@@ -156,13 +158,13 @@ type SearchOutcome struct {
 }
 
 // HybridSearch executes hybrid vector + full-text RRF search against Cloud Spanner (with deterministic fallback).
-func (s *SpannerService) HybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64) ([]models.SearchResult, error) {
-	out, err := s.HybridSearchDetailed(ctx, query, limit, minScore, alpha)
+func (s *SpannerService) HybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64, filters models.SearchFilters) ([]models.SearchResult, error) {
+	out, err := s.HybridSearchDetailed(ctx, query, limit, minScore, alpha, filters)
 	return out.Results, err
 }
 
 // HybridSearchDetailed is HybridSearch plus the retrieval mode that served the query.
-func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string, limit int, minScore float64, alpha float64) (SearchOutcome, error) {
+func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string, limit int, minScore float64, alpha float64, filters models.SearchFilters) (SearchOutcome, error) {
 	if limit <= 0 {
 		limit = s.config.DefaultLimit
 	}
@@ -175,7 +177,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 
 	if s.client != nil && strings.TrimSpace(query) != "" {
 		plan := s.planVectorQuery(ctx, query)
-		res, err := s.spannerHybridSearch(ctx, query, limit, minScore, alpha, plan)
+		res, err := s.spannerHybridSearch(ctx, query, limit, minScore, alpha, plan, filters)
 		switch {
 		case err != nil:
 			log.Printf("WARN: Spanner HybridSearch fallback triggered: %v", err)
@@ -193,7 +195,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		}
 	}
 
-	return SearchOutcome{Results: s.memoryHybridSearch(query, limit, minScore, alpha), RetrievalMode: RetrievalMemory}, nil
+	return SearchOutcome{Results: s.memoryHybridSearch(query, limit, minScore, alpha, filters), RetrievalMode: RetrievalMemory}, nil
 }
 
 // vectorPlan describes how the vector leg of the hybrid query is executed.
@@ -228,39 +230,50 @@ func (s *SpannerService) planVectorQuery(ctx context.Context, query string) vect
 	return vectorPlan{column: vectorColumnV2, embedding: emb}
 }
 
+// catalogFilterSQL is applied inside BOTH retrieval legs (ADR-002 / Issue #3):
+// hidden products are never returned; channel and only-available filters are
+// optional (empty channel / false flag disables them). NULL columns default to
+// visible, all channels, available.
+const catalogFilterSQL = `COALESCE(is_visible, TRUE)
+					AND (@channel = '' OR @channel IN UNNEST(IFNULL(channels, ['web', 'mobile', 'store'])))
+					AND (NOT @only_available OR (IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0))`
+
 // buildHybridSQL renders the RRF hybrid query. column is always one of the
-// package constants (never user input).
+// package constants (never user input). Unavailable products (is_available =
+// FALSE or stock <= 0) are always ordered after available ones.
 func buildHybridSQL(column string, lexicalOnly bool) string {
 	fts := `
 		fts AS (
-			SELECT offset + 1 AS rank, product_id, title, product_data
+			SELECT offset + 1 AS rank, product_id, title, product_data, is_available, stock
 			FROM UNNEST(ARRAY(
-				SELECT AS STRUCT product_id, title, product_data
+				SELECT AS STRUCT product_id, title, product_data, is_available, stock
 				FROM products
-				WHERE SEARCH(title_tokens, @query_text) OR SEARCH(description_tokens, @query_text)
+				WHERE (SEARCH(title_tokens, @query_text) OR SEARCH(description_tokens, @query_text))
+					AND ` + catalogFilterSQL + `
 				ORDER BY (SCORE(title_tokens, @query_text) + SCORE(description_tokens, @query_text)) DESC
 				LIMIT @limit
 			)) WITH OFFSET AS offset
 		)`
 	ann := `
 		ann AS (
-			SELECT offset + 1 AS rank, product_id, title, product_data
+			SELECT offset + 1 AS rank, product_id, title, product_data, is_available, stock
 			FROM UNNEST(ARRAY(
-				SELECT AS STRUCT product_id, title, product_data
+				SELECT AS STRUCT product_id, title, product_data, is_available, stock
 				FROM products
 				WHERE ` + column + ` IS NOT NULL
+					AND ` + catalogFilterSQL + `
 				ORDER BY COSINE_DISTANCE(` + column + `, @query_embedding)
 				LIMIT @limit
 			)) WITH OFFSET AS offset
 		),`
 	union := `
-			SELECT 'vector' AS source, @alpha AS weight, rank, product_id, title, product_data FROM ann
+			SELECT 'vector' AS source, @alpha AS weight, rank, product_id, title, product_data, is_available, stock FROM ann
 			UNION ALL
-			SELECT 'text' AS source, (1.0 - @alpha) AS weight, rank, product_id, title, product_data FROM fts`
+			SELECT 'text' AS source, (1.0 - @alpha) AS weight, rank, product_id, title, product_data, is_available, stock FROM fts`
 	if lexicalOnly {
 		ann = ""
 		union = `
-			SELECT 'text' AS source, 1.0 AS weight, rank, product_id, title, product_data FROM fts`
+			SELECT 'text' AS source, 1.0 AS weight, rank, product_id, title, product_data, is_available, stock FROM fts`
 	}
 	return `
 		WITH` + ann + fts + `
@@ -270,21 +283,44 @@ func buildHybridSQL(column string, lexicalOnly bool) string {
 			MAX(IF(source = 'text', 1.0 / (60.0 + rank), 0.0)) AS text_score,
 			product_id,
 			ANY_VALUE(title) AS title,
-			ANY_VALUE(product_data) AS product_data
+			ANY_VALUE(product_data) AS product_data,
+			ANY_VALUE(is_available) AS is_available,
+			ANY_VALUE(stock) AS stock
 		FROM (` + union + `
 		)
 		GROUP BY product_id
-		ORDER BY rrf_score DESC
+		ORDER BY IF(IFNULL(ANY_VALUE(is_available), TRUE) AND IFNULL(ANY_VALUE(stock), 1) > 0, 0, 1) /* unavailable_rank */, rrf_score DESC
 		LIMIT @limit
 	`
 }
 
-func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64, plan vectorPlan) ([]models.SearchResult, error) {
+// isUnavailable implements the ADR-002 availability rule shared by Spanner and memory modes.
+func isUnavailable(availability string, quantity *int) bool {
+	return availability == "OUT_OF_STOCK" || (quantity != nil && *quantity <= 0)
+}
+
+// matchesChannel reports whether a product sold on channels matches the requested channel
+// (empty request or empty product channel list = all channels).
+func matchesChannel(requested string, channels []string) bool {
+	if requested == "" || len(channels) == 0 {
+		return true
+	}
+	for _, c := range channels {
+		if c == requested {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64, plan vectorPlan, filters models.SearchFilters) ([]models.SearchResult, error) {
 	sql := buildHybridSQL(plan.column, plan.lexicalOnly)
 	params := map[string]interface{}{
-		"query_text": query,
-		"alpha":      alpha,
-		"limit":      int64(limit),
+		"query_text":     query,
+		"alpha":          alpha,
+		"limit":          int64(limit),
+		"channel":        filters.Channel,
+		"only_available": filters.OnlyInStock,
 	}
 	if !plan.lexicalOnly {
 		params["query_embedding"] = plan.embedding
@@ -307,7 +343,9 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		var rrfScore, vecScore, txtScore float64
 		var productID, title string
 		var productDataJSON spanner.NullJSON
-		if err := row.Columns(&rrfScore, &vecScore, &txtScore, &productID, &title, &productDataJSON); err != nil {
+		var isAvailable spanner.NullBool
+		var stock spanner.NullInt64
+		if err := row.Columns(&rrfScore, &vecScore, &txtScore, &productID, &title, &productDataJSON, &isAvailable, &stock); err != nil {
 			return nil, err
 		}
 		if rrfScore < minScore {
@@ -324,22 +362,34 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		if item.Title == "" {
 			item.Title = title
 		}
+		if stock.Valid {
+			quantity := int(stock.Int64)
+			item.AvailableQuantity = &quantity
+		}
+		if isAvailable.Valid || stock.Valid {
+			if (isAvailable.Valid && !isAvailable.Bool) || (stock.Valid && stock.Int64 <= 0) {
+				item.Availability = "OUT_OF_STOCK"
+			} else {
+				item.Availability = "IN_STOCK"
+			}
+		}
 		effAlpha := alpha
 		if plan.lexicalOnly {
 			effAlpha = 0
 		}
 		item.Score = map[string]float64{
-			"hybrid": rrfScore,
-			"vector": vecScore,
-			"text":   txtScore,
-			"alpha":  effAlpha,
+			"hybrid":      rrfScore,
+			"vector":      vecScore,
+			"text":        txtScore,
+			"alpha":       effAlpha,
+			"final_score": rrfScore,
 		}
 		results = append(results, item)
 	}
 	return results, nil
 }
 
-func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore float64, alpha float64) []models.SearchResult {
+func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore float64, alpha float64, filters models.SearchFilters) []models.SearchResult {
 	qLower := strings.ToLower(strings.TrimSpace(query))
 	qTokens := strings.Fields(qLower)
 	qVec := DeterministicEmbedding(query, 768)
@@ -406,6 +456,12 @@ func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore fl
 
 	var out []models.SearchResult
 	for i := range items {
+		if filters.OnlyInStock && isUnavailable(items[i].prod.Availability, items[i].prod.AvailableQuantity) {
+			continue
+		}
+		if !matchesChannel(filters.Channel, items[i].prod.Channels) {
+			continue
+		}
 		items[i].vecRRF = 1.0 / float64(60+items[i].vecRank)
 		if items[i].txtRaw > 0 || qLower == "" {
 			items[i].txtRRF = 1.0 / float64(60+items[i].txtRank)
@@ -416,16 +472,22 @@ func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore fl
 		}
 		res := items[i].prod
 		res.Score = map[string]float64{
-			"hybrid":     items[i].rrfScore,
-			"vector":     items[i].vecRRF,
-			"text":       items[i].txtRRF,
-			"cosine_sim": items[i].vecSim,
-			"alpha":      alpha,
+			"hybrid":      items[i].rrfScore,
+			"vector":      items[i].vecRRF,
+			"text":        items[i].txtRRF,
+			"cosine_sim":  items[i].vecSim,
+			"alpha":       alpha,
+			"final_score": items[i].rrfScore,
 		}
 		out = append(out, res)
 	}
 
-	sort.Slice(out, func(i, j int) bool {
+	sort.SliceStable(out, func(i, j int) bool {
+		ui := isUnavailable(out[i].Availability, out[i].AvailableQuantity)
+		uj := isUnavailable(out[j].Availability, out[j].AvailableQuantity)
+		if ui != uj {
+			return !ui // available products first (ADR-002)
+		}
 		return out[i].Score["hybrid"] > out[j].Score["hybrid"]
 	})
 	if limit > 0 && len(out) > limit {
