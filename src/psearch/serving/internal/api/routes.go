@@ -115,7 +115,8 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
   </header>
   <main>
     <div class="search-bar">
-      <input type="text" id="q" value="running shoes" placeholder="Search products (e.g. running shoes, tenis corrida, laptop, geladeira)..." />
+      <input type="text" id="q" list="q-suggestions" value="running shoes" placeholder="Search products (e.g. running shoes, tenis corrida, laptop, geladeira)..." autocomplete="off" onkeydown="if(event.key==='Enter') runSearch()" />
+      <datalist id="q-suggestions"></datalist>
       <div class="slider-wrap">
         <span>FTS (0.0)</span>
         <input type="range" id="alpha" min="0" max="1" step="0.1" value="0.5" oninput="document.getElementById('alpha-val').textContent=this.value" />
@@ -307,6 +308,39 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
             }
           }
         }
+      });
+    }
+    const qInput = document.getElementById('q');
+    const qDatalist = document.getElementById('q-suggestions');
+    let autoTimer = null;
+    if (qInput && qDatalist) {
+      qInput.addEventListener('input', function() {
+        if (autoTimer) clearTimeout(autoTimer);
+        const val = qInput.value.trim();
+        if (val.length < 2) {
+          while (qDatalist.firstChild) qDatalist.removeChild(qDatalist.firstChild);
+          return;
+        }
+        autoTimer = setTimeout(async function() {
+          const tenantId = document.getElementById('tenant_id') ? document.getElementById('tenant_id').value : 'default';
+          const locale = document.getElementById('locale') ? document.getElementById('locale').value : '';
+          let autoUrl = '/api/autocomplete?q=' + encodeURIComponent(val) + '&limit=8';
+          if (tenantId) autoUrl += '&tenant_id=' + encodeURIComponent(tenantId);
+          if (locale) autoUrl += '&locale=' + encodeURIComponent(locale);
+          try {
+            const res = await fetch(autoUrl);
+            if (!res.ok) return;
+            const data = await res.json();
+            while (qDatalist.firstChild) qDatalist.removeChild(qDatalist.firstChild);
+            (data.suggestions || []).forEach(function(s) {
+              const opt = document.createElement('option');
+              opt.value = typeof s === 'object' ? s.text : s;
+              qDatalist.appendChild(opt);
+            });
+          } catch (e) {
+            // ignore
+          }
+        }, 150);
       });
     }
     runSearch();
