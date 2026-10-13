@@ -112,6 +112,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <span class="badge" id="tenant-badge" style="display:none;"></span>
       <span class="badge" id="locale-badge" style="display:none;"></span>
       <span class="badge" id="ltr-badge" style="display:none;"></span>
+      <span class="badge" id="intent-badge" style="display:none;"></span>
     </div>
   </header>
   <main>
@@ -146,6 +147,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <label class="checkbox-wrap">
         <input type="checkbox" id="ltr" /> Re-rank (LTR)
       </label>
+      <label class="checkbox-wrap">
+        <input type="checkbox" id="parse_intent" checked /> Smart query
+      </label>
       <button onclick="runSearch()">Search</button>
     </div>
     <div style="display:flex;gap:24px;margin-top:20px;align-items:flex-start;">
@@ -174,6 +178,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <div style="flex:1;min-width:0;">
         <div class="meta" id="meta">Loading catalog...</div>
         <div id="expanded-terms" style="color:var(--muted);font-size:13px;margin:-8px 0 16px 0;display:none;"></div>
+        <div id="parsed-query-chips" style="display:none;margin:-8px 0 16px 0;gap:8px;flex-wrap:wrap;align-items:center;"></div>
         <div class="grid" id="results"></div>
       </div>
     </div>
@@ -189,6 +194,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const cep = document.getElementById('cep') ? document.getElementById('cep').value.trim() : '';
       const maxSla24h = document.getElementById('max_sla_24h') ? document.getElementById('max_sla_24h').checked : false;
       const ltr = document.getElementById('ltr') ? document.getElementById('ltr').checked : false;
+      const parseIntent = document.getElementById('parse_intent') ? document.getElementById('parse_intent').checked : true;
       let url = '/api/search?q=' + encodeURIComponent(q) + '&alpha=' + encodeURIComponent(alpha);
       if (channel) {
         url += '&channel=' + encodeURIComponent(channel);
@@ -210,6 +216,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       }
       if (ltr) {
         url += '&ltr=true';
+      }
+      if (parseIntent) {
+        url += '&parse_intent=true';
       }
       const res = await fetch(url);
       const data = await res.json();
@@ -246,6 +255,14 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           document.getElementById('ltr-badge').style.display = 'none';
         }
       }
+      if (document.getElementById('intent-badge')) {
+        if (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none') {
+          document.getElementById('intent-badge').textContent = 'Intent: ' + data.parsed_query.intent_source;
+          document.getElementById('intent-badge').style.display = 'inline-block';
+        } else {
+          document.getElementById('intent-badge').style.display = 'none';
+        }
+      }
       const facetLat = data.facets_latency_ms !== undefined ? data.facets_latency_ms : (data.facets && data.facets.latency_ms);
       if (facetLat !== undefined && facetLat !== null) {
         document.getElementById('facets-latency').textContent = Number(facetLat).toFixed(1) + 'ms';
@@ -253,7 +270,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         document.getElementById('facets-latency').textContent = '';
       }
       document.getElementById('meta').textContent =
-        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + ')';
+        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none' ? ', intent=' + data.parsed_query.intent_source : '') + ')';
       
       const expEl = document.getElementById('expanded-terms');
       if (expEl) {
@@ -263,6 +280,54 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         } else {
           expEl.textContent = '';
           expEl.style.display = 'none';
+        }
+      }
+
+      const chipsEl = document.getElementById('parsed-query-chips');
+      if (chipsEl) {
+        while (chipsEl.firstChild) chipsEl.removeChild(chipsEl.firstChild);
+        const pq = data.parsed_query;
+        const f = (pq && pq.extracted_filters) || {};
+        const hasFilters = Object.keys(f).length > 0;
+        if (pq && (hasFilters || pq.clean_query)) {
+          chipsEl.style.display = 'flex';
+          const items = [];
+          if (pq.clean_query) {
+            items.push('Query: "' + pq.clean_query + '"');
+          }
+          if (f.min_price !== undefined && f.max_price !== undefined) {
+            items.push('Preço: ' + f.min_price + ' - ' + f.max_price);
+          } else if (f.min_price !== undefined) {
+            items.push('Preço ≥ ' + f.min_price);
+          } else if (f.max_price !== undefined) {
+            items.push('Preço ≤ ' + f.max_price);
+          }
+          if (f.brand) {
+            items.push('Marca: ' + f.brand);
+          }
+          if (f.category) {
+            items.push('Categoria: ' + f.category);
+          }
+          if (f.color) {
+            items.push('Cor: ' + f.color);
+          }
+          if (pq.intent_source && pq.intent_source !== 'none') {
+            items.push('(' + pq.intent_source + ')');
+          }
+          items.forEach(function(text) {
+            const chip = document.createElement('span');
+            chip.className = 'badge';
+            chip.style.background = '#1e293b';
+            chip.style.border = '1px solid #38bdf8';
+            chip.style.color = '#38bdf8';
+            chip.style.fontSize = '12px';
+            chip.style.padding = '4px 10px';
+            chip.style.borderRadius = '999px';
+            chip.textContent = text;
+            chipsEl.appendChild(chip);
+          });
+        } else {
+          chipsEl.style.display = 'none';
         }
       }
       

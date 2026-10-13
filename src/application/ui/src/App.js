@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import React, { useState, useMemo, useCallback, useEffect, memo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import {
     Container,
@@ -72,6 +72,16 @@ function ProductSearch({
     const [effectiveLtr, setEffectiveLtr] = useState(false);
     const [ltrModel, setLtrModel] = useState(null);
     const [ltrLatencyUs, setLtrLatencyUs] = useState(null);
+    const [parseIntent, setParseIntent] = useState(true);
+    const [parsedQuery, setParsedQuery] = useState(null);
+    const [activeExtractedFilters, setActiveExtractedFilters] = useState(null);
+    const [cleanQueryBase, setCleanQueryBase] = useState('');
+    const activeExtractedFiltersRef = useRef(activeExtractedFilters);
+    activeExtractedFiltersRef.current = activeExtractedFilters;
+    const parseIntentRef = useRef(parseIntent);
+    parseIntentRef.current = parseIntent;
+    const cleanQueryBaseRef = useRef(cleanQueryBase);
+    cleanQueryBaseRef.current = cleanQueryBase;
     const [internalTenantId, setInternalTenantId] = useState('default');
     const [internalLocale, setInternalLocale] = useState('');
     const tenantId = propTenantId !== undefined ? propTenantId : internalTenantId;
@@ -481,28 +491,55 @@ function ProductSearch({
         ? selectedFilters.brands[0]
         : '';
 
-    const fetchProducts = useCallback(async () => {
+    const fetchProducts = useCallback(async (searchParams) => {
         setLoading(true);
         setError(null);
         try {
+            const queryToUse = (searchParams && searchParams.query !== undefined)
+                ? searchParams.query
+                : activeSearchQuery;
+            const parseIntentToUse = (searchParams && searchParams.parseIntent !== undefined)
+                ? searchParams.parseIntent
+                : parseIntentRef.current;
+            const extractedFiltersToUse = (searchParams && searchParams.extractedFilters !== undefined)
+                ? searchParams.extractedFilters
+                : activeExtractedFiltersRef.current;
+
             const payload = {
-                query: activeSearchQuery,
+                query: queryToUse,
                 limit: 300,
                 min_score: 0.01,
                 alpha: typeof alpha === 'number' ? alpha : 0.5,
                 only_in_stock: Boolean(onlyInStock),
                 tenant_id: tenantId || 'default',
             };
+            if (parseIntentToUse) {
+                payload.parse_intent = true;
+            }
+            if (extractedFiltersToUse) {
+                if (extractedFiltersToUse.min_price !== undefined && extractedFiltersToUse.min_price !== null && Number(extractedFiltersToUse.min_price) > 0) {
+                    payload.min_price = Number(extractedFiltersToUse.min_price);
+                }
+                if (extractedFiltersToUse.max_price !== undefined && extractedFiltersToUse.max_price !== null && Number(extractedFiltersToUse.max_price) > 0) {
+                    payload.max_price = Number(extractedFiltersToUse.max_price);
+                }
+                if (extractedFiltersToUse.brand) {
+                    payload.brand = String(extractedFiltersToUse.brand);
+                }
+                if (extractedFiltersToUse.category) {
+                    payload.category = String(extractedFiltersToUse.category);
+                }
+            }
             if (locale) {
                 payload.locale = locale;
             }
             if (channel && channel !== 'All' && channel !== 'all') {
                 payload.channel = channel;
             }
-            if (selectedCategory) {
+            if (selectedCategory && (!extractedFiltersToUse || !extractedFiltersToUse.category)) {
                 payload.category = selectedCategory;
             }
-            if (selectedBrand) {
+            if (selectedBrand && (!extractedFiltersToUse || !extractedFiltersToUse.brand)) {
                 payload.brand = selectedBrand;
             }
             if (cep && cep.trim()) {
@@ -520,6 +557,20 @@ function ProductSearch({
             console.log("API Response:", JSON.stringify(response.data, null, 2));
 
             if (response.data) {
+                if (response.data.parsed_query) {
+                    setParsedQuery(response.data.parsed_query);
+                    const ext = response.data.parsed_query.extracted_filters || {};
+                    setActiveExtractedFilters(ext);
+                    activeExtractedFiltersRef.current = ext;
+                    const cleanQ = response.data.parsed_query.clean_query || queryToUse;
+                    setCleanQueryBase(cleanQ);
+                    cleanQueryBaseRef.current = cleanQ;
+                } else if (searchParams && searchParams.extractedFilters !== undefined) {
+                    setActiveExtractedFilters(searchParams.extractedFilters);
+                    activeExtractedFiltersRef.current = searchParams.extractedFilters;
+                } else if (!parseIntentToUse) {
+                    setParsedQuery(null);
+                }
                 if (response.data.effective_alpha !== undefined) {
                     setEffectiveAlpha(response.data.effective_alpha);
                 }
@@ -763,11 +814,41 @@ function ProductSearch({
         if (options.ltr !== undefined) {
             setLtr(options.ltr);
         }
+        if (options.parseIntent !== undefined) {
+            setParseIntent(options.parseIntent);
+            parseIntentRef.current = options.parseIntent;
+        }
+        setParsedQuery(null);
+        setActiveExtractedFilters(null);
+        activeExtractedFiltersRef.current = null;
+        setCleanQueryBase('');
+        cleanQueryBaseRef.current = '';
         // Update active search query which triggers API call
         setActiveSearchQuery(typeof searchText === 'string' ? searchText : searchText?.query || '');
         // Reset AI filter suggestions when a new search is performed
         setShowAIFilterSuggestions(true);
     }, [setTenantId, setLocale]);
+
+    const handleRemoveExtractedFilter = useCallback((filterKey) => {
+        const currentFilters = activeExtractedFiltersRef.current || {};
+        const nextFilters = { ...currentFilters };
+        delete nextFilters[filterKey];
+        if (filterKey === 'price') {
+            delete nextFilters.min_price;
+            delete nextFilters.max_price;
+        }
+        setActiveExtractedFilters(nextFilters);
+        activeExtractedFiltersRef.current = nextFilters;
+        setParseIntent(false);
+        parseIntentRef.current = false;
+
+        const q = cleanQueryBaseRef.current || activeSearchQuery;
+        fetchProducts({
+            query: q,
+            parseIntent: false,
+            extractedFilters: nextFilters,
+        });
+    }, [fetchProducts, activeSearchQuery]);
 
     useEffect(() => {
         if (activeSearchQuery.trim()) {
@@ -1108,6 +1189,11 @@ function ProductSearch({
                         setMaxSla24h={setMaxSla24h}
                         ltr={ltr}
                         setLtr={setLtr}
+                        parseIntent={parseIntent}
+                        setParseIntent={(val) => {
+                            setParseIntent(val);
+                            parseIntentRef.current = val;
+                        }}
                     />
 
                     {/* Display search result count and search metadata */}
@@ -1126,6 +1212,70 @@ function ProductSearch({
                             allProducts={products} // Pass all products for smart filtering
                         />
 
+                        {/* Smart query intent chips (Issue #19) */}
+                        {activeExtractedFilters && Object.keys(activeExtractedFilters).length > 0 && (
+                            <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.secondary', mr: 0.5 }}>
+                                    Smart query:
+                                </Typography>
+                                {cleanQueryBase && (
+                                    <Chip
+                                        size="small"
+                                        color="primary"
+                                        variant="outlined"
+                                        label={`Query: "${cleanQueryBase}"`}
+                                    />
+                                )}
+                                {activeExtractedFilters.min_price !== undefined && activeExtractedFilters.min_price !== null && Number(activeExtractedFilters.min_price) > 0 && (
+                                    <Chip
+                                        size="small"
+                                        color="primary"
+                                        label={`Preço ≥ ${activeExtractedFilters.min_price}`}
+                                        onDelete={() => handleRemoveExtractedFilter('min_price')}
+                                    />
+                                )}
+                                {activeExtractedFilters.max_price !== undefined && activeExtractedFilters.max_price !== null && Number(activeExtractedFilters.max_price) > 0 && (
+                                    <Chip
+                                        size="small"
+                                        color="primary"
+                                        label={`Preço ≤ ${activeExtractedFilters.max_price}`}
+                                        onDelete={() => handleRemoveExtractedFilter('max_price')}
+                                    />
+                                )}
+                                {activeExtractedFilters.brand && (
+                                    <Chip
+                                        size="small"
+                                        color="primary"
+                                        label={`Marca: ${activeExtractedFilters.brand}`}
+                                        onDelete={() => handleRemoveExtractedFilter('brand')}
+                                    />
+                                )}
+                                {activeExtractedFilters.category && (
+                                    <Chip
+                                        size="small"
+                                        color="primary"
+                                        label={`Categoria: ${activeExtractedFilters.category}`}
+                                        onDelete={() => handleRemoveExtractedFilter('category')}
+                                    />
+                                )}
+                                {activeExtractedFilters.color && (
+                                    <Chip
+                                        size="small"
+                                        variant="outlined"
+                                        label={`Cor: ${activeExtractedFilters.color}`}
+                                    />
+                                )}
+                                {parsedQuery?.intent_source && parsedQuery.intent_source !== 'none' && (
+                                    <Chip
+                                        size="small"
+                                        variant="outlined"
+                                        sx={{ fontStyle: 'italic', opacity: 0.8 }}
+                                        label={`(${parsedQuery.intent_source})`}
+                                    />
+                                )}
+                            </Box>
+                        )}
+
                         <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
                             <Typography variant="body2" color="text.secondary">
                                 {products.length ? `Found ${products.length} products` : 'No products found. Try a search!'}
@@ -1136,6 +1286,7 @@ function ProductSearch({
                                 {facetsLatencyMs !== null && ` • facets: ${Number(facetsLatencyMs).toFixed(1)}ms`}
                                 {appliedRules && appliedRules.length > 0 && ` • applied_rules: ${appliedRules.join(', ')}`}
                                 {effectiveLtr && ltrModel && ` • ltr: ${ltrModel} (${ltrLatencyUs || 0}µs)`}
+                                {parsedQuery && parsedQuery.intent_source && parsedQuery.intent_source !== 'none' && ` • intent: ${parsedQuery.intent_source}`}
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                                 {effectiveAlpha !== null && (
@@ -1161,6 +1312,9 @@ function ProductSearch({
                                 )}
                                 {effectiveLtr && ltrLatencyUs !== null && ltrLatencyUs !== undefined && (
                                     <Chip size="small" variant="outlined" label={`ltr_latency: ${ltrLatencyUs}µs`} />
+                                )}
+                                {parsedQuery && parsedQuery.intent_source && parsedQuery.intent_source !== 'none' && (
+                                    <Chip size="small" color="info" variant="outlined" label={`intent: ${parsedQuery.intent_source}`} />
                                 )}
                             </Box>
                         </Box>

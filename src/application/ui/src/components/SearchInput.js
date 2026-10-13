@@ -52,6 +52,8 @@ const SearchInput = memo(({
     setMaxSla24h: controlledSetMaxSla24h,
     ltr: controlledLtr,
     setLtr: controlledSetLtr,
+    parseIntent: controlledParseIntent,
+    setParseIntent: controlledSetParseIntent,
 }) => {
     const [inputValue, setInputValue] = useState('');
     const [internalAlpha, setInternalAlpha] = useState(0.5);
@@ -62,6 +64,7 @@ const SearchInput = memo(({
     const [internalCep, setInternalCep] = useState('');
     const [internalMaxSla24h, setInternalMaxSla24h] = useState(false);
     const [internalLtr, setInternalLtr] = useState(false);
+    const [internalParseIntent, setInternalParseIntent] = useState(true);
     const [cepError, setCepError] = useState('');
     const [suggestions, setSuggestions] = useState([]);
     const [isOpen, setIsOpen] = useState(false);
@@ -84,6 +87,8 @@ const SearchInput = memo(({
     const setMaxSla24h = controlledSetMaxSla24h || setInternalMaxSla24h;
     const ltr = controlledLtr !== undefined ? controlledLtr : internalLtr;
     const setLtr = controlledSetLtr || setInternalLtr;
+    const parseIntent = controlledParseIntent !== undefined ? controlledParseIntent : internalParseIntent;
+    const setParseIntent = controlledSetParseIntent || setInternalParseIntent;
 
     // Local slider value for responsive dragging
     const [localAlpha, setLocalAlpha] = useState(alpha);
@@ -152,6 +157,7 @@ const SearchInput = memo(({
             cep,
             maxSla24h,
             ltr,
+            parseIntent,
         });
     };
 
@@ -185,7 +191,8 @@ const SearchInput = memo(({
             locale,
             cep,
             maxSla24h,
-            ltr
+            ltr,
+            parseIntent,
         });
     };
 
@@ -414,6 +421,18 @@ const SearchInput = memo(({
                         />
                     }
                     label="Re-rank (LTR)"
+                />
+
+                {/* Smart query Toggle */}
+                <FormControlLabel
+                    control={
+                        <Switch
+                            checked={Boolean(parseIntent)}
+                            onChange={(e) => setParseIntent(e.target.checked)}
+                            color="primary"
+                        />
+                    }
+                    label="Smart query"
                 />
             </Box>
         </Paper>
