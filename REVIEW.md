@@ -194,3 +194,8 @@
     - `8ba9d06` (#21 'Você quis dizer' banner): `npm run build` PASS
     - `4ab8403` (#21 entity-aware correction + handler regression test for `sansung`): `go vet` / `go test -race` PASS
 - **Note:** an earlier entry for `780c681` was mislabeled as #21 UI; it is a DEPLOYMENT.md-only commit.
+
+## #22 B2B contract pricing (372ad12)
+- **Date:** 2026-10-13
+- **Status:** PASS (reviewer, read-only worktree procedure)
+- **Checks:** go vet PASS; go test -race PASS; ADR-008 compliance confirmed (interleaved product_prices + 019b seed, effective price via split-local lookups scoped by tenant, exclusive assortment, effective-price filters and price facet, sort_by after availability/pins/buries, LTR skipped for price sorts, 400 validation, bound params).
