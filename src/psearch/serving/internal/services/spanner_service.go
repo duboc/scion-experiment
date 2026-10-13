@@ -73,8 +73,17 @@ func NewSpannerService(ctx context.Context, cfg *config.Config, embeddings Query
 	go func() {
 		seedCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		if err := svc.SeedIfEmpty(seedCtx); err != nil {
-			log.Printf("WARN: Spanner seed check: %v", err)
+		// Retry once: on a cold, CPU-throttled instance the first session can take
+		// longer than the budget. The check only seeds an EMPTY products table, so a
+		// failure here never affects serving.
+		err := svc.SeedIfEmpty(seedCtx)
+		if err != nil && seedCtx.Err() != nil {
+			retryCtx, cancel2 := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel2()
+			err = svc.SeedIfEmpty(retryCtx)
+		}
+		if err != nil {
+			log.Printf("INFO: Spanner seed check skipped (non-fatal): %v", err)
 		}
 	}()
 

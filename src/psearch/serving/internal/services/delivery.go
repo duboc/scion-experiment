@@ -116,6 +116,9 @@ func PromiseLabel(sla int64, cdID string) string {
 }
 
 func toPromise(r InventoryRow) *models.DeliveryPromise {
+	if r.FreeShipping {
+		r.ShippingCost = 0 // the buyer pays nothing when shipping is free
+	}
 	return &models.DeliveryPromise{SLAHours: r.SLAHours, CDID: r.CDID, SellerID: r.SellerID, RegionCode: r.RegionCode, CEP: "",
 		FreeShipping: r.FreeShipping, ShippingCost: r.ShippingCost, Label: PromiseLabel(r.SLAHours, r.CDID)}
 }

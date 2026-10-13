@@ -82,3 +82,10 @@ func TestDeliverySQL(t *testing.T) {
 		t.Fatal("promise SQL malformed")
 	}
 }
+
+func TestFreeShippingZeroesCost(t *testing.T) {
+	p := toPromise(InventoryRow{FreeShipping: true, ShippingCost: 15, SLAHours: 24, CDID: "cd-sp-cajamar"})
+	if p.ShippingCost != 0 || !p.FreeShipping {
+		t.Fatalf("free shipping must report cost 0: %+v", p)
+	}
+}
