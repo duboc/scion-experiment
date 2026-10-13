@@ -105,6 +105,14 @@
     - ADR-005 (Delivery Promises): PASS
     - Security: PASS (Bound parameters used for CEP and SLA)
 
+### Follow-up: f00acb7
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go test`: PASS
+    - `shipping_cost` is now 0 when `free_shipping` is true.
+    - Seed check now retries and logs non-fatally.
+
 ## #9: Autocomplete (c717604)
 - **Date:** 2026-10-13
 - **Status:** PASS
@@ -112,3 +120,10 @@
     - `go vet` and `go test -race`: PASS
     - ADR-006 (Autocomplete): PASS
     - #8 UI Changes: PASS (CEP input and validation, SLA toggle, and badges are all implemented)
+
+### Follow-up: 3e9e0dd
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `npm run build`: PASS
+    - UI now has debounced typeahead with keyboard navigation.
