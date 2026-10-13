@@ -60,7 +60,7 @@ flowchart TB
 | Agent-status sync | cron on the VM | [`sync-factory-agents.py`](scripts/sync-factory-agents.py) copies agent state from `hub.db` to Spanner every minute, so the dashboard can show it without Hub access. |
 | Backups | cron & GCE snapshots | [`backup-hub.sh`](scripts/backup-hub.sh) creates daily online SQLite backups and state tarballs (14-day retention); GCE disk snapshot policy runs daily at 04:00 UTC. |
 | Alerts & Budgets | Cloud Monitoring in `HUB_PROJECT` | Log-based alert policy on `scion-factory-alerts` (Cloud Monitoring email notifications to PO). Monthly billing budgets ($150 Hub, $150 Sandbox) with 50%, 80%, 100% actual and 120% forecasted spend threshold alerts. |
-| GitHub repo | `GITHUB_REPO` | Issues are the backlog and the record of work; `BUILD_BRANCH` holds the product, `EVAL_BRANCH` the eval code. |
+| GitHub repo | `GITHUB_REPO` | Issues are the backlog and the record of work; `BUILD_BRANCH` (`main`) and `EVAL_BRANCH` (`eval-dashboard`) are independent orphan branches (`git switch --orphan`) in `GITHUB_REPO` that share no Git ancestry and are never merged into each other. |
 | Sandbox | `SANDBOX_PROJECT` | Everything the factories build and run: the product service, its Spanner and BigQuery data, the dashboard, Firestore, a data bucket, the `github-token` secret. Kept apart from the Hub project so agents can't break the Hub. |
 
 ## Identities

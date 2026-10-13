@@ -48,6 +48,7 @@ action, only set the status.
 All agents of a project share one checkout at `/workspace` (branch `${BUILD_BRANCH}` in `${BUILD_PROJECT}`,
 `${EVAL_BRANCH}` in `${EVAL_PROJECT}`).
 
+- **Independent orphan trunks:** `${BUILD_BRANCH}` and `${EVAL_BRANCH}` are two permanent, independent orphan trunks (`--orphan`) with unrelated Git histories. **Never** merge, rebase, cherry-pick, or open a pull request between `${EVAL_BRANCH}` and `${BUILD_BRANCH}`. Each factory operates strictly within its own trunk.
 - Commit only when your lead gives you the commit slot. Then stage and commit only your own files:
   `git add <files> && git commit -m "<type>(<scope>): <summary> (#N)" && git push origin <branch>`.
   If `git push` is rejected (non-fast-forward), run:
