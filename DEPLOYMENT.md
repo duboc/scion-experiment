@@ -239,3 +239,26 @@ Verification on `00016-jtj`:
 - Regressions: `tenis&alpha=0` → prod-002 first; `geladeira&locale=pt-BR` → prod-011 first with `[fridge, refrigerador, refrigerator]`; without a locale, prod-012 last (OOS); `acme` → 0 results, `hybrid_v2`; Acer → prod-006; store 9; in-stock 13; facets 4 groups; OOS (004, 012) last everywhere; cache miss 248 ms → hit 18.5 ms
 - Logs: no WARN, fallback, InvalidArgument, PermissionDenied, lexical or ERROR. **The cold-start `embedding cache store read failed` WARN is gone** (new 1500 ms first-read budget)
 - Rule effects (pin/bury/boost) aren't exercised in prod without an admin token, which is expected; they're covered by unit tests and the sqlcheck rule-params case. The multiplier clamp hardening (`2586e94`) ships with the next deploy.
+
+## #8 CEP/SLA delivery promises (interleaved skus / regional_inventory): LIVE 2026-10-13
+
+Source: clean `git archive` of **`cbc384c879f39f2c29b4f994902476cc2df26e2a`** (#8 `dea13c8` + clamp `2586e94` + React UI `f07d668`). Env unchanged; `ADMIN_TOKEN` unset.
+
+| Step | Result |
+|---|---|
+| DDL `017` part a: `skus` `INTERLEAVE IN PARENT products ON DELETE CASCADE` | ✅ |
+| DDL `017` part b: `regional_inventory` `INTERLEAVE IN PARENT skus ON DELETE CASCADE` | ✅ (the split matches the original file exactly) |
+| DML `017b` → `017c` | ✅ "modified 15 rows", "modified 57 rows". **skus=15, regional_inventory=57**. Per region: SP 12 (SLA 24–48h), SUL 12 (72–96h), RJ 11, MG 11, NE 11. Sellers: seller-psearch 10, 5 marketplace sellers |
+| `cmd/sqlcheck` | ✅ 14 search cases + 2 delivery cases (`shoes` → 8, `notebook` → 9) + "delivery promises for 01310: 3 products" + facets OK, exit 0 |
+| Deploy → **`psearch-serving-00017-9wc`**, then `update-traffic --to-latest` | ✅ 100%, follows latest. Rollback target: `00016-jtj` |
+
+Verification on `00017-9wc`:
+- `q=shoes&cep=01310-100` → 12 deliverable products (excluded: prod-004 and prod-012, OOS everywhere, and prod-008, which has no SP inventory row). Every result has `deliveryPromise.region_code=SP`, `cd_id=cd-sp-cajamar`. Label is **"Chega amanhã - CD São Paulo"** (24h, seller-psearch) or **"Chega em 2 dias - CD São Paulo"** (48h, marketplace sellers: nike, keychron, sony, acer)
+- `+max_sla_hours=24` → 8 results, **all `sla_hours=24`**
+- `cep=123` → **HTTP 400** `invalid cep "123": expected 8 digits (e.g. 01310-100)`
+- `cep=90000-000` → region **SUL**, `cd-pr-curitiba`, labels "Chega em até 3 dias - CD Sul" (72h) / "Chega em até 4 dias - CD Sul" (96h), different costs. Same 12-product set as SP (both regions stock the same SKUs); `cep=20040-020` (RJ) gives a different set of 9
+- No `cep` → 0 results carry `deliveryPromise`
+- Regressions: `tenis&alpha=0` → prod-002 first; geladeira pt-BR → prod-011 first with synonyms; `score.boost` in (0, 0.002] on all results; OOS last; `acme` → 0 results, `hybrid_v2`; Acer → prod-006; facets 4 groups; cache miss 369 ms → hit 25 ms; `/api/rules` GET 200 / POST 403
+- Logs: one non-blocking startup line, `WARN: Spanner seed check: DeadlineExceeded … getting session`, 21 s after instance start. `SeedIfEmpty` runs in a background goroutine with a 20 s budget, and under request-based CPU the idle post-deploy instance was throttled. It only checks whether `products` is empty (it has 15 rows); the backend stayed `spanner`, and every query was `hybrid_v2`. First occurrence on any revision. Otherwise no WARN, fallback, InvalidArgument, PermissionDenied, lexical or ERROR
+
+Notes: (a) `shipping_cost` is still reported when `free_shipping=true` (e.g. prod-007: free, cost 15). The UI should show "Frete grátis" or 0 in that case; (b) prod-008 has inventory only in MG/NE/RJ, as seeded; confirm that's intended.
