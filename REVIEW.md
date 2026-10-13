@@ -38,3 +38,11 @@
     - ADR-001 (Alpha): PASS
     - ADR-002 (Availability): PASS
     - UI build: PASS
+
+### Hotfix: 79b15a2
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test`: PASS
+    - Spanner SQL query fixed to avoid nested aggregations.
+- **Process Gap:** The existing test suite only covers the in-memory search implementation, not the Spanner SQL. The new `cmd/sqlcheck` tool is intended to bridge this gap in pre-deployment validation.
