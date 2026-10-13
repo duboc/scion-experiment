@@ -21,9 +21,11 @@ are about to recreate the agents that use them.
 """
 import argparse
 import base64
+import glob
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -32,7 +34,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 REMOTE = r'''
-import base64, hashlib, hmac, io, json, os, sqlite3, sys, tarfile, time, urllib.error, urllib.request
+import base64, glob, hashlib, hmac, io, json, os, sqlite3, sys, tarfile, time, urllib.error, urllib.request
 
 PAYLOAD, PROJECT, ROLES, APPLY = __ARGS__
 SCION_HOME = os.path.expanduser(os.environ.get("SCION_HOME", "~/.scion"))
@@ -49,6 +51,8 @@ def db():
 def token():
     # Short-lived admin JWT, as in scion-admin.py (personal access tokens can't do admin work; L10).
     user = db().execute("SELECT id, email, role FROM users WHERE email = ?", (os.environ.get("PO_EMAIL"),)).fetchone()
+    if not user:
+        user = db().execute("SELECT id, email, role FROM users WHERE role = 'admin' LIMIT 1").fetchone()
     if not user:
         sys.exit("PO_EMAIL is not a Hub user")
     secret = next(line.split("=", 1)[1].strip() for line in open(f"{SCION_HOME}/hub.env")
@@ -69,13 +73,16 @@ TOKEN = None
 def call(method, url, body=None, raw=None, headers=None):
     global TOKEN
     TOKEN = TOKEN or token()
-    hdrs = {"Authorization": "Bearer " + TOKEN}
+    full_url = url if url.startswith("http") else HUB_URL + url
+    hdrs = {}
+    if full_url.startswith(HUB_URL):
+        hdrs["Authorization"] = "Bearer " + TOKEN
     data = raw
     if body is not None:
         data = json.dumps(body).encode()
         hdrs["Content-Type"] = "application/json"
     hdrs.update(headers or {})
-    req = urllib.request.Request(url if url.startswith("http") else HUB_URL + url, data=data, method=method, headers=hdrs)
+    req = urllib.request.Request(full_url, data=data, method=method, headers=hdrs)
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             text = resp.read().decode()
@@ -115,16 +122,31 @@ def main():
             if member.isfile():
                 role, rel = member.name.split("/", 1)
                 files_by_role.setdefault(role, {})[rel] = (tar.extractfile(member).read(), member.mode)
-    default_dir = f"{SCION_HOME}/templates/default"
-    for dirpath, _, names in os.walk(default_dir):
+
+    home_matches = sorted(glob.glob(os.path.join(SCION_HOME, "workspace-storage", "hubs", "*", "templates", "global", "default", "home")))
+    default_home_dir = home_matches[0] if home_matches and os.path.isdir(home_matches[0]) else os.path.join(SCION_HOME, "templates", "default", "home")
+    if not os.path.isdir(default_home_dir):
+        sys.exit(f"default home directory not found (checked workspace-storage and {SCION_HOME}/templates/default/home)")
+
+    default_tpl_matches = sorted(glob.glob(os.path.join(SCION_HOME, "workspace-storage", "hubs", "*", "templates", "global", "default")))
+    default_dir = default_tpl_matches[0] if default_tpl_matches and os.path.isdir(default_tpl_matches[0]) else f"{SCION_HOME}/templates/default"
+
+    if os.path.isdir(default_dir):
+        for dirpath, _, names in os.walk(default_dir):
+            for name in names:
+                full = os.path.join(dirpath, name)
+                rel = os.path.relpath(full, default_dir)
+                if rel not in CONFIG_FILES:
+                    for role in ROLES:
+                        files_by_role[role].setdefault(rel, (open(full, "rb").read(), os.stat(full).st_mode))
+
+    for dirpath, _, names in os.walk(default_home_dir):
         for name in names:
             full = os.path.join(dirpath, name)
-            rel = os.path.relpath(full, default_dir)
-            if rel not in CONFIG_FILES:
-                for role in ROLES:
-                    files_by_role[role].setdefault(rel, (open(full, "rb").read(), os.stat(full).st_mode))
+            rel = os.path.join("home", os.path.relpath(full, default_home_dir))
+            for role in ROLES:
+                files_by_role[role].setdefault(rel, (open(full, "rb").read(), os.stat(full).st_mode))
 
-    hub_id = open(f"{SCION_HOME}/hub-id").read().strip()
     project = db().execute("SELECT id FROM projects WHERE slug = ?", (PROJECT,)).fetchone()
     if not project:
         sys.exit(f"unknown project {PROJECT}")
@@ -139,10 +161,19 @@ def main():
         field = lambda key: next((l.split(":", 1)[1].split("#")[0].strip().strip('"') for l in config.splitlines()
                                   if l.startswith(key + ":")), "")
         harness, description = field("default_harness_config"), field("description")
-        own_path = f"hubs/{hub_id}/templates/groves/{pid}/{role}"
-        row = db().execute("SELECT id, storage_path, files FROM templates WHERE scope='project' AND scope_id=? AND slug=?",
+
+        row = db().execute("SELECT id, storage_path, storage_uri, files FROM templates WHERE scope='project' AND scope_id=? AND slug=?",
                            (pid, role)).fetchone()
-        if row and row["storage_path"] == own_path:
+        is_isolated = False
+        if row and row["storage_path"] and row["storage_uri"]:
+            shared_cnt = db().execute(
+                "SELECT count(*) as cnt FROM templates WHERE storage_path = ? AND id <> ? AND slug NOT LIKE '%-legacy'",
+                (row["storage_path"], row["id"])
+            ).fetchone()["cnt"]
+            if shared_cnt == 0:
+                is_isolated = True
+
+        if row and is_isolated:
             touched.add(row["id"])
             remote = {f["path"]: f["hash"] for f in json.loads(row["files"] or "[]")}
             changed = sorted(p for p, (c, _) in files.items() if remote.get(p) != sha(c))
@@ -179,9 +210,14 @@ def main():
 
     print("\nverification:")
     for role in ROLES:
-        for r in db().execute("SELECT id, slug, status, storage_path, content_hash FROM templates WHERE scope='project' "
+        for r in db().execute("SELECT id, slug, status, storage_path, storage_uri, content_hash FROM templates WHERE scope='project' "
                               "AND scope_id=? AND slug IN (?, ?) ORDER BY slug", (pid, role, role + "-legacy")):
-            print(f"  {r['slug']:<26} {r['status']:<8} own_storage={r['storage_path'].endswith('/' + r['slug'])} "
+            shared_cnt = db().execute(
+                "SELECT count(*) as cnt FROM templates WHERE storage_path = ? AND id <> ? AND slug NOT LIKE '%-legacy'",
+                (r["storage_path"], r["id"])
+            ).fetchone()["cnt"]
+            own = bool(r["storage_path"] and r["storage_uri"] and shared_cnt == 0)
+            print(f"  {r['slug']:<26} {r['status']:<8} own_storage={own} "
                   f"{r['id']} {r['content_hash']}")
     after = {r["id"]: r["content_hash"] for r in db().execute("SELECT id, content_hash FROM templates")}
     others = [tid for tid, h in before.items() if tid not in touched and after.get(tid) != h]
@@ -201,6 +237,10 @@ def main():
     parser.add_argument("--apply", action="store_true", help="make the changes (default: dry run)")
     args = parser.parse_args()
     roles = [r for r in args.roles.split(",") if r]
+
+    user = os.environ.get("HUB_OS_USER", "scion")
+    if not re.match(r"^[a-z_][a-z0-9_-]*$", user):
+        sys.exit(f"invalid HUB_OS_USER: {user}")
 
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "templates")

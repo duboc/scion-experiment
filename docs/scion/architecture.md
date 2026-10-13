@@ -53,7 +53,7 @@ flowchart TB
 | Scion Hub | VM in `HUB_PROJECT`, user `HUB_OS_USER` | `scion server start --foreground --hosted --enable-hub --enable-web --web-port 8080 --enable-runtime-broker`: state (SQLite `~/.scion/hub.db`), web UI, and a co-located Docker runtime broker that runs every agent container. Nightly release channel with automatic updates. |
 | IAP proxy | Cloud Run in `HUB_PROJECT` | The web UI and API are reached through Identity-Aware Proxy (`server.auth.mode: proxy`). Agents talk to the Hub over the VM's internal address (`server.hub.agent_endpoint`). |
 | Agent containers | Docker on the VM, named `<project>--<agent>` | One container per agent, with its harness (Claude Code, Antigravity, OpenCode, Hermes) in a tmux session `scion`. `/workspace` is the project folder `~/.scion/projects/<project>`. |
-| Harness configs | `~/.scion/harness-configs/<harness>/` on the VM | Image, provisioner, launch command and auth per harness. All harnesses use Vertex AI with the VM's identity, billed to `HUB_PROJECT` ([`config/hub-settings.example.yaml`](config/hub-settings.example.yaml)). |
+| Harness configs | `~/.scion/harness-configs/<harness>/` on the VM | Image, provisioner, launch command and auth per harness. Note that in hosted mode, the Hub provisions agents from bundled configs in `~/.scion/workspace-storage/hubs/<hub-id>/harness-configs/global/` rather than `~/.scion/harness-configs/<harness>/` directly. Project pre-start hooks are used for durable post-provisioning customization. All harnesses use Vertex AI with the VM's identity, billed to `HUB_PROJECT` ([`config/hub-settings.example.yaml`](config/hub-settings.example.yaml)). |
 | Templates | Hub, per project | Role prompts and settings ([`templates/`](templates/)). |
 | Schedules | Hub | Admin-owned cron jobs that message each lead every 15 minutes (the heartbeat). |
 | Agent-status sync | cron on the VM | [`sync-factory-agents.py`](scripts/sync-factory-agents.py) copies agent state from `hub.db` to Spanner every minute, so the dashboard can show it without Hub access. |
@@ -64,7 +64,7 @@ flowchart TB
 
 | Who | Identity | Grants | Why |
 |---|---|---|---|
-| Agents (default) | Hub VM SA (Scion `passthrough` mode) | `HUB_PROJECT`: `aiplatform.user` (models), log/metric/trace writers. Sandbox: `datastore.user`, `serviceusage.serviceUsageConsumer`, `spanner.databaseUser` on the database, `storage.objectAdmin` on the data bucket | Model calls; the eval agents read Spanner and write Firestore and the bucket. |
+| Agents (default) | Hub VM SA (Scion `passthrough` mode) | `HUB_PROJECT`: `aiplatform.user` (models), log/metric/trace writers. Sandbox: `datastore.user`, `serviceusage.serviceUsageConsumer`, `spanner.databaseUser` on the database, `storage.objectAdmin` on the data bucket | Model calls; workers query Spanner/Firestore/GCS for tests and evaluation, while Cloud Run deployments and IAM mutations are restricted to deployers holding `DEPLOYER_SA`. |
 | Deploy agents | `DEPLOYER_SA` (Scion `assign` mode) | Sandbox: `run.admin`, `cloudbuild.builds.editor`, `artifactregistry.admin`, `storage.admin`, `logging.viewer`, `serviceusage.serviceUsageConsumer`, `aiplatform.user`, `iam.serviceAccountUser`, `datastore.user`, `spanner.admin`, `spanner.databaseAdmin`, `bigquery.admin` | Deploys and migrations. Broad on purpose for a throwaway sandbox; scope `iam.serviceAccountUser` to the runtime and build SAs for anything shared. |
 | Hub VM SA, for the deployers | | `iam.serviceAccountTokenCreator` and `iam.serviceAccountUser` on `DEPLOYER_SA` | Scion mints the deployer's tokens with the VM's identity. |
 | Product service | `RUNTIME_SA` | `aiplatform.user` (project), `spanner.databaseUser` (database) | Exactly what the code uses (L7). |
@@ -81,9 +81,8 @@ flowchart TB
    `scion message`.
 4. **Review.** The lead reads the diff and asks the reviewer for a verdict; PASS or FAIL comes back by message, with
    evidence.
-5. **Commit.** One agent at a time holds the commit slot in the shared workspace; commits reference `(#N)`.
-6. **Deploy.** The deployer applies migrations, deploys the pushed commit, runs the acceptance checks, rolls back on
-   failure, and posts revision, URL and results on the issue.
+5. **Commit.** One agent at a time holds the commit slot in the shared workspace; commits reference `(#N)` and push directly without running dirty rebases.
+6. **Deploy.** The deployer exports the commit SHA via `git archive` to a clean temp directory, applies migrations, deploys, runs acceptance checks, rolls back on failure (passing `--to-latest` on the next deploy), and posts revision, URL and results on the issue.
 7. **Accept.** The lead tells the PO the issue is ready; the PO closes it or comments what to change.
 
 The PO escalation path is narrow on purpose: IAM grants, cost, scope. Everything else the lead decides.
@@ -94,7 +93,7 @@ The PO escalation path is narrow on purpose: IAM grants, cost, scope. Everything
   The lead re-checks its agents and the issues, nudges whoever is overdue, moves work forward, and sets its status.
 - **Turn discipline:** every agent ends each turn with `sciontool status blocked | task_completed | ask_user`, so a
   quiet agent can be told apart from a dead one.
-- **Delivery checks:** agents only count a handoff as done when `scion message` printed `Message delivered`.
+- **Delivery checks:** agents only count a handoff as done when `scion message` printed `Message delivered` (or `Message sent to user:` for the PO).
 - **GitHub as memory:** state lives in issue comments and commits, so a restarted or replaced agent can continue.
 
 ## How the factory is observed
@@ -112,7 +111,7 @@ The PO escalation path is narrow on purpose: IAM grants, cost, scope. Everything
 | Decision | Chosen | Trade-off |
 |---|---|---|
 | Hub hosting | One VM: hub, web and broker together, SQLite | Cheap and simple; a single point of failure, and upgrades restart everything. |
-| Workspaces | Shared `/workspace` per project, commit slot | Works with Hub-managed projects that have no git remote; serializes commits and rules out parallel issues (L8). |
+| Workspaces | Shared `/workspace` per project, commit slot | Works with Hub-managed projects; git-backed shared projects (or clone-per-agent in v2) avoid manual git init and serialize commits safely (L8). |
 | Coordination | GitHub issues plus `scion message`; schedules for heartbeats | No extra infrastructure; relies on agents following the protocol, so the protocol is short and repeated in every template. |
 | Harnesses | Mixed (Claude Code, Antigravity, OpenCode, Hermes) | Lets you compare them; each had its own failure mode (L3, L4, L6). |
 | Credentials | PAT for GitHub, VM identity for models, assigned SA for deploys | Few secrets to manage; coarse identities (L14). |

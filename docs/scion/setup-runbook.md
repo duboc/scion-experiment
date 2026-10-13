@@ -33,11 +33,13 @@ $EDITOR config/factory.env         # git-ignored; never commit it
 Follow Scion's own guides for the VM and the server:
 [Hub Setup on GCE](https://github.com/GoogleCloudPlatform/scion/blob/main/docs-site/src/content/docs/hosted/single-node/hub-setup-gce.md)
 and [Authentication](https://github.com/GoogleCloudPlatform/scion/blob/main/docs-site/src/content/docs/hosted/single-node/auth.md).
-What this factory used:
+What this factory used (deployed via Scion's `scripts/single-node-vm/deploy.sh`):
 
 - VM `e2-standard-4`, 200 GB disk, Ubuntu 22.04, with a dedicated service account (scope `cloud-platform`). In
   `HUB_PROJECT` that SA has `roles/aiplatform.user` (all model calls), `roles/logging.logWriter`,
   `roles/monitoring.metricWriter` and `roles/cloudtrace.agent` (telemetry).
+- Built with `deploy.sh`: `machine_size: small`, `disk_size_gb: 200`, `admin_email: $PO_EMAIL`,
+  `release_channel: nightly`, `update_policy: auto`, `container_images.source: build`.
 - Docker, git, `sqlite3` and python3 on the VM; the Hub runs as OS user `HUB_OS_USER`, which owns `~/.scion` and can
   use Docker.
 - systemd unit `scion-hub.service` running
@@ -47,8 +49,8 @@ What this factory used:
 - `~/.scion/settings.yaml` as in [`config/hub-settings.example.yaml`](config/hub-settings.example.yaml): every harness
   on Vertex AI with the VM's identity, the PO in `admin_emails`.
 
-**Check:** you can sign in to the web UI through IAP as the PO, and `scripts/run-on-hub.sh scripts/scion-admin.py
-projects` lists the `global` project.
+**Check:** you can sign in to the web UI through IAP as the PO, `scripts/run-on-hub.sh scripts/scion-admin.py projects`
+lists the projects, and `scripts/run-on-hub.sh scripts/scion-admin.py experiments` succeeds (exercising the admin JWT minting path).
 
 ## 3. Hub experiments
 
@@ -77,41 +79,71 @@ that waits for the PO stalls the factory for hours (L17).
 ## 5. GitHub
 
 ```bash
-gh label create "$BUILD_PROJECT" -R "$GITHUB_REPO" --description "build factory backlog"
-gh label create "$EVAL_PROJECT" -R "$GITHUB_REPO" --description "eval factory backlog"
-for n in 1 2 3 4; do gh label create "wave-$n" -R "$GITHUB_REPO"; done
+gh label create "$BUILD_PROJECT" -R "$GITHUB_REPO" --description "build factory backlog" --force
+gh label create "$EVAL_PROJECT" -R "$GITHUB_REPO" --description "eval factory backlog" --force
+for n in 1 2 3 4; do gh label create "wave-$n" -R "$GITHUB_REPO" --force; done
 ```
 
 (Run these with the values from `factory.env`, e.g. after `set -a; . config/factory.env; set +a`.)
 
-Store the PAT in the Hub so agents get it as `GITHUB_TOKEN`; Scion's git credential helper and `gh` wrapper use it.
-The web UI (Settings, Secrets) keeps it out of your shell history; the CLI equivalent is
-`scion hub secret set GITHUB_TOKEN <token>`. User-scope secrets only reach agents started by other agents when set
-with `--allow-progeny`; a project-scope secret avoids the question.
+Set up branch protection rulesets on the repository to prevent accidental force-pushes or deletions on active factory branches:
 
-**Check:** after step 8, `gh auth status` and `git ls-remote origin` succeed inside an agent
+```bash
+gh api -X POST repos/$GITHUB_REPO/rulesets \
+  --input - << 'EOF'
+{
+  "name": "factory-branch-protection",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/heads/main",
+        "refs/heads/eval-dashboard"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {"type": "deletion"},
+    {"type": "non_fast_forward"}
+  ]
+}
+EOF
+```
+
+Store the PAT in the Hub as secret `GITHUB_TOKEN`. Note: Hub secrets default to injection mode `as_needed`, which skips injecting them into container environments unless explicitly declared. To ensure agents receive the token, set injection mode to **Always** (C2):
+- In Web UI: Project → Settings → Secrets → New Secret (`GITHUB_TOKEN`, Injection mode: **Always**).
+- Or via CLI:
+  ```bash
+  scion hub secret set --project="$BUILD_PROJECT" GITHUB_TOKEN "$GITHUB_PAT"
+  scion hub secret update --project="$BUILD_PROJECT" GITHUB_TOKEN --injection-mode always
+  scion hub secret set --project="$EVAL_PROJECT" GITHUB_TOKEN "$GITHUB_PAT"
+  scion hub secret update --project="$EVAL_PROJECT" GITHUB_TOKEN --injection-mode always
+  ```
+
+**Check:** `gh api repos/$GITHUB_REPO/rulesets` lists `factory-branch-protection`, and after step 8, `gh auth status` and `git ls-remote origin` succeed inside an agent
 (`docker exec -u scion <project>--lead sh -c 'cd /workspace && gh auth status && git ls-remote origin | head -1'`).
 
 ## 6. Hub projects and the deployer identity
 
 Create the two Hub-managed projects in the web UI, named `BUILD_PROJECT` and `EVAL_PROJECT`. Without a git remote they
-get one shared folder each, `~/.scion/projects/<slug>`, mounted as `/workspace` in all their agents (L8). Decide now:
-a project's git remote can't be added later.
+get one shared folder each, `~/.scion/projects/<slug>`, mounted as `/workspace` in all their agents (L8).
+*(Alternative: create git-backed projects with `gitRemote`, `workspaceMode: "shared"`, and `githubToken`, which clones automatically and sets up branch tracking).*
 
 Make each folder a checkout of the repository on its branch, as the Hub OS user on the VM (the variables are your
 `factory.env` values; on the VM, type them in or export them first):
 
 ```bash
 cd ~/.scion/projects/$BUILD_PROJECT && git init -b $BUILD_BRANCH && git remote add origin https://github.com/$GITHUB_REPO.git
-git fetch origin && git checkout -B $BUILD_BRANCH origin/$BUILD_BRANCH      # skip for an empty repository
-printf '.scion/\n.agents/\nscratchpad/\n*.env\n.env*\n' >> .gitignore
+git -c credential.helper='!f(){ echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f' fetch origin
+git checkout -B $BUILD_BRANCH origin/$BUILD_BRANCH      # skip for an empty repository
+mkdir -p .git/info && printf '.scion/\n.agents/\nscratchpad/\n*.env\n.env*\n' >> .git/info/exclude
 # same for $EVAL_PROJECT with $EVAL_BRANCH
 ```
+*(Writing to `.git/info/exclude` instead of `.gitignore` keeps the working tree clean and prevents permanent untracked/dirty conflicts between agents).*
 
-For a private repository, `git fetch` on the VM needs a credential; the agents themselves get theirs from the Hub
-secret (step 5).
-
-Register the deployer identity in each project (from a CLI context linked to that project), so deploy agents can run
+Register the deployer identity in each project (via Web UI Project Settings → Service Accounts, or from a CLI context linked to that project), so deploy agents can run
 as it (Scion `assign` mode):
 
 ```bash
@@ -130,8 +162,9 @@ scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py          # check
 ```
 
 Without this, Antigravity agents can't run any tool while Hub telemetry is on (L6).
+The `--apply` command patches all `provision.py` files (under `harness-configs`, `workspace-storage`, and agent homes), all `hooks.json` files, stages an executable pre-start hook `30-project-custom` across all agent homes, and creates/activates `agy-telemetry-off` in `project_pre_start_hooks` in the Hub database via the API, ensuring hooks stay patched across container starts and upgrades (C1).
 
-**Check:** the check run prints `provisioner: patched` and exits 0.
+**Check:** the check run prints `provision.py: patched`, `30-project-custom: patched`, `project <slug>: hook agy-telemetry-off active`, and exits 0.
 
 ## 8. Templates and agents
 
@@ -142,8 +175,8 @@ scripts/push-templates.py --project "$EVAL_PROJECT" \
   --roles eval-lead,factory-analyst,search-evaluator,ui-craftsman,eval-deployer --apply
 ```
 
-([templates/README.md](templates/README.md#uploading-to-the-hub) explains what it does.) Then start the agents as the
-admin, in each project:
+([templates/README.md](templates/README.md#uploading-to-the-hub) explains what it does; reviewer uses Gemini 2.5 Pro via `model: google/gemini-2.5-pro`). Then start the agents as the
+admin, in each project (assigning the deployer service account registered in Step 6 via `--service-account <id>`):
 
 ```bash
 scion start lead -t lead "Read your instructions, then run your wake-up steps."
@@ -172,19 +205,27 @@ scripts/run-on-hub.sh scripts/scion-admin.py schedule create --project "$BUILD_P
 scripts/run-on-hub.sh scripts/scion-admin.py schedule create --project "$EVAL_PROJECT" \
   --name "$EVAL_PROJECT-lead-heartbeat" --cron "*/15 * * * *" --agent eval-lead --text "$hb"
 ```
+*(Note: on re-run, `schedule create` returns HTTP 409 if a schedule by that name already exists; use `schedule update` instead).*
 
 **Check:** after the next quarter hour, `schedule list` shows `runs=1 errors=0`, and the leads' terminals show they
 ran the heartbeat steps.
 
-## 10. Agent-status sync for the dashboard
+## 10. Agent-status sync and backups
+
+Install the Hub -> Spanner status sync:
 
 ```bash
 scripts/install-sync-cron.sh --dry-run      # read what it will do
 scripts/install-sync-cron.sh
 ```
 
-**Check:** the first run prints `synced 10 agents`, and `~/.scion/factory-sync.log` on the VM gains a line every
-minute.
+Install daily consistent Hub backups and cron:
+
+```bash
+scripts/run-on-hub.sh scripts/backup-hub.sh --install-cron
+```
+
+**Check:** `crontab -l` on the Hub VM lists both `sync_factory_agents.py` and `backup-hub.sh`, the sync first run prints `synced 10 agents`, `~/.scion/factory-sync.log` gains a line every minute, and `~/backups` contains initial database and state archives.
 
 ## 11. Start the work
 

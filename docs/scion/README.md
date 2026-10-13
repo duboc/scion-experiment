@@ -21,7 +21,7 @@ it. The scripts and templates are parameterized, so you can build another factor
 | [setup-runbook.md](setup-runbook.md) | you are building a new factory (step by step, with a check after each step) |
 | [operations-runbook.md](operations-runbook.md) | a factory is running and something looks wrong, or you need a routine task |
 | [agent-protocol.md](agent-protocol.md) | you want to understand or change the rules the agents follow |
-| [lessons-learned.md](lessons-learned.md) | before you change anything: 21 failures, their causes and fixes |
+| [lessons-learned.md](lessons-learned.md) | before you change anything: 23 failures, their causes and fixes |
 | [templates/](templates/README.md) | role prompts and settings for the ten agents, plus the shared protocol |
 | [scripts/](scripts/README.md) | the tooling: status, admin actions, sandbox setup, sync, patches |
 | [config/](config/) | `factory.env.example`, the heartbeat text, the Hub settings excerpt, the Spanner DDL |
@@ -34,12 +34,12 @@ it. The scripts and templates are parameterized, so you can build another factor
 3. Disable the `web.terminal_workspace` experiment.
 4. `DRY_RUN=1 scripts/setup-sandbox.sh --with-spanner --with-bigquery`, then run it for real with `GITHUB_TOKEN`
    exported.
-5. Create the GitHub labels and store the token as the Hub secret `GITHUB_TOKEN`.
+5. Create the GitHub labels, set up branch protection rulesets, and store the token as the Hub secret `GITHUB_TOKEN` with injection mode `Always`.
 6. Create the two Hub projects, make their folders checkouts of the repo, register the deployer identity.
 7. `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py --apply` (before any Antigravity agent starts).
 8. `scripts/push-templates.py --project <slug> --roles <roles> --apply` for each project, then start the ten agents.
 9. Create the two heartbeat schedules.
-10. `scripts/install-sync-cron.sh`.
+10. `scripts/install-sync-cron.sh` and install backups via `scripts/run-on-hub.sh scripts/backup-hub.sh --install-cron`.
 11. Send each lead the GO message.
 12. From then on: `scripts/run-on-hub.sh scripts/factory-status.sh` once a day, and answer the PO inbox.
 
@@ -50,7 +50,7 @@ Details and checks for every step: [setup-runbook.md](setup-runbook.md).
 Most of the work was not building the factory but keeping it from stopping. The rules that made the difference:
 
 1. **Something always wakes the leads**: an admin-owned schedule messages each lead every 15 minutes.
-2. **Only delivered messages count**: agents check for `Message delivered`; printed text reaches nobody (one lost
+2. **Only delivered messages count**: agents check for `Message delivered` (or `Message sent to user:` for the PO); printed text reaches nobody (one lost
    verdict stopped the factory for about 60 hours).
 3. **Every turn ends with a status** (`sciontool status blocked | task_completed | ask_user`), so idle and dead agents
    can be told apart.

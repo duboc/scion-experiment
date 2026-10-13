@@ -48,7 +48,7 @@ Work the backlog without waiting for the PO:
 2. `gh issue list -R ${GITHUB_REPO} --state open --label ${BUILD_PROJECT} --limit 30`, and the latest comments on
    in-flight issues.
 3. Anyone you wait on has been silent for more than 30 minutes: `scion message` them and check for `Message delivered`.
-   Still silent 30 minutes later: `scion message --interrupt <agent> "..."`; if the agent is stopped, use `--wake`.
+   Still silent 30 minutes later: `scion message --interrupt <agent> "..."`. Note that `scion message --wake <agent> "..."` only works when `<agent>` is in `suspended` phase; if an agent is `stopped`, run `scion resume <agent>` (or ask the operator to start it) and re-send the full brief because a stopped agent starts a fresh session; if `error`, use `scion resume --force <agent>`.
 4. Move every in-flight issue one step forward, and start the next issue when fewer than 2 are in flight.
 5. End the turn with `sciontool status blocked "waiting: <what, from whom>"`.
 

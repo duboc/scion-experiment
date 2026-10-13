@@ -86,8 +86,8 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
   back on their own.
 - **Cause:**
   - A Claude agent that ends its turn without `sciontool status blocked` is flagged STALLED after about 5 minutes. The
-    first templates said "Do NOT run `sciontool status`". Scion's own default template (`agents.md`) tells agents to
-    use `sciontool status`; our templates replaced that file with role prompts that said the opposite.
+    first templates said "Do NOT run `sciontool status`". Scion's own workstation default template (`agents.md`) tells agents to
+    use `sciontool status`; in hosted mode, the bundled default template's `agents.md` is empty (0 bytes), so our custom templates must supply this guidance.
   - Agents only react to input. No schedule existed, so a lost message meant a permanent wait.
   - Hub notifications about an agent go to its creator. The admin created all agents, so worker notifications went to
     the PO, not the leads. Repeated identical notifications are deduplicated.
@@ -106,8 +106,13 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
   aborts the tool call. Reproduced: more than 15 s with telemetry on, under 1 s with `SCION_TELEMETRY_ENABLED=false`;
   `OTEL_SDK_DISABLED=true` didn't help. Template settings can't fix it: the Hub injects `SCION_TELEMETRY_ENABLED=true`
   into every agent and that wins (all 10 agents ran with it, including those whose template disabled telemetry).
-- **Fix:** run the hook with telemetry off: `... | SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity`,
-  in the harness provisioner (future starts) and in each project's `.agents/hooks.json` (running agents).
+- **Fix:** run the hook with telemetry off: `... | SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity`.
+  To ensure durability across agent starts and container recreations:
+  1. The Hub executes project pre-start hooks registered in `project_pre_start_hooks` (`agy-telemetry-off`).
+  2. Each agent container's `<agent-home>/.scion/hooks/pre-start.d/30-project-custom` executes before the harness starts,
+     re-applying the hook patch inside `/workspace/.agents/hooks.json`.
+  3. The provisioner scripts in `~/.scion/workspace-storage/hubs/<hub-id>/harness-configs/global/antigravity/provision.py`
+     and `<agent-home>/.scion/harness/provision.py` are patched.
 - **Encoded in:** [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py). The proper fix is upstream:
   `sciontool hook` must never block (see the [v2 design](specs/factory-orchestration-v2-design.md), follow-ups).
 
@@ -172,6 +177,8 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
 
 - Each fire is re-authorized against the schedule's creator. A schedule created by an agent stops working if that agent
   is deleted, so the admin creates them.
+- Any agent belonging to a project has permission to pause, resume, or edit that project's schedules (M1).
+  If heartbeats stall unexpectedly, check that a confused worker has not disabled or re-pointed the schedule.
 - Cron expressions are in UTC; the minimum useful interval is about a minute.
 - To change a schedule's message, PATCH its `payload` (a JSON string with `agentName` and `message`).
 - A schedule can report a successful fire while the message didn't reach the harness, and scheduled messages and
@@ -267,11 +274,19 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
 
 ## L20. Local patches don't survive upgrades silently
 
-- **What we found:** the Hub runs the nightly release channel with automatic updates. The Antigravity hook fix (L6)
-  patches a file under `~/.scion/harness-configs/`, which an update may replace.
-- **Lesson:** keep every local patch in a script with a check mode, and run the checks after each update.
-- **Encoded in:** [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py) (check by default),
-  [operations-runbook.md](operations-runbook.md#after-a-scion-upgrade).
+- **What we found:** In hosted Hub mode, the broker provisions agents from `~/.scion/workspace-storage/hubs/<hub-id>/harness-configs/global/<harness>/provision.py`
+  rather than bare `~/.scion/harness-configs/`. Additionally, each agent container maintains its own local copy under
+  `<agent-home>/.scion/harness/provision.py` which executes `20-harness-provision` on container startup. Simply patching
+  bare `~/.scion/harness-configs/` does not affect hosted agent provisioning. Furthermore, automatic nightly channel updates
+  or container rebuilds can wipe local harness file edits.
+- **Lesson & Solution:** A multi-tier durable hook architecture is required:
+  1. Patch both the Hub's workspace-storage global provisioner and existing agent-home provisioners.
+  2. Install a container pre-start hook script (`30-project-custom`) in `<agent-home>/.scion/hooks/pre-start.d/` (mode 0700)
+     to re-apply the hook patch inside `/workspace/.agents/hooks.json` on container start.
+  3. Register and activate the `agy-telemetry-off` hook in the Hub SQLite database (`project_pre_start_hooks` table)
+     for all active projects, ensuring new agent containers automatically inherit the hook.
+- **Encoded in:** [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py) (supports check mode, `--apply`,
+  and checks both filesystem and Hub DB), [operations-runbook.md](operations-runbook.md#after-a-scion-upgrade).
 
 ## L21. Reincarnate is refused for agents of these projects
 
@@ -287,3 +302,30 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
   <agent>`, then `scion start <agent> -t <template> "<handoff>"`. The new agent has a new ID: schedules address agents
   by name and keep working, but notification subscriptions and message history don't carry over.
 - **Encoded in:** [operations-runbook.md](operations-runbook.md#switch-an-agents-harness).
+
+## L22. Hub secret injection: `as_needed` vs `always`
+
+- **What we found:** When secrets are stored in the Hub with `injection_mode: as_needed` (the default for some CLI paths),
+  they are only injected into agent containers whose template explicitly lists that secret name in its `secrets` stanza.
+  If an agent's template omits `GITHUB_TOKEN`, git pushes, issue comments, and PR management fail with authentication errors.
+- **Decision:** Critical infrastructure secrets shared across all factory agents (like `GITHUB_TOKEN`) must have
+  `injection_mode: always`. This guarantees every agent container receives the environment variable at boot time,
+  preventing template misconfiguration from breaking agent operations.
+- **Encoded in:** Hub database `secrets` table (`UPDATE secrets SET injection_mode='always' WHERE key='GITHUB_TOKEN'`),
+  [setup-runbook.md](setup-runbook.md#5-github), [operations-runbook.md](operations-runbook.md#rotate-the-github-token).
+
+## L23. Deployer workspace cleanliness and Cloud Run traffic routing
+
+- **What we found:**
+  - In a shared workspace, running `gcloud run deploy --source .` directly packages the entire workspace folder,
+    including untracked files, scratch scripts, or concurrent edits from other agents.
+  - When rolling back a Cloud Run service using `gcloud run services update-traffic --to-revisions <rev>=100`, traffic
+    remains pinned to that revision. A subsequent `gcloud run deploy` builds and deploys a new revision, but Cloud Run
+    continues routing 100% of traffic to the pinned rollback revision unless `--to-latest` is explicitly specified.
+- **Fix:**
+  - Deployers must export the target commit cleanly using `git archive "$REV" | tar -x -C "$TMP_DIR"` and deploy from `$TMP_DIR`.
+  - The deployer system prompt specifies passing `--to-latest` on deployments (or running `gcloud run services update-traffic --to-latest`)
+    to re-enable automatic traffic routing to newly deployed revisions after a rollback.
+- **Encoded in:** [`templates/deployer/system-prompt.md`](templates/deployer/system-prompt.md),
+  [`templates/eval-deployer/system-prompt.md`](templates/eval-deployer/system-prompt.md),
+  [operations-runbook.md](operations-runbook.md#a-deploy-failed-or-needs-a-rollback).

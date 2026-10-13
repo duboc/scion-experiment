@@ -15,7 +15,7 @@ scripts/run-on-hub.sh scripts/factory-status.sh --since 240
 Read it in this order:
 
 1. **Messages to users** (the PO inbox): decisions waiting for you. Answer with `scion-admin.py message` or on the issue.
-2. **Schedules:** `errors=0` and `last_run` within the last 15 minutes.
+2. **Schedules:** `errors=0` and `last_run` within the last 15 minutes. Note that any agent in the project has permission to pause or edit project schedules (M1); verify the schedule cron and target agent haven't been altered.
 3. **Messages in the last N minutes:** handoffs flowing (`DONE`, verdicts, deploy reports). Long silence is the first
    sign of a stall.
 4. **Agents:** `idle_min` and `activity` are hints, not facts (L18). An agent is fine if GitHub or its messages show
@@ -60,7 +60,8 @@ Each runbook below has: **Trigger**, **Diagnose**, **Act**, **Check**, **Escalat
 - **Diagnose:** usually it ended a turn without `sciontool status` (L5), and is fine. Hermes never reports activity, so
   the reviewer always looks stalled (L18). Check its pane and its last message.
 - **Act:** nothing, if its work is moving. If it is really stuck at a prompt with work pending, message it with
-  `--interrupt` (cancels what the harness is doing first) or `--wake` (resumes a suspended agent):
+  `--interrupt` (cancels what the harness is doing first) or `--wake` (resumes a suspended agent; note that `--wake`
+  only resumes suspended agents — if an agent is stopped, run `scion resume <agent>`):
   ```bash
   scripts/run-on-hub.sh scripts/scion-admin.py message --project <project> --agent <agent> --interrupt \
     --text "PO -> <agent>: status check. Post your progress on the issue, then end your turn with sciontool status."
@@ -73,16 +74,18 @@ Each runbook below has: **Trigger**, **Diagnose**, **Act**, **Check**, **Escalat
 - **Diagnose:** a successful fire doesn't guarantee delivery (L11). Look at the lead's pane: is it mid-task (the
   heartbeat queues behind it, which is fine), at a prompt, or showing an error?
 - **Act:** send the heartbeat text by hand with `--interrupt`. If schedules show errors, check that the schedule was
-  created by the admin (`created_by`) and that the agent name is right; recreate it with `schedule create`.
+  created by the admin (`created_by`) and that the agent name is right; update it with `schedule update`.
 - **Check:** the lead's next turn runs the heartbeat steps.
 
 ## Antigravity tool calls fail
 
 - **Trigger:** Antigravity agents report "hook timed out" or abort every tool call; nothing gets written (L6).
-- **Diagnose:** `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py` (check mode). After a Scion upgrade the
-  provisioner patch may be gone (L20).
-- **Act:** `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py --apply`. Running agents pick up the
-  `hooks.json` change on their next tool call; the provisioner change applies at the next agent start.
+- **Diagnose:** `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py` (check mode). Container pre-start hooks
+  (`30-project-custom`) and Hub database hooks (`project_pre_start_hooks: agy-telemetry-off`) protect workspaces on
+  container starts, but check that all paths and database entries are active (C1).
+- **Act:** `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py --apply`. This idempotently patches all
+  `provision.py` files, `hooks.json` copies, stages `30-project-custom` in all agent homes, and ensures `agy-telemetry-off`
+  is active in the Hub database.
 - **Check:** the check mode exits 0, and the agent's next tool call succeeds (watch its pane).
 
 ## OpenCode gets 404s from the model
@@ -107,6 +110,9 @@ Each runbook below has: **Trigger**, **Diagnose**, **Act**, **Check**, **Escalat
   gcloud run services update-traffic "$SERVING_SERVICE" --project "$SANDBOX_PROJECT" --region "$SANDBOX_REGION" \
     --to-revisions <last-good-revision>=100
   ```
+  *(Important: after pinning traffic with `--to-revisions=<rev>=100`, the next `gcloud run deploy` must pass `--to-latest`,
+  or you must run `gcloud run services update-traffic $SERVING_SERVICE ... --to-latest` afterward, otherwise traffic
+  remains pinned to the rollback revision; I3).*
   A 403 from Vertex AI or Spanner means the runtime SA is missing a role; grant exactly that role to `RUNTIME_SA`,
   never switch the service to the default compute SA (L7).
 - **Check:** `/api/health` returns 200 and the issue's acceptance checks pass on the old revision; the deployer posts
@@ -208,22 +214,61 @@ stays with the old ID.
 
 ## Restart a stuck agent
 
-Prefer, in order: a message with `--interrupt`; `--wake` for a suspended agent; restarting the harness pane (see the
-OpenCode runbook); `scion stop <agent>` then `scion resume <agent>`. Each step loses more context, which is why work
-state must live on GitHub. Don't delete and recreate an agent unless the PO decides so: it gets a new ID, and schedules
-or subscriptions that point at it must be checked.
+Prefer, in order: a message with `--interrupt`; `--wake` for a suspended agent (note: `--wake` returns 400 if the agent
+is stopped; use `scion resume <agent>` if stopped, or `scion resume --force <agent>` if in `error` state); restarting
+the harness pane (see the OpenCode runbook); `scion stop <agent>` then `scion resume <agent>`. Each step loses more
+context, which is why work state must live on GitHub. Don't delete and recreate an agent unless the PO decides so: it
+gets a new ID, and schedules or subscriptions that point at it must be checked.
 
 ## Rotate the GitHub token
 
 1. Create the new token on GitHub.
-2. Update the Hub secret `GITHUB_TOKEN` (web UI, Settings, Secrets).
+2. Update the Hub secret `GITHUB_TOKEN` with injection mode **Always** (web UI, Settings, Secrets; or via CLI:
+   `scion hub secret update --project=<slug> GITHUB_TOKEN --injection-mode always`).
 3. `read -rs GITHUB_TOKEN && export GITHUB_TOKEN && UPDATE_SECRET=1 scripts/setup-sandbox.sh && unset GITHUB_TOKEN`
    (adds a new version of `github-token`; the dashboard reads `latest` on its next revision or cold start).
 4. Revoke the old token.
 
+## Backups & Disaster Recovery
+
+### Automated daily backups
+1. **GCE Persistent Disk Snapshots:**
+   Schedule `scion-hub-daily` (14-day retention, 04:00 UTC daily) takes automated snapshots of the Hub VM disk (`$HUB_VM_NAME`).
+   Verify:
+   ```bash
+   gcloud compute disks describe "$HUB_VM_NAME" --project="$HUB_PROJECT" --zone="$HUB_ZONE" --format='value(resourcePolicies)'
+   ```
+2. **Online Consistent Hub Database & State Backup:**
+   [`scripts/backup-hub.sh`](scripts/backup-hub.sh) runs daily at 04:15 UTC via cron (`15 4 * * * ~/.scion/backup-hub.sh`).
+   It creates:
+   - `~/backups/hub-<ts>.db.gz`: consistent SQLite online backup using `sqlite3 hub.db ".backup <dest>"`.
+   - `~/backups/state-<ts>.tgz`: archive of `hub.env`, `settings.yaml`, `sync.env`, `harness-configs/`, `workspace-storage/`, and `projects/` (excluding `node_modules` and `.venv`).
+   - Automatically prunes archives older than `RETENTION_DAYS` (default 14 days).
+
+### Manual Backup
+To trigger an immediate consistent backup from your workstation:
+```bash
+scripts/run-on-hub.sh scripts/backup-hub.sh
+```
+
+### Recovery from Backup
+If the Hub database is corrupted or state is lost:
+1. Stop the Hub service: `sudo systemctl stop scion-hub`
+2. Restore database:
+   ```bash
+   gzip -dc ~/backups/hub-<ts>.db.gz > ~/.scion/hub.db
+   chmod 600 ~/.scion/hub.db
+   ```
+3. Restore state files:
+   ```bash
+   tar -xzf ~/backups/state-<ts>.tgz -C ~
+   ```
+4. Restart the Hub service: `sudo systemctl start scion-hub`
+5. Verify health: `scripts/run-on-hub.sh scripts/factory-status.sh`
+
 ## Tear down
 
-1. Pause the heartbeats, stop the agents, remove the sync line from the VM crontab (`crontab -e` as the Hub OS user).
+1. Pause the heartbeats, stop the agents, remove the sync and backup lines from the VM crontab (`crontab -e` as the Hub OS user).
 2. Back up `~/.scion/projects/<project>` before deleting a Hub-managed project without a git remote: deleting the
    project deletes its folder.
 3. Delete the sandbox project (everything the factories created lives there).

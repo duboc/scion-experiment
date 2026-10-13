@@ -30,6 +30,28 @@ import subprocess
 import sys
 
 
+def load_sync_env():
+    env_paths = [
+        os.path.join(os.path.expanduser(os.environ.get("SCION_HOME", "~/.scion")), "sync.env"),
+        os.path.expanduser("~/factory-sync/sync.env"),
+    ]
+    for p in env_paths:
+        if os.path.exists(p):
+            env_vars = {}
+            with open(p) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        env_vars[k.strip()] = v.strip().strip("'\"")
+            if "PATH" in env_vars:
+                os.environ["PATH"] = env_vars["PATH"]
+            for k, v in env_vars.items():
+                if k not in os.environ:
+                    os.environ[k] = v
+            return
+
+
 def env(name, default=None):
     value = os.environ.get(name, default)
     if not value:
@@ -64,7 +86,18 @@ def now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def run_spanner(spanner_cmd, sql):
+    try:
+        res = subprocess.run(spanner_cmd + [f"--sql={sql}"], capture_output=True, text=True, timeout=120)
+        if res.returncode != 0:
+            return "", res.stderr.strip()[:500]
+        return res.stdout, ""
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        return "", str(e)
+
+
 def main():
+    load_sync_env()
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--dry-run", action="store_true", help="print the SQL instead of running it")
     args = parser.parse_args()
@@ -117,9 +150,9 @@ def main():
         print("\n".join(" ".join(spanner) + f" --sql=<<{sql}>>" for sql in statements))
         return 0
     for sql in statements:
-        res = subprocess.run(spanner + [f"--sql={sql}"], capture_output=True, text=True, timeout=120)
-        if res.returncode != 0:
-            print(f"{now()} ERROR: {res.stderr.strip()[:500]}", file=sys.stderr)
+        stdout, err = run_spanner(spanner, sql)
+        if err:
+            print(f"{now()} ERROR: {err}", file=sys.stderr)
             return 1
     print(f"{now()} synced {len(values)} agents")
     return 0
