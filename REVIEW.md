@@ -71,3 +71,11 @@
 - **Checks:**
     - `go vet` and `go test`: PASS
     - Empty Spanner results are now authoritative and do not fall back to the in-memory engine.
+
+## #7: Synonyms (6d62e7e)
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test -race`: PASS
+    - ADR-003 (Synonyms): PASS
+    - Security: PASS (Admin endpoint secured, inputs are bound parameters)
