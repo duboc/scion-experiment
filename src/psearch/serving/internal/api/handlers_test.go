@@ -451,3 +451,37 @@ func TestLTRSearch(t *testing.T) {
 		t.Fatal("ltr must be opt-in")
 	}
 }
+
+// Issue #19: parse_intent extracts price/brand filters and enforces them.
+func TestParseIntentSearch(t *testing.T) {
+	r := newTestRouter()
+	resp := doSearch(t, r, "q=tenis+de+corrida+ate+200+reais&parse_intent=true&limit=15")
+	if resp.ParsedQuery == nil || resp.ParsedQuery.CleanQuery != "tenis de corrida" || resp.ParsedQuery.ExtractedFilters["max_price"] != float64(200) || resp.ParsedQuery.IntentSource != "parser" {
+		t.Fatalf("parsed_query = %+v", resp.ParsedQuery)
+	}
+	if len(resp.Results) == 0 {
+		t.Fatal("expected results under 200")
+	}
+	for _, res := range resp.Results {
+		if res.PriceInfo.NumericPrice > 200 {
+			t.Fatalf("%s price %v exceeds max_price 200", res.ID, res.PriceInfo.NumericPrice)
+		}
+	}
+	brand := doSearch(t, r, "q=running+shoes+adidas+under+200&parse_intent=true")
+	if brand.ParsedQuery.ExtractedFilters["brand"] != "Adidas" || len(brand.Results) != 1 || brand.Results[0].ID != "prod-001" {
+		t.Fatalf("brand intent: %+v %s", brand.ParsedQuery, ids(brand.Results))
+	}
+	explicit := doSearch(t, r, "q=notebook+ate+100&parse_intent=true&max_price=2000")
+	if explicit.ParsedQuery.ExtractedFilters["max_price"] != float64(100) || len(explicit.Results) == 0 {
+		t.Fatal("explicit max_price must override the extracted one")
+	}
+	if off := doSearch(t, r, "q=tenis+ate+200"); off.ParsedQuery != nil {
+		t.Fatal("parse_intent is opt-in")
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/search?q=x&min_price=500&max_price=100", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("min>max = %d, want 400", w.Code)
+	}
+}

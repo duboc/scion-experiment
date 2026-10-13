@@ -316,6 +316,8 @@ const catalogFilterSQL = `COALESCE(is_visible, TRUE)
 					AND (@locale = '' OR IFNULL(locale, '') = @locale)
 					AND (@category = '' OR LOWER(IFNULL(category, '')) = @category)
 					AND (@brand = '' OR LOWER(IFNULL(brand, '')) = @brand)
+					AND (@min_price <= 0 OR IFNULL(price, 0) >= @min_price)
+					AND (@max_price <= 0 OR IFNULL(price, 0) <= @max_price)
 					AND ` + deliveryFilterSQL
 
 // buildHybridSQL renders the RRF hybrid query. column is always one of the
@@ -472,6 +474,8 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		"category":       f.Category,
 		"brand":          f.Brand,
 		"zip5":           f.Zip5,
+		"min_price":      f.MinPrice,
+		"max_price":      f.MaxPrice,
 		"max_sla":        f.MaxSLAHours,
 		"alpha":          alpha,
 		"limit":          int64(limit),
@@ -735,6 +739,12 @@ func matchesCatalog(f models.SearchFilters, p models.SearchResult) bool {
 		return false
 	}
 	if f.Brand != "" && !containsFold(p.Brands, f.Brand) {
+		return false
+	}
+	if f.MinPrice > 0 && p.PriceInfo.NumericPrice < f.MinPrice {
+		return false
+	}
+	if f.MaxPrice > 0 && p.PriceInfo.NumericPrice > f.MaxPrice {
 		return false
 	}
 	return true

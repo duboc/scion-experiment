@@ -24,6 +24,7 @@ type Controller struct {
 	rules        *services.RuleService
 	autocomplete *services.AutocompleteService
 	ltrModel     *services.LTRModel
+	intent       *services.QueryUnderstandingService
 }
 
 func NewController(cfg *config.Config) (*Controller, error) {
@@ -62,6 +63,21 @@ func NewController(cfg *config.Config) (*Controller, error) {
 	}
 	rules := services.NewRuleService(ruleStore, 30*time.Second)
 	spannerSvc.SetRules(rules)
+	var intentLLM services.IntentLLM
+	var intentStore services.IntentStore
+	if cfg.IntentLLMFallback {
+		if llm, err := services.NewGeminiIntentLLM(ctx, cfg, cfg.IntentLLMModel); err != nil {
+			log.Printf("WARN: intent LLM fallback disabled: %v", err)
+		} else {
+			intentLLM = llm
+		}
+		if client := spannerSvc.Client(); client != nil {
+			intentStore = services.SpannerIntentStore{Client: client}
+		}
+	}
+	vocabCtx, vocabCancel := context.WithTimeout(ctx, 5*time.Second)
+	intent := services.NewQueryUnderstandingService(spannerSvc.CatalogVocabulary(vocabCtx), intentLLM, intentStore)
+	vocabCancel()
 	ltrModel := services.DefaultLTRModel()
 	if cfg.LTRModelJSON != "" {
 		if m, err := services.ParseLTRModel(cfg.LTRModelJSON); err != nil {
@@ -80,6 +96,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		rules:        rules,
 		autocomplete: autocomplete,
 		ltrModel:     ltrModel,
+		intent:       intent,
 	}, nil
 }
 
@@ -133,6 +150,13 @@ func (c *Controller) Search(ctx *gin.Context) {
 		req.Locale = ctx.Query("locale")
 		req.TenantID = ctx.Query("tenant_id")
 		req.LTR = ctx.Query("ltr") == "true" || ctx.Query("ltr") == "1"
+		req.ParseIntent = ctx.Query("parse_intent") == "true" || ctx.Query("parse_intent") == "1"
+		if v, err := strconv.ParseFloat(ctx.Query("min_price"), 64); err == nil {
+			req.MinPrice = v
+		}
+		if v, err := strconv.ParseFloat(ctx.Query("max_price"), 64); err == nil {
+			req.MaxPrice = v
+		}
 		if v := ctx.Query("max_sla_hours"); v != "" {
 			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 				req.MaxSLAHours = n
@@ -177,7 +201,13 @@ func (c *Controller) Search(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "max_sla_hours must be between 0 and 1440"})
 		return
 	}
+	if req.MinPrice < 0 || req.MaxPrice < 0 || (req.MaxPrice > 0 && req.MinPrice > req.MaxPrice) {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "min_price/max_price must be >= 0 and min_price <= max_price"})
+		return
+	}
 	filters := models.SearchFilters{
+		MinPrice:    req.MinPrice,
+		MaxPrice:    req.MaxPrice,
 		Zip5:        zip5,
 		MaxSLAHours: req.MaxSLAHours,
 		OnlyInStock: req.OnlyInStock,
@@ -187,6 +217,32 @@ func (c *Controller) Search(ctx *gin.Context) {
 		TenantID:    req.TenantID,
 		Locale:      req.Locale,
 	}
+	// ADR-007 (Issue #19): decompose natural-language queries into a clean query
+	// plus structured filters; explicit request filters win.
+	var parsed *models.ParsedQuery
+	searchQuery := req.Query
+	if req.ParseIntent && strings.TrimSpace(req.Query) != "" {
+		in, source := c.intent.Understand(ctx.Request.Context(), filters.TenantID, req.Query)
+		filters = services.ApplyIntent(filters, in)
+		searchQuery = in.CleanQuery
+		extracted := map[string]interface{}{}
+		if in.MinPrice > 0 {
+			extracted["min_price"] = in.MinPrice
+		}
+		if in.MaxPrice > 0 {
+			extracted["max_price"] = in.MaxPrice
+		}
+		if in.Brand != "" {
+			extracted["brand"] = in.Brand
+		}
+		if in.Category != "" {
+			extracted["category"] = in.Category
+		}
+		if in.Color != "" {
+			extracted["color"] = in.Color
+		}
+		parsed = &models.ParsedQuery{OriginalQuery: req.Query, CleanQuery: in.CleanQuery, ExtractedFilters: extracted, IntentSource: source}
+	}
 	// Facets are aggregated over a wider candidate set (top facetCandidates) than
 	// the page returned to the client (Issue #5, ADR-003).
 	const facetCandidates = 100
@@ -194,7 +250,7 @@ func (c *Controller) Search(ctx *gin.Context) {
 	if candidateLimit < facetCandidates {
 		candidateLimit = facetCandidates
 	}
-	outcome, err := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), req.Query, candidateLimit, minScore, alpha, filters)
+	outcome, err := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), searchQuery, candidateLimit, minScore, alpha, filters)
 	results := outcome.Results
 	if results == nil {
 		results = []models.SearchResult{} // always serialize as [] (never null)
@@ -275,6 +331,7 @@ func (c *Controller) Search(ctx *gin.Context) {
 		LTR:              req.LTR && ltrRes.ModelVersion != "",
 		LTRLatencyUS:     ltrRes.LatencyUS,
 		LTRModel:         ltrRes.ModelVersion,
+		ParsedQuery:      parsed,
 		RetrievalMode:    outcome.RetrievalMode,
 	})
 }

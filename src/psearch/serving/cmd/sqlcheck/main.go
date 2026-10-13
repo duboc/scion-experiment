@@ -72,6 +72,8 @@ func main() {
 		{"running shoes", 0.5, models.SearchFilters{}}, // rule params non-empty (pin/bury/boost)
 		{"shoes", 0.5, models.SearchFilters{Zip5: "01310", MaxSLAHours: 24}},
 		{"notebook", 0.5, models.SearchFilters{Zip5: "20040"}},
+		{"tenis de corrida", 0.5, models.SearchFilters{MaxPrice: 200}},          // #19 price filter
+		{"notebook", 0.5, models.SearchFilters{MinPrice: 1000, MaxPrice: 1700}}, // #19 price range
 	}
 	failed := false
 	for _, c := range cases {
@@ -107,6 +109,8 @@ func main() {
 	} else {
 		log.Printf("OK   ltr candidate signals: %d products", len(sig))
 	}
+	// Query understanding vocabulary (Issue #19).
+	log.Printf("OK   catalog vocabulary entries=%d", len(svc.CatalogVocabulary(ctx)))
 	// Facet queries (Issue #5) over the full catalog.
 	if f, err := svc.Facets(ctx, []string{"prod-001", "prod-002", "prod-004", "prod-012"}); err != nil {
 		failed = true

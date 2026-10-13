@@ -16,12 +16,14 @@ type Config struct {
 	Region                   string
 	SpannerInstanceID        string
 	SpannerDatabaseID        string
-	GenAILocation            string  // Vertex AI location for Gen AI SDK calls (Gemini 3.x / gemini-embedding-2 => "global")
-	EmbeddingModelName       string  // Gemini embedding model used for the v2 vector column
-	GeminiEmbeddingDimension int     // output_dimensionality requested from the embedding model (ADR-001: 1024)
-	EmbeddingDimension       int     // dimension of the ACTIVE vector column (v1=768 legacy, v2=GeminiEmbeddingDimension)
-	ActiveEmbeddingVersion   string  // initial version from env; use ActiveVersion() at runtime
-	LTRModelJSON             string  // optional learned LTR model (BigQuery ML export); empty = baseline
+	GenAILocation            string // Vertex AI location for Gen AI SDK calls (Gemini 3.x / gemini-embedding-2 => "global")
+	EmbeddingModelName       string // Gemini embedding model used for the v2 vector column
+	GeminiEmbeddingDimension int    // output_dimensionality requested from the embedding model (ADR-001: 1024)
+	EmbeddingDimension       int    // dimension of the ACTIVE vector column (v1=768 legacy, v2=GeminiEmbeddingDimension)
+	ActiveEmbeddingVersion   string // initial version from env; use ActiveVersion() at runtime
+	LTRModelJSON             string // optional learned LTR model (BigQuery ML export); empty = baseline
+	IntentLLMFallback        bool   // ADR-007: Gemini Flash Lite fallback for unparsed conversational queries
+	IntentLLMModel           string
 	BoostWeight              float64 // scale of the 8-signal boost added to RRF (ADR-004); 0 disables
 	TextFolding              bool    // use accent-folded tokenlists (migration 014b) so "tenis" matches "Tênis" (Issue #4)
 	AdminToken               string  // guards POST /api/config/embedding-version (empty = disabled)
@@ -50,6 +52,8 @@ func Load() (*Config, error) {
 		AdminToken:               os.Getenv("ADMIN_TOKEN"),
 		TextFolding:              getEnv("TEXT_FOLDING", "false") == "true",
 		BoostWeight:              0.002,
+		IntentLLMFallback:        getEnv("INTENT_LLM_FALLBACK", "false") == "true",
+		IntentLLMModel:           getEnv("GEMINI_LITE_MODEL", "gemini-3.5-flash-lite"),
 		LTRModelJSON:             os.Getenv("LTR_MODEL_JSON"),
 		DefaultAlpha:             0.5,
 		DefaultLimit:             20,

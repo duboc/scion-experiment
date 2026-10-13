@@ -14,18 +14,23 @@ type SearchRequest struct {
 	CEP         string   `json:"cep,omitempty" form:"cep"`
 	LTR         bool     `json:"ltr,omitempty" form:"ltr"`
 	MaxSLAHours int64    `json:"max_sla_hours,omitempty" form:"max_sla_hours"`
+	MinPrice    float64  `json:"min_price,omitempty" form:"min_price"`
+	MaxPrice    float64  `json:"max_price,omitempty" form:"max_price"`
+	ParseIntent bool     `json:"parse_intent,omitempty" form:"parse_intent"`
 }
 
 // SearchFilters are the catalog filters applied server-side (ADR-002, Issues #3/#4/#5).
 type SearchFilters struct {
 	OnlyInStock bool
 	Channel     string
-	Category    string // exact (case-insensitive) category match; empty = all (Issue #5 facet drill-down)
-	Brand       string // exact (case-insensitive) brand match; empty = all
-	TenantID    string // ADR-002 / Issue #4; empty = "default"
-	Locale      string // ADR-002 / Issue #4 (pt-BR, en-US, es-MX); empty = all locales
-	Zip5        string // ADR-005 / Issue #8: 5-digit CEP prefix; empty = no delivery filter
-	MaxSLAHours int64  // ADR-005: maximum delivery SLA in hours; 0 = any
+	Category    string  // exact (case-insensitive) category match; empty = all (Issue #5 facet drill-down)
+	Brand       string  // exact (case-insensitive) brand match; empty = all
+	TenantID    string  // ADR-002 / Issue #4; empty = "default"
+	Locale      string  // ADR-002 / Issue #4 (pt-BR, en-US, es-MX); empty = all locales
+	Zip5        string  // ADR-005 / Issue #8: 5-digit CEP prefix; empty = no delivery filter
+	MaxSLAHours int64   // ADR-005: maximum delivery SLA in hours; 0 = any
+	MinPrice    float64 // ADR-007/008: minimum price (0 = none)
+	MaxPrice    float64 // ADR-007/008: maximum price (0 = none)
 }
 
 type SearchResponse struct {
@@ -48,6 +53,7 @@ type SearchResponse struct {
 	LTR              bool           `json:"ltr,omitempty"`            // stage-2 re-ranking applied (Issue #10)
 	LTRLatencyUS     int64          `json:"ltr_latency_us,omitempty"` // stage-2 in-memory latency (microseconds)
 	LTRModel         string         `json:"ltr_model,omitempty"`
+	ParsedQuery      *ParsedQuery   `json:"parsed_query,omitempty"` // Issue #19 (ADR-007)
 }
 
 type FacetBucket struct {
@@ -145,4 +151,12 @@ type BoostSignals struct {
 	CTR             float64 `json:"ctr"`
 	ConversionRate  float64 `json:"conversion_rate"`
 	RecencyScore    float64 `json:"recency_score"`
+}
+
+// ParsedQuery reports how a natural-language query was decomposed (ADR-007, Issue #19).
+type ParsedQuery struct {
+	OriginalQuery    string                 `json:"original_query"`
+	CleanQuery       string                 `json:"clean_query"`
+	ExtractedFilters map[string]interface{} `json:"extracted_filters"`
+	IntentSource     string                 `json:"intent_source"` // parser | cache | gemini | none
 }
