@@ -54,3 +54,13 @@
     - `go vet` and `go test -race`: PASS
     - ADR-001 (Cache): PASS
     - Security: PASS (Constant-time token comparison, no token leakage)
+
+## #4 (multilanguage) & #5 (facets) (254c8f7, 405d454)
+- **Date:** 2026-10-13
+- **Status:** PASS
+- **Checks:**
+    - `go vet` and `go test -race`: PASS
+    - `npm run build`: PASS
+    - ADR-003 (Facets): PASS
+    - ADR-002 (Multilanguage): PASS
+    - Security: PASS (Filters are bound parameters, facet expressions are constants)
