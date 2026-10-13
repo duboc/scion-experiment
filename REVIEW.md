@@ -204,3 +204,6 @@
 - **Date:** 2026-10-13
 - **Status:** PASS (reviewer, read-only worktree procedure)
 - **Checks:** go vet PASS; go test -race PASS; npm run build PASS (pre-existing eslint warnings only); ADR-007 session personalization compliant; #22 UI price-table/sort selectors and struck-through base price present.
+
+### Follow-up: 1fad8cf (#22/#20)
+- **Status:** PASS (reviewer, read-only worktree): go vet / go test -race PASS; hybrid SQL carries the optimizer-version statement hint; sqlcheck covers #22 price tables and #20 sessions.
