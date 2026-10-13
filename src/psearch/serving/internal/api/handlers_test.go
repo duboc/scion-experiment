@@ -333,3 +333,55 @@ func TestSynonymsEndpoints(t *testing.T) {
 		t.Fatalf("search 'kicks' should expand via new synonym: terms=%v results=%d", resp.ExpandedTerms, len(resp.Results))
 	}
 }
+
+// Issue #6: /api/rules CRUD (GET public; writes admin-only) and applied_rules in search.
+func TestRulesCRUD(t *testing.T) {
+	r := newTokenRouter("s3cret")
+	do := func(method, path, token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("X-Admin-Token", token)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+	rule := `{"name":"pin pegasus","query_pattern":"shoes","pin_product_ids":["prod-003"],"active":true}`
+	if w := do(http.MethodPost, "/api/rules", "", rule); w.Code != http.StatusForbidden {
+		t.Fatalf("POST without token = %d", w.Code)
+	}
+	w := do(http.MethodPost, "/api/rules", "s3cret", rule)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		RuleID string `json:"rule_id"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &created)
+	if created.RuleID == "" {
+		t.Fatal("server must assign rule_id")
+	}
+	if w := do(http.MethodGet, "/api/rules", "", ""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), created.RuleID) {
+		t.Fatalf("GET = %d %s", w.Code, w.Body.String())
+	}
+	resp := doSearch(t, r, "q=running+shoes&limit=5")
+	if len(resp.Results) == 0 || resp.Results[0].ID != "prod-003" || len(resp.AppliedRules) != 1 {
+		t.Fatalf("pin rule not applied: %s rules=%v", ids(resp.Results), resp.AppliedRules)
+	}
+	if w := do(http.MethodPut, "/api/rules/"+created.RuleID, "s3cret", `{"name":"off","query_pattern":"shoes","pin_product_ids":["prod-003"],"active":false}`); w.Code != http.StatusOK {
+		t.Fatalf("PUT = %d %s", w.Code, w.Body.String())
+	}
+	if resp := doSearch(t, r, "q=running+shoes&limit=5"); len(resp.AppliedRules) != 0 {
+		t.Fatal("inactive rule must not apply")
+	}
+	if w := do(http.MethodPost, "/api/rules", "s3cret", `{"name":"bad","boost_multiplier":2}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid rule = %d", w.Code)
+	}
+	if w := do(http.MethodDelete, "/api/rules/"+created.RuleID, "s3cret", ""); w.Code != http.StatusNoContent {
+		t.Fatalf("DELETE = %d", w.Code)
+	}
+	if w := do(http.MethodGet, "/api/rules", "", ""); strings.Contains(w.Body.String(), created.RuleID) {
+		t.Fatal("rule still listed after delete")
+	}
+}

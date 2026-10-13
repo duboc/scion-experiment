@@ -75,6 +75,7 @@ function ProductSearch({
     const [retrievalMode, setRetrievalMode] = useState(null);
     const [effectiveTenantId, setEffectiveTenantId] = useState(null);
     const [effectiveLocale, setEffectiveLocale] = useState(null);
+    const [expandedTerms, setExpandedTerms] = useState([]);
     const [serverFacets, setServerFacets] = useState(null);
     const [facetsLatencyMs, setFacetsLatencyMs] = useState(null);
     // State for the filters component - now a dynamic object
@@ -513,6 +514,11 @@ function ProductSearch({
                 }
                 if (response.data.locale !== undefined) {
                     setEffectiveLocale(response.data.locale);
+                }
+                if (response.data.expanded_terms && Array.isArray(response.data.expanded_terms)) {
+                    setExpandedTerms(response.data.expanded_terms);
+                } else {
+                    setExpandedTerms([]);
                 }
                 if (response.data.facets && Object.keys(response.data.facets).length > 0) {
                     setServerFacets(response.data.facets);
@@ -1050,6 +1056,14 @@ function ProductSearch({
                                 )}
                             </Box>
                         </Box>
+
+                        {expandedTerms && expandedTerms.length > 0 && (
+                            <Box sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                                    Also matching: {expandedTerms.join(', ')}
+                                </Typography>
+                            </Box>
+                        )}
 
                         {loading && <Typography>Loading products...</Typography>}
                         {error && <Typography color="error">Error: {error.message}</Typography>}

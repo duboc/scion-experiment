@@ -22,6 +22,24 @@ type SpannerService struct {
 	seedProducts []models.SearchResult
 	backendMode  string
 	synonyms     *SynonymService // optional query expansion (Issue #7)
+	rules        *RuleService    // optional merchandising rules (Issue #6)
+}
+
+// SetRules installs the merchandising rule service (Issue #6, ADR-004).
+func (s *SpannerService) SetRules(r *RuleService) { s.rules = r }
+
+func nonNilBoosts(b []ruleBoost) []ruleBoost {
+	if b == nil {
+		return []ruleBoost{}
+	}
+	return b
+}
+
+func nonNilStrings(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
 }
 
 // SetSynonyms installs the synonym expansion service (Issue #7, ADR-003).
@@ -126,12 +144,16 @@ func (s *SpannerService) SeedIfEmpty(ctx context.Context) error {
 		if len(p.Brands) > 0 {
 			brand = p.Brands[0]
 		}
+		sig := models.BoostSignals{}
+		if p.Signals != nil {
+			sig = *p.Signals
+		}
 		stock := int64(0)
 		if p.AvailableQuantity != nil {
 			stock = int64(*p.AvailableQuantity)
 		}
 		muts = append(muts, spanner.InsertOrUpdate("products",
-			[]string{"product_id", "product_data", "title", "description", "category", "brand", "price", "is_available", "stock", "is_visible", "channels", "tenant_id", "locale", "embedding", "timestamp"},
+			[]string{"product_id", "product_data", "title", "description", "category", "brand", "price", "is_available", "stock", "is_visible", "channels", "tenant_id", "locale", "clicks", "orders", "discount_pct", "popularity_score", "margin_pct", "ctr", "conversion_rate", "recency_score", "embedding", "timestamp"},
 			[]interface{}{
 				p.ID,
 				spanner.NullJSON{Value: json.RawMessage(rawJSON), Valid: true},
@@ -146,6 +168,7 @@ func (s *SpannerService) SeedIfEmpty(ctx context.Context) error {
 				p.Channels,
 				p.TenantID,
 				p.Locale,
+				sig.Clicks, sig.Orders, sig.DiscountPct, sig.PopularityScore, sig.MarginPct, sig.CTR, sig.ConversionRate, sig.RecencyScore,
 				emb,
 				spanner.CommitTimestamp,
 			},
@@ -170,6 +193,7 @@ type SearchOutcome struct {
 	RetrievalMode string
 	CacheHit      bool     // query embedding served from the embedding cache (v2 only)
 	ExpandedTerms []string // synonym phrases added to the text leg (Issue #7)
+	AppliedRules  []string // merchandising rule_ids applied (Issue #6)
 }
 
 // HybridSearch executes hybrid vector + full-text RRF search against Cloud Spanner (with deterministic fallback).
@@ -192,9 +216,11 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 
 	nf := normalizeFilters(filters)
 	expansion := s.synonyms.Expand(ctx, nf.TenantID, nf.Locale, query)
+	ruleSet := s.rules.Match(ctx, nf.TenantID, query)
 	if s.client != nil && strings.TrimSpace(query) != "" {
 		plan := s.planVectorQuery(ctx, query)
 		plan.expansion = expansion
+		plan.rules = ruleSet
 		res, err := s.spannerHybridSearch(ctx, query, limit, minScore, alpha, plan, filters)
 		switch {
 		case err != nil:
@@ -203,7 +229,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			// Degraded v2: return Spanner's lexical results as-is (even if empty).
 			// Falling back to the in-memory engine here would mask the outage with
 			// deterministic 768-d vector scores.
-			return SearchOutcome{Results: res, RetrievalMode: RetrievalLexicalOnly, ExpandedTerms: expansion.Terms}, nil
+			return SearchOutcome{Results: res, RetrievalMode: RetrievalLexicalOnly, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied}, nil
 		default:
 			// A successful Spanner query is authoritative even when it returns no rows
 			// (e.g. tenant/category filters exclude everything). Falling back to the
@@ -212,11 +238,11 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			if plan.column == vectorColumnV2 {
 				mode = RetrievalHybridV2
 			}
-			return SearchOutcome{Results: res, RetrievalMode: mode, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms}, nil
+			return SearchOutcome{Results: res, RetrievalMode: mode, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied}, nil
 		}
 	}
 
-	return SearchOutcome{Results: s.memoryHybridSearchExpanded(query, limit, minScore, alpha, filters, expansion), RetrievalMode: RetrievalMemory, ExpandedTerms: expansion.Terms}, nil
+	return SearchOutcome{Results: s.memoryHybridSearchExpanded(query, limit, minScore, alpha, filters, expansion, ruleSet), RetrievalMode: RetrievalMemory, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied}, nil
 }
 
 // vectorPlan describes how the vector leg of the hybrid query is executed.
@@ -226,6 +252,7 @@ type vectorPlan struct {
 	lexicalOnly bool        // true when no usable query embedding exists (degraded mode)
 	cacheHit    bool        // query embedding came from the embedding cache
 	expansion   Expansion   // synonym expansion for the text leg
+	rules       RuleSet     // merchandising rules matching the query
 }
 
 // metaEmbedder is implemented by EmbeddingCache.
@@ -334,8 +361,18 @@ func buildHybridSQLWith(column string, lexicalOnly, folded bool) string {
 	// Spanner rejects: "Aggregations of aggregations are not allowed").
 	return `
 		WITH` + ann + fts + `
-		SELECT rrf_score, vector_score, text_score, product_id, title, product_data, is_available, stock
+		SELECT rrf_score, vector_score, text_score, product_id, title, product_data, is_available, stock, boost_score, rule_mult
 		FROM (
+			/* ADR-004: final = rrf_score + boost_signal_score + merchandising_rule_delta,
+			   rule_delta = (rule_mult - 1) * rrf_score; pins first, buries last (within availability) */
+			SELECT a.*,
+				@boost_weight * ` + boostSignalSQL + ` AS boost_score,
+				IFNULL((SELECT EXP(SUM(LN(r.multiplier))) FROM UNNEST(@rule_boosts) AS r
+					WHERE (r.brand = '' OR LOWER(IFNULL(p.brand, '')) = r.brand)
+						AND (r.category = '' OR LOWER(IFNULL(p.category, '')) = r.category)), 1.0) AS rule_mult,
+				IFNULL((SELECT MIN(o) FROM UNNEST(@pin_ids) AS pid WITH OFFSET AS o WHERE pid = a.product_id), 1000) AS pin_rank,
+				IF(a.product_id IN UNNEST(@bury_ids), 1, 0) AS buried
+			FROM (
 			SELECT
 				SUM(weight / (60.0 + rank)) AS rrf_score,
 				MAX(IF(source = 'vector', 1.0 / (60.0 + rank), 0.0)) AS vector_score,
@@ -348,8 +385,12 @@ func buildHybridSQLWith(column string, lexicalOnly, folded bool) string {
 			FROM (` + union + `
 			)
 			GROUP BY product_id
+			) AS a
+			JOIN products AS p ON p.product_id = a.product_id
 		)
-		ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */, rrf_score DESC, vector_score DESC, text_score DESC, product_id
+		ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */,
+			pin_rank, buried, rrf_score * rule_mult + boost_score DESC /* final_score */,
+			vector_score DESC, text_score DESC, product_id
 		LIMIT @limit
 	`
 }
@@ -408,6 +449,10 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		"query_text":     queryText,
 		"syn_text":       synText,
 		"syn_weight":     synWeight,
+		"boost_weight":   s.config.BoostWeight,
+		"rule_boosts":    nonNilBoosts(plan.rules.Boosts),
+		"pin_ids":        nonNilStrings(plan.rules.Pins),
+		"bury_ids":       nonNilStrings(plan.rules.Buries),
 		"tenant_id":      f.TenantID,
 		"locale":         f.Locale,
 		"category":       f.Category,
@@ -440,7 +485,8 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		var productDataJSON spanner.NullJSON
 		var isAvailable spanner.NullBool
 		var stock spanner.NullInt64
-		if err := row.Columns(&rrfScore, &vecScore, &txtScore, &productID, &title, &productDataJSON, &isAvailable, &stock); err != nil {
+		var boostScore, ruleMult float64
+		if err := row.Columns(&rrfScore, &vecScore, &txtScore, &productID, &title, &productDataJSON, &isAvailable, &stock, &boostScore, &ruleMult); err != nil {
 			return nil, err
 		}
 		if rrfScore < minScore {
@@ -473,11 +519,13 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 			effAlpha = 0
 		}
 		item.Score = map[string]float64{
-			"hybrid":      rrfScore,
-			"vector":      vecScore,
-			"text":        txtScore,
-			"alpha":       effAlpha,
-			"final_score": rrfScore,
+			"hybrid":          rrfScore,
+			"vector":          vecScore,
+			"text":            txtScore,
+			"alpha":           effAlpha,
+			"boost":           boostScore,
+			"rule_multiplier": ruleMult,
+			"final_score":     rrfScore*ruleMult + boostScore,
 		}
 		results = append(results, item)
 	}
@@ -486,10 +534,11 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 
 func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore float64, alpha float64, filters models.SearchFilters) []models.SearchResult {
 	nf := normalizeFilters(filters)
-	return s.memoryHybridSearchExpanded(query, limit, minScore, alpha, filters, s.synonyms.Expand(context.Background(), nf.TenantID, nf.Locale, query))
+	return s.memoryHybridSearchExpanded(query, limit, minScore, alpha, filters,
+		s.synonyms.Expand(context.Background(), nf.TenantID, nf.Locale, query), s.rules.Match(context.Background(), nf.TenantID, query))
 }
 
-func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, minScore float64, alpha float64, filters models.SearchFilters, expansion Expansion) []models.SearchResult {
+func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, minScore float64, alpha float64, filters models.SearchFilters, expansion Expansion, rules RuleSet) []models.SearchResult {
 	filters = normalizeFilters(filters)
 	qLower := FoldAccents(strings.ToLower(strings.TrimSpace(query)))
 	qTokens := strings.Fields(qLower)
@@ -586,13 +635,27 @@ func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, min
 			continue
 		}
 		res := items[i].prod
+		boost := 0.0
+		if res.Signals != nil {
+			boost = s.config.BoostWeight * BoostSignalScore(*res.Signals)
+		}
+		brand, category := "", ""
+		if len(res.Brands) > 0 {
+			brand = res.Brands[0]
+		}
+		if len(res.Categories) > 0 {
+			category = res.Categories[0]
+		}
+		mult := rules.Multiplier(brand, category)
 		res.Score = map[string]float64{
-			"hybrid":      items[i].rrfScore,
-			"vector":      items[i].vecRRF,
-			"text":        items[i].txtRRF,
-			"cosine_sim":  items[i].vecSim,
-			"alpha":       alpha,
-			"final_score": items[i].rrfScore,
+			"hybrid":          items[i].rrfScore,
+			"vector":          items[i].vecRRF,
+			"text":            items[i].txtRRF,
+			"cosine_sim":      items[i].vecSim,
+			"alpha":           alpha,
+			"boost":           boost,
+			"rule_multiplier": mult,
+			"final_score":     items[i].rrfScore*mult + boost,
 		}
 		out = append(out, res)
 	}
@@ -603,8 +666,14 @@ func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, min
 		if ui != uj {
 			return !ui // available products first (ADR-002)
 		}
-		if out[i].Score["hybrid"] != out[j].Score["hybrid"] {
-			return out[i].Score["hybrid"] > out[j].Score["hybrid"]
+		if pi, pj := pinRank(rules.Pins, out[i].ID), pinRank(rules.Pins, out[j].ID); pi != pj {
+			return pi < pj // pinned products first, in rule order (ADR-004)
+		}
+		if bi, bj := containsID(rules.Buries, out[i].ID), containsID(rules.Buries, out[j].ID); bi != bj {
+			return !bi // buried products last (within availability group)
+		}
+		if out[i].Score["final_score"] != out[j].Score["final_score"] {
+			return out[i].Score["final_score"] > out[j].Score["final_score"]
 		}
 		if out[i].Score["vector"] != out[j].Score["vector"] {
 			return out[i].Score["vector"] > out[j].Score["vector"]
@@ -657,6 +726,24 @@ func matchesCatalog(f models.SearchFilters, p models.SearchResult) bool {
 func containsFold(values []string, want string) bool {
 	for _, v := range values {
 		if strings.EqualFold(v, want) {
+			return true
+		}
+	}
+	return false
+}
+
+func pinRank(pins []string, id string) int {
+	for i, p := range pins {
+		if p == id {
+			return i
+		}
+	}
+	return 1000
+}
+
+func containsID(ids []string, id string) bool {
+	for _, x := range ids {
+		if x == id {
 			return true
 		}
 	}

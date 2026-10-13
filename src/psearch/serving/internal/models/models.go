@@ -41,6 +41,7 @@ type SearchResponse struct {
 	TenantID         string         `json:"tenant_id,omitempty"`      // effective tenant (ADR-002)
 	Locale           string         `json:"locale,omitempty"`         // locale filter applied ("" = all)
 	ExpandedTerms    []string       `json:"expanded_terms,omitempty"` // synonyms added at reduced weight (Issue #7)
+	AppliedRules     []string       `json:"applied_rules,omitempty"`  // merchandising rule_ids applied (Issue #6)
 }
 
 type FacetBucket struct {
@@ -68,6 +69,7 @@ type SearchResult struct {
 	AvailableQuantity *int               `json:"availableQuantity,omitempty"`
 	AvailableTime     *string            `json:"availableTime,omitempty"`
 	Channels          []string           `json:"channels,omitempty"`
+	Signals           *BoostSignals      `json:"boost_signals,omitempty"`
 	Locale            string             `json:"locale,omitempty"`
 	TenantID          string             `json:"tenant_id,omitempty"`
 	Images            []Image            `json:"images"`
@@ -124,4 +126,16 @@ type Attribute struct {
 
 type HealthResponse struct {
 	Status string `json:"status"`
+}
+
+// BoostSignals are the 8 business signals used for ranking boosts (ADR-004, Issue #6).
+type BoostSignals struct {
+	Clicks          int64   `json:"clicks"`
+	Orders          int64   `json:"orders"`
+	DiscountPct     float64 `json:"discount_pct"`
+	PopularityScore float64 `json:"popularity_score"`
+	MarginPct       float64 `json:"margin_pct"`
+	CTR             float64 `json:"ctr"`
+	ConversionRate  float64 `json:"conversion_rate"`
+	RecencyScore    float64 `json:"recency_score"`
 }

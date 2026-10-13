@@ -39,6 +39,20 @@ func main() {
 		log.Printf("OK   search_synonyms rows=%d expand(geladeira,pt-BR)=%v", len(rows), syn.Expand(ctx, "default", "pt-BR", "geladeira").Terms)
 	}
 
+	// Merchandising: verify the rules table is readable, then exercise the SQL with
+	// non-empty rule params using an in-memory rule (nothing is written to Spanner).
+	if rules, err := (services.SpannerRuleStore{Client: svc.Client()}).List(ctx, "default"); err != nil {
+		log.Fatalf("FAIL merchandising_rules table: %v", err)
+	} else {
+		log.Printf("OK   merchandising_rules rows=%d", len(rules))
+	}
+	memRules := services.NewRuleService(services.NewMemoryRuleStore(), time.Minute)
+	if _, err := memRules.Save(ctx, services.Rule{Name: "sqlcheck", QueryPattern: "shoes", TargetBrand: "nike", BoostMultiplier: 1.5,
+		PinProductIDs: []string{"prod-003"}, BuryProductIDs: []string{"prod-001"}, Active: true}); err != nil {
+		log.Fatalf("rule: %v", err)
+	}
+	svc.SetRules(memRules)
+
 	cases := []struct {
 		q       string
 		alpha   float64
@@ -55,6 +69,7 @@ func main() {
 		{"shoes", 0.5, models.SearchFilters{TenantID: "acme"}},
 		{"geladeira", 0, models.SearchFilters{Locale: "pt-BR"}},
 		{"notebook gamer", 0.5, models.SearchFilters{}},
+		{"running shoes", 0.5, models.SearchFilters{}}, // rule params non-empty (pin/bury/boost)
 	}
 	failed := false
 	for _, c := range cases {

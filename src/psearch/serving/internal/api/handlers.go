@@ -21,6 +21,7 @@ type Controller struct {
 	embeddingSvc *services.EmbeddingService
 	cache        *services.EmbeddingCache // nil when the embedding service is unavailable
 	synonyms     *services.SynonymService
+	rules        *services.RuleService
 }
 
 func NewController(cfg *config.Config) (*Controller, error) {
@@ -53,12 +54,19 @@ func NewController(cfg *config.Config) (*Controller, error) {
 	}
 	synonyms := services.NewSynonymService(synStore, time.Minute)
 	spannerSvc.SetSynonyms(synonyms)
+	var ruleStore services.RuleStore = services.NewMemoryRuleStore()
+	if client := spannerSvc.Client(); client != nil {
+		ruleStore = services.SpannerRuleStore{Client: client}
+	}
+	rules := services.NewRuleService(ruleStore, 30*time.Second)
+	spannerSvc.SetRules(rules)
 	return &Controller{
 		config:       cfg,
 		spannerSvc:   spannerSvc,
 		embeddingSvc: embeddingSvc,
 		cache:        cache,
 		synonyms:     synonyms,
+		rules:        rules,
 	}, nil
 }
 
@@ -203,6 +211,7 @@ func (c *Controller) Search(ctx *gin.Context) {
 		EmbeddingVersion: c.config.ActiveVersion(),
 		CacheHit:         outcome.CacheHit,
 		ExpandedTerms:    outcome.ExpandedTerms,
+		AppliedRules:     outcome.AppliedRules,
 		RetrievalMode:    outcome.RetrievalMode,
 	})
 }
@@ -290,4 +299,70 @@ func (c *Controller) UpsertSynonym(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, saved)
+}
+
+func tenantParam(ctx *gin.Context) string {
+	if t := strings.TrimSpace(ctx.Query("tenant_id")); t != "" {
+		return t
+	}
+	return "default"
+}
+
+// ListRules: GET /api/rules?tenant_id=default (Issue #6). Public read.
+func (c *Controller) ListRules(ctx *gin.Context) {
+	tenant := tenantParam(ctx)
+	rules, err := c.rules.List(ctx.Request.Context(), tenant)
+	if err != nil {
+		log.Printf("WARN: list rules: %v", err)
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "rules unavailable"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"tenant_id": tenant, "rules": rules, "count": len(rules)})
+}
+
+// CreateRule: POST /api/rules (admin). PUT /api/rules/:id (admin) replaces a rule.
+func (c *Controller) CreateRule(ctx *gin.Context) { c.saveRule(ctx, "") }
+
+func (c *Controller) UpdateRule(ctx *gin.Context) { c.saveRule(ctx, ctx.Param("id")) }
+
+func (c *Controller) saveRule(ctx *gin.Context, id string) {
+	if !c.authorizeAdmin(ctx) {
+		return
+	}
+	var r services.Rule
+	if err := ctx.ShouldBindJSON(&r); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if id != "" {
+		r.RuleID = id
+	} else {
+		r.RuleID = "" // server-assigned on create
+	}
+	if r.TenantID == "" {
+		r.TenantID = tenantParam(ctx)
+	}
+	saved, err := c.rules.Save(ctx.Request.Context(), r)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	status := http.StatusOK
+	if id == "" {
+		status = http.StatusCreated
+	}
+	ctx.JSON(status, saved)
+}
+
+// DeleteRule: DELETE /api/rules/:id?tenant_id=default (admin).
+func (c *Controller) DeleteRule(ctx *gin.Context) {
+	if !c.authorizeAdmin(ctx) {
+		return
+	}
+	if err := c.rules.Delete(ctx.Request.Context(), tenantParam(ctx), ctx.Param("id")); err != nil {
+		log.Printf("WARN: delete rule: %v", err)
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "delete failed"})
+		return
+	}
+	ctx.Status(http.StatusNoContent)
 }
