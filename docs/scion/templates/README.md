@@ -43,25 +43,30 @@ The GCP identity is not part of the template: assign `${DEPLOYER_SA}` to the dep
 
 ## Uploading to the Hub
 
-Use the Scion CLI, from a machine logged in to the Hub, inside a checkout linked to the Hub project:
+Use [`scripts/push-templates.py`](../scripts/push-templates.py). It renders the roles, ships them to the Hub VM and
+creates or updates each template through the Hub API, on top of Scion's default template (the same base
+`scion templates create` uses, with its `home/` dotfiles):
 
 ```bash
-cp -R build/templates/lead .scion/templates/lead
-scion templates push lead          # project scope; add the root --global flag for a global template
-scion templates show lead          # check the files and the harness
+scripts/push-templates.py --project psearch --roles lead,backend,frontend,reviewer,deployer          # dry run
+scripts/push-templates.py --project psearch --roles lead,backend,frontend,reviewer,deployer --apply
 ```
 
+The same procedure gave the five eval templates their own files on 2026-10-13 (the script now reports them up to
+date), and it checks that no other template changed.
+
 Each template must have its own files. The original factory seeded its templates by writing rows straight into the Hub
-database, and five eval templates ended up pointing at the `frontend` template's files (L16). Don't edit the Hub DB.
+database, and the five eval templates ended up pointing at the `frontend` template's files (L16). Never fix that with
+`scion templates push`: a push to an existing template uploads into that row's storage path, so it would have
+overwritten the frontend's files. `push-templates.py` renames such a row to `<role>-legacy` and creates a fresh one
+instead. Don't edit the Hub DB.
 
-> [!NOTE]
-> The push flow above is the supported CLI path, but it was not exercised end to end on this factory's Hub (the
-> templates there were created before these docs). Check the result with `scion templates show` before you start
-> agents from it.
+The Scion CLI (`scion templates push <role>` from a checkout linked to the Hub project, `scion templates show <role>`)
+also works for templates that own their storage; it wasn't used on this Hub.
 
-Template changes apply when an agent starts. Running agents keep their old prompt until they are restarted or
-reincarnated (see [operations-runbook.md](../operations-runbook.md)); in the meantime, send the rule change as a
-message.
+Template changes apply when an agent is created. Running agents keep their prompt until they are recreated or
+reincarnated (see [operations-runbook.md](../operations-runbook.md#switch-an-agents-harness)); in the meantime, send
+the rule change as a message.
 
 ## What changed compared with the templates the factory first ran with
 

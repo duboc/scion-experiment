@@ -14,6 +14,7 @@ VM at run time, and the GitHub token is only ever piped through stdin.
 | [`patch-antigravity-hooks.py`](patch-antigravity-hooks.py) | Hub VM | with `--apply` | Checks (default) or applies the telemetry-free Antigravity hook command in the harness provisioner and in every project's `.agents/hooks.json` (L6). Re-check after Scion updates. |
 | [`setup-sandbox.sh`](setup-sandbox.sh) | your machine | GCP | Idempotent sandbox setup: APIs, deployer and runtime service accounts, IAM, Spanner (+ factory tables), BigQuery, Firestore, bucket, `github-token` secret. `DRY_RUN=1` prints the plan. |
 | [`render-templates.py`](render-templates.py) | your machine | writes `build/` | Renders `../templates` with your values into `build/templates/<role>/`; `--file` renders one file to stdout (used for the heartbeat text). |
+| [`push-templates.py`](push-templates.py) | your machine | with `--apply` | Renders roles and creates or updates them as Hub templates through the API (dry run by default). Never uploads into a storage path a template doesn't own; renames such rows to `<role>-legacy` (L16). |
 
 ## Common commands
 
@@ -29,6 +30,7 @@ scripts/run-on-hub.sh scripts/scion-admin.py schedule list --project psearch
 scripts/run-on-hub.sh scripts/scion-admin.py schedule update --project psearch --name psearch-lead-heartbeat \
   --text "$(scripts/render-templates.py --file config/heartbeat-message.txt)"
 scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py                # check; add --apply to fix
+scripts/push-templates.py --project psearch-eval --roles eval-lead      # dry run; add --apply to push
 DRY_RUN=1 scripts/setup-sandbox.sh --with-spanner --with-bigquery
 ```
 

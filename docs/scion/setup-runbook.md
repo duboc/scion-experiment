@@ -136,12 +136,14 @@ Without this, Antigravity agents can't run any tool while Hub telemetry is on (L
 ## 8. Templates and agents
 
 ```bash
-scripts/render-templates.py          # -> build/templates/<role>/
+scripts/push-templates.py --project "$BUILD_PROJECT" --roles lead,backend,frontend,reviewer,deployer          # dry run
+scripts/push-templates.py --project "$BUILD_PROJECT" --roles lead,backend,frontend,reviewer,deployer --apply
+scripts/push-templates.py --project "$EVAL_PROJECT" \
+  --roles eval-lead,factory-analyst,search-evaluator,ui-craftsman,eval-deployer --apply
 ```
 
-Upload each role to its project as described in [templates/README.md](templates/README.md#uploading-to-the-hub)
-(build project: `lead`, `backend`, `frontend`, `reviewer`, `deployer`; eval project: `eval-lead`, `factory-analyst`,
-`search-evaluator`, `ui-craftsman`, `eval-deployer`). Then start the agents as the admin, in each project:
+([templates/README.md](templates/README.md#uploading-to-the-hub) explains what it does.) Then start the agents as the
+admin, in each project:
 
 ```bash
 scion start lead -t lead "Read your instructions, then run your wake-up steps."
