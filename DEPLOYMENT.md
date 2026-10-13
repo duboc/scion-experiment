@@ -262,3 +262,30 @@ Verification on `00017-9wc`:
 - Logs: one non-blocking startup line, `WARN: Spanner seed check: DeadlineExceeded … getting session`, 21 s after instance start. `SeedIfEmpty` runs in a background goroutine with a 20 s budget, and under request-based CPU the idle post-deploy instance was throttled. It only checks whether `products` is empty (it has 15 rows); the backend stayed `spanner`, and every query was `hybrid_v2`. First occurrence on any revision. Otherwise no WARN, fallback, InvalidArgument, PermissionDenied, lexical or ERROR
 
 Notes: (a) `shipping_cost` is still reported when `free_shipping=true` (e.g. prod-007: free, cost 15). The UI should show "Frete grátis" or 0 in that case; (b) prod-008 has inventory only in MG/NE/RJ, as seeded; confirm that's intended.
+
+## #9 autocomplete (n-gram typeahead) + #10 two-stage LTR: LIVE 2026-10-13
+
+Source: clean `git archive` of **`69bdc217a4a4d7db7864b2a03865810466257fdb`** (#9 `c717604` + fixes `f3fc754`/`69bdc21`, UI `3e9e0dd`, #8 follow-up `f00acb7`, #10 `75fee13`). Env unchanged; `LTR_MODEL_JSON` unset (baseline model); `ADMIN_TOKEN` unset.
+
+| Step | Result |
+|---|---|
+| 1st attempt, original 018 (`c717604`) | ❌ Spanner rejected the generated column: `Invalid use of tokenize_ngrams: regexp_replace is not supported as a tokenization argument`. Nothing created |
+| Throwaway probe (approved): `autocomplete_ddl_probe` + search index with the `f3fc754` definitions | ✅ accepted, then `DROP SEARCH INDEX` + `DROP TABLE`; 0 probe objects remain |
+| DDL `018` part a: `autocomplete_suggestions` (plain `suggestion_folded`, `suggestion_ngrams = TOKENIZE_NGRAMS(suggestion_folded, 2..4)`) | ✅ |
+| DDL `018` part b: `CREATE SEARCH INDEX autocomplete_ngram_idx` | ✅ |
+| DML `018b` | ✅ 48 rows (en-US 30, pt-BR 18); all `suggestion_folded` values pre-verified (0 mismatches) |
+| sqlcheck on `f3fc754` | ❌ `SEARCH_NGRAMS is not supported in this query` for `gel` / `tên`. Cause: `SEARCH_NGRAMS(...) OR STARTS_WITH(suggestion_folded, ...)` in WHERE. Fixed in `69bdc21` (SEARCH_NGRAMS alone in WHERE, STARTS_WITH only in ORDER BY) |
+| sqlcheck on `69bdc21` | ✅ all OK, exit 0: autocomplete `gel` → 2, `tên` → 2, `n` → 3; `ltr candidate signals: 3 products`; search/delivery/synonyms/rules/facets OK |
+| Deploy → **`psearch-serving-00018-rc5`**, then `update-traffic --to-latest` | ✅ 100%, follows latest. Rollback target: `00017-9wc` |
+
+BigQuery (read-only): `psearch_dataset` exists (us-central1) but has **0 tables**, so `search_query_logs` doesn't exist and the export script wasn't run. Autocomplete serves the 48 bootstrap suggestions until query logging exists.
+
+Verification on `00018-rc5`:
+- `/api/autocomplete?q=gel&locale=pt-BR` → **"geladeira"** first, then "geladeira inverse frost free inox 540l"; 85 ms, then **`cached=true` in 0.04 ms**
+- `q=tên` → **"tênis de corrida nimbus cloud", "tenis"** (accent-insensitive); 115 ms → cached 0.04 ms
+- `q=n` (1-char prefix path) → notebook, notebook gamer…, nike; `q=lap&locale=en-US` → laptop, probook…laptop
+- 101-char `q` → **400** `q too long (max 100)`; 100 chars → 200
+- #10: `/api/search?q=shoes&ltr=true&limit=5` → `ltr=true`, `ltr_model=baseline-2026-10`, **`ltr_latency_us` 48 / 21**; every result has `stage1_rank`/`stage2_rank`/`ltr_score`; it re-ranks (prod-015 moves from stage1 6 → stage2 5, replacing prod-007). Without `ltr`, no ltr fields at all
+- #8 still OK: `cep=01310-100` → 12, all SP, labels "Chega amanhã / Chega em 2 dias - CD São Paulo"; `max_sla_hours=24` → 8; SUL 12; `cep=123` → 400. Free-shipping items now report `shipping_cost=0` (follow-up `f00acb7`)
+- Regressions: tenis → prod-002 first; geladeira synonyms; boost (0, 0.002]; OOS last; acme → 0 results, `hybrid_v2`; Acer → prod-006; facets 4; cache miss → hit; info v2/1024; POST `/api/rules`, `/api/synonyms`, `/api/config/embedding-version` → 403
+- Logs: fully clean (no WARN, fallback, InvalidArgument, PermissionDenied, lexical, SEARCH_NGRAMS or ERROR; no seed-check timeout this time)
