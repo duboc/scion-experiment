@@ -13,6 +13,8 @@ All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult 
 | [`adr/ADR-004-merchandising-boosts.md`](adr/ADR-004-merchandising-boosts.md) | **Issue #6** | **4.1.6 Relevance & Merchandising Rules** (`merchandising_rules` in Spanner + 8 numeric boost signals in SQL score) |
 | [`adr/ADR-005-delivery-promises.md`](adr/ADR-005-delivery-promises.md) | **Issue #8** | **4.1.8 Delivery Promises** (`products` → `skus` → `regional_inventory` via Spanner `INTERLEAVE IN PARENT` + CEP/ZIP SLA filter) |
 | [`adr/ADR-006-autocomplete-and-ltr.md`](adr/ADR-006-autocomplete-and-ltr.md) | **Issue #9**, **Issue #10** | **4.1.9 Autocomplete** (BigQuery Analytics + Spanner `TOKENIZE_NGRAMS`) & **4.1.10 Learning to Rank** (2-Stage Spanner Top-100 + Go ~2ms in-memory re-ranker) |
+| [`adr/ADR-007-conversational-query-and-session.md`](adr/ADR-007-conversational-query-and-session.md) | **Issue #19**, **Issue #20** | **4.1.11 Conversational Query Understanding** (parser-first + Gemini Flash Lite fallback, extracted price/brand/color filters) & **4.1.12 Session Personalization** (session centroid re-rank boost) |
+| [`adr/ADR-008-zero-results-and-b2b-pricing.md`](adr/ADR-008-zero-results-and-b2b-pricing.md) | **Issue #21**, **Issue #22** | **4.1.13 Zero-Results Recovery** (n-gram spell check, AND→OR relaxation) & **4.1.14 B2B Contract Pricing** (`product_prices` INTERLEAVE IN PARENT, effective price, sort_by) |
 
 ## 2. API Contracts & Operational Playbooks
 
