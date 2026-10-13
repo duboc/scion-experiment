@@ -108,3 +108,34 @@ Behaviour observed under `memory_fallback` on `00010-w7g` (Go logic only, not th
 **Other finding (pre-existing, not a regression):** the runtime SA `psearch-serving@` lacks `monitoring.timeSeries.create`, so the Spanner client logs `PermissionDenied ... Need monitoring metric writer permission` (also seen on `00009-9dc`). Fix with `roles/monitoring.metricWriter` on the SA, or turn client-side metrics off with `SPANNER_DISABLE_BUILTIN_METRICS=true`.
 
 **Template note:** the service template points at `00010-w7g`'s image (same env and SA as `00009-9dc`) while traffic is pinned to `00009-9dc` (image `psearch-serving@sha256:814672c0…`). The next fixed deploy needs `--to-latest` / `update-traffic`.
+
+## Wave 1 (#1 / #3) fix deployed: LIVE 2026-10-13
+
+Source: `main` @ `79b15a2` (RRF aggregate wrapped in a subquery; `ORDER BY` uses plain columns; adds `cmd/sqlcheck`). SA `psearch-serving@`. Env as before plus **`SPANNER_DISABLE_BUILTIN_METRICS=true`** (silences the client-metrics PermissionDenied noise; no new role granted).
+
+**Pre-deploy `go run ./cmd/sqlcheck`** (real Spanner SQL, read-only) passed all 6 cases with exit 0:
+```
+OK q="running shoes" alpha=0.0                       rows=15 mode=hybrid_v2
+OK q="running shoes" alpha=1.0                       rows=15 mode=hybrid_v2
+OK q="shoes" alpha=0.5                               rows=15 mode=hybrid_v2
+OK q="shoes" alpha=0.5 OnlyInStock=true              rows=13 mode=hybrid_v2
+OK q="shoes" alpha=0.5 Channel=store                 rows=9  mode=hybrid_v2
+OK q="tenis" alpha=0.5 OnlyInStock=true Channel=mobile rows=12 mode=hybrid_v2
+```
+
+Deploy → **`psearch-serving-00011-p6t`**, `--to-latest`, 100% (follows latest; template = serving). Rollback target: `psearch-serving-00009-9dc`.
+
+| Check | Result |
+|---|---|
+| `/api/health` | 200 `healthy`, `backend_mode=spanner` |
+| `/api/info` | 200 v2 / 1024, `product_count=15` |
+| `running shoes` alpha=0 vs alpha=1 | ✅ different orderings. alpha=0: prod-001, 008, 007, 014, 003… alpha=1: prod-002, 003, 001, 007, 014…; `effective_alpha` echoed 0 / 1 / 0.5 |
+| alpha=1.7 | ✅ clamped, `effective_alpha=1` |
+| `q=shoes` | ✅ 15 results, prod-004 and prod-012 (OUT_OF_STOCK) last |
+| `q=shoes&only_in_stock=true` | ✅ 13 results, prod-004/012 excluded |
+| `q=shoes&channel=store` | ✅ 9 results, prod-002 absent (also prod-004/005/009/012/015) |
+| `q=tenis&channel=store` | ✅ 9 results, prod-002 absent |
+| `retrieval_mode` | ✅ `hybrid_v2` on all 11 queries |
+| Logs (`00011-p6t`) | ✅ no `WARN` / `fallback` / `InvalidArgument` / `PermissionDenied` / `lexical` / 403 / ERROR; metrics noise gone |
+
+Observation (not a blocker): at alpha=0 only text matches score (`final_score>0`). The remaining rows have `final_score=0` and keep an arbitrary tie order (e.g. prod-008 before prod-007 despite a lower vector RRF). A tie-break on `vector_score`, or dropping zero-score rows at alpha=0, would make this deterministic.
