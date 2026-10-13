@@ -543,6 +543,32 @@ def check_po_inbox(conn, state, apply):
             print("    (dry-run: would emit Cloud Logging PO_ESCALATION alert)")
 
 
+def check_shared_knowledge_plane(conn, apply=False):
+    """Ensure Hub shared-dirs/knowledge-plane stays synced with the repo's knowledge-plane/ directory."""
+    src_dir = os.path.join(SCION_HOME, "projects", "psearch", "knowledge-plane")
+    if not os.path.isdir(src_dir):
+        return
+
+    cursor = conn.cursor()
+    placeholders = ",".join("?" for _ in FACTORY_PROJECTS)
+    rows = cursor.execute(
+        f"SELECT id, slug FROM projects WHERE slug IN ({placeholders})",
+        FACTORY_PROJECTS,
+    ).fetchall()
+
+    for r in rows:
+        slug = r["slug"]
+        id8 = r["id"].split("-")[0]
+        dst_dir = os.path.join(SCION_HOME, "project-configs", f"{slug}__{id8}", "shared-dirs", "knowledge-plane")
+        if not os.path.isdir(os.path.dirname(dst_dir)):
+            continue
+        if apply:
+            os.makedirs(dst_dir, exist_ok=True)
+            subprocess.run(["rsync", "-a", "--delete", src_dir + "/", dst_dir + "/"], check=False)
+    print(f"Check 5 (Shared Knowledge Plane): {'synced' if apply else 'checked'} from {src_dir}")
+
+
+
 # ---------------------------------------------------------------------------
 # Installation helper
 # ---------------------------------------------------------------------------
@@ -618,6 +644,7 @@ def main():
     check_heartbeat_schedules(conn, args.apply)
     check_agent_liveness(conn, state, args.apply)
     check_po_inbox(conn, state, args.apply)
+    check_shared_knowledge_plane(conn, args.apply)
 
     if args.apply:
         save_state(state)
