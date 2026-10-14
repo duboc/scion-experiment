@@ -23,6 +23,7 @@ type Controller struct {
 	cache        *services.EmbeddingCache // nil when the embedding service is unavailable
 	synonyms     *services.SynonymService
 	rules        *services.RuleService
+	ads          *services.AdService
 	autocomplete *services.AutocompleteService
 	ltrModel     *services.LTRModel
 	intent       *services.QueryUnderstandingService
@@ -75,6 +76,12 @@ func NewController(cfg *config.Config) (*Controller, error) {
 	}
 	rules := services.NewRuleService(ruleStore, 30*time.Second)
 	spannerSvc.SetRules(rules)
+	var adStore services.AdStore = services.NewMemoryAdStore()
+	if client := spannerSvc.Client(); client != nil {
+		adStore = services.SpannerAdStore{Client: client}
+	}
+	ads := services.NewAdService(adStore, services.DefaultSeedProducts(), spannerSvc.Client())
+	spannerSvc.SetAds(ads)
 	var intentLLM services.IntentLLM
 	var intentStore services.IntentStore
 	if cfg.IntentLLMFallback {
@@ -122,6 +129,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		cache:        cache,
 		synonyms:     synonyms,
 		rules:        rules,
+		ads:          ads,
 		autocomplete: autocomplete,
 		ltrModel:     ltrModel,
 		intent:       intent,
@@ -211,6 +219,16 @@ func (c *Controller) Search(ctx *gin.Context) {
 		req.CEP = ctx.Query("cep")
 		if v := ctx.Query("only_in_stock"); v == "true" || v == "1" {
 			req.OnlyInStock = true
+		}
+		if v := strings.ToLower(strings.TrimSpace(ctx.Query("ads"))); v != "" {
+			b := v != "false" && v != "0" && v != "no" && v != "off"
+			req.Ads = &b
+		}
+		if v, err := strconv.Atoi(ctx.Query("page")); err == nil && v > 0 {
+			req.Page = v
+		}
+		if v, err := strconv.Atoi(ctx.Query("offset")); err == nil && v >= 0 {
+			req.Offset = v
 		}
 	} else {
 		ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxSearchBodyBytes)
@@ -421,9 +439,12 @@ intentDone:
 	if !req.LTR && len(results) > limit {
 		results = results[:limit]
 	}
-	if zip5 != "" && len(results) > 0 {
-		pageIDs := make([]string, 0, len(results))
+	if zip5 != "" && (len(results) > 0 || len(outcome.Sponsored) > 0) {
+		pageIDs := make([]string, 0, len(results)+len(outcome.Sponsored))
 		for _, r := range results {
+			pageIDs = append(pageIDs, r.ID)
+		}
+		for _, r := range outcome.Sponsored {
 			pageIDs = append(pageIDs, r.ID)
 		}
 		if promises, err := c.spannerSvc.DeliveryPromises(ctx.Request.Context(), pageIDs, zip5, req.MaxSLAHours); err != nil {
@@ -431,8 +452,16 @@ intentDone:
 		} else {
 			for i := range results {
 				if p, ok := promises[results[i].ID]; ok {
-					p.CEP = req.CEP
-					results[i].DeliveryPromise = p
+					cp := *p
+					cp.CEP = req.CEP
+					results[i].DeliveryPromise = &cp
+				}
+			}
+			for i := range outcome.Sponsored {
+				if p, ok := promises[outcome.Sponsored[i].ID]; ok {
+					cp := *p
+					cp.CEP = req.CEP
+					outcome.Sponsored[i].DeliveryPromise = &cp
 				}
 			}
 		}
@@ -471,6 +500,23 @@ intentDone:
 	if len(results) > limit {
 		results = results[:limit]
 	}
+	organicTotal := len(results)
+	// ADR-011 (Issue #35): Sponsored product injection as the very last step of
+	// Controller.Search, after LTR, session re-rank, and pagination.
+	// Ads are kept out of facets, total_found, LTR features, and the session centroid.
+	// Zero organic results => zero ads; page 1 only; non-browse queries only; ads=false disables.
+	adsEnabled := req.Ads == nil || *req.Ads
+	isFirstPage := req.Page <= 1 && req.Offset <= 0
+	hasQuery := !services.IsBrowseQuery(searchQuery) || imageQuery
+	sponsoredCount := 0
+	if adsEnabled && isFirstPage && hasQuery && len(results) > 0 && len(outcome.Sponsored) > 0 {
+		results = services.InjectSponsored(results, outcome.Sponsored, c.config.EffectiveAdSlots())
+		for _, r := range results {
+			if r.Sponsored {
+				sponsoredCount++
+			}
+		}
+	}
 	tenant := strings.TrimSpace(req.TenantID)
 	if tenant == "" {
 		tenant = "default"
@@ -480,7 +526,8 @@ intentDone:
 		Query:            req.Query,
 		EffectiveAlpha:   alpha,
 		Results:          results,
-		TotalFound:       len(results),
+		TotalFound:       organicTotal,
+		SponsoredCount:   sponsoredCount,
 		Candidates:       candidates,
 		Facets:           facets,
 		FacetsLatencyMs:  facetsMs,
@@ -659,6 +706,88 @@ func (c *Controller) DeleteRule(ctx *gin.Context) {
 		return
 	}
 	ctx.Status(http.StatusNoContent)
+}
+
+// ListAdCampaigns: GET /api/ads/campaigns?tenant_id=default (Issue #35, ADR-011). Public read.
+func (c *Controller) ListAdCampaigns(ctx *gin.Context) {
+	tenant := tenantParam(ctx)
+	campaigns, err := c.ads.List(ctx.Request.Context(), tenant)
+	if err != nil {
+		log.Printf("WARN: list ad campaigns: %v", err)
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "ad campaigns unavailable"})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"tenant_id": tenant, "campaigns": campaigns, "count": len(campaigns)})
+}
+
+// CreateAdCampaign: POST /api/ads/campaigns (admin).
+func (c *Controller) CreateAdCampaign(ctx *gin.Context) { c.saveAdCampaign(ctx, "") }
+
+// UpdateAdCampaign: PUT /api/ads/campaigns/:id (admin).
+func (c *Controller) UpdateAdCampaign(ctx *gin.Context) { c.saveAdCampaign(ctx, ctx.Param("id")) }
+
+func (c *Controller) saveAdCampaign(ctx *gin.Context, id string) {
+	if !c.authorizeAdmin(ctx) {
+		return
+	}
+	var camp models.AdCampaign
+	if err := ctx.ShouldBindJSON(&camp); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if id != "" {
+		camp.CampaignID = id
+	}
+	if camp.TenantID == "" {
+		camp.TenantID = tenantParam(ctx)
+	}
+	saved, err := c.ads.Save(ctx.Request.Context(), camp)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	status := http.StatusOK
+	if id == "" {
+		status = http.StatusCreated
+	}
+	ctx.JSON(status, saved)
+}
+
+// DeleteAdCampaign: DELETE /api/ads/campaigns/:id?tenant_id=default (admin).
+func (c *Controller) DeleteAdCampaign(ctx *gin.Context) {
+	if !c.authorizeAdmin(ctx) {
+		return
+	}
+	if err := c.ads.Delete(ctx.Request.Context(), tenantParam(ctx), ctx.Param("id")); err != nil {
+		log.Printf("WARN: delete ad campaign: %v", err)
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "delete failed"})
+		return
+	}
+	ctx.Status(http.StatusNoContent)
+}
+
+// RecordAdClick: POST /api/ads/click {campaign_id, click_id} (Issue #35, ADR-011).
+func (c *Controller) RecordAdClick(ctx *gin.Context) {
+	var body models.AdClickRequest
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	res, err := c.ads.RecordClick(ctx.Request.Context(), body.CampaignID, body.ClickID)
+	if err != nil {
+		if errors.Is(err, services.ErrCampaignNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "must") {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		log.Printf("WARN: record ad click: %v", err)
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "click not recorded"})
+		return
+	}
+	ctx.JSON(http.StatusOK, res)
 }
 
 // Autocomplete: GET /api/autocomplete?q=<prefix>&locale=&tenant_id=&limit= (Issue #9, ADR-006).

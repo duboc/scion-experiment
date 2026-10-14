@@ -25,6 +25,7 @@ type SpannerService struct {
 	backendMode  string
 	synonyms     *SynonymService // optional query expansion (Issue #7)
 	rules        *RuleService    // optional merchandising rules (Issue #6)
+	ads          *AdService      // optional sponsored campaigns (Issue #35, ADR-011)
 	inventory    []InventoryRow  // memory-mode regional inventory (Issue #8), lazily built
 	invOnce      sync.Once
 	pricing      *memoryPricing              // memory-mode contract prices (Issue #22)
@@ -213,6 +214,7 @@ const (
 // SearchOutcome carries results plus the retrieval path that produced them.
 type SearchOutcome struct {
 	Results       []models.SearchResult
+	Sponsored     []models.SearchResult // ADR-011 (#35): candidate sponsored matches before slot placement
 	RetrievalMode string
 	CacheHit      bool     // query embedding served from the embedding cache (v2 only)
 	ExpandedTerms []string // synonym phrases added to the text leg (Issue #7)
@@ -257,9 +259,9 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		plan := s.planImageQuery(ctx, query, filters)
 		plan.expansion = expansion
 		plan.rules = ruleSet
-		res, err := s.spannerHybridSearch(ctx, query, limit, minScore, alpha, plan, filters)
+		res, sponsored, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
 		if err == nil {
-			return SearchOutcome{Results: res, RetrievalMode: RetrievalMultimodal, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+			return SearchOutcome{Results: res, Sponsored: sponsored, RetrievalMode: RetrievalMultimodal, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 		}
 		log.Printf("WARN: Spanner multimodal search fallback triggered: %v", err)
 	}
@@ -273,7 +275,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		plan := s.planVectorQuery(ctx, query)
 		plan.expansion = expansion
 		plan.rules = ruleSet
-		res, err := s.spannerHybridSearch(ctx, query, limit, minScore, alpha, plan, filters)
+		res, sponsored, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
 		switch {
 		case err != nil:
 			log.Printf("WARN: Spanner HybridSearch fallback triggered: %v", err)
@@ -281,7 +283,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			// Degraded v2: return Spanner's lexical results as-is (even if empty).
 			// Falling back to the in-memory engine here would mask the outage with
 			// deterministic 768-d vector scores.
-			return SearchOutcome{Results: res, RetrievalMode: RetrievalLexicalOnly, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+			return SearchOutcome{Results: res, Sponsored: sponsored, RetrievalMode: RetrievalLexicalOnly, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 		default:
 			// A successful Spanner query is authoritative even when it returns no rows
 			// (e.g. tenant/category filters exclude everything). Falling back to the
@@ -290,11 +292,13 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			if plan.column == vectorColumnV2 {
 				mode = RetrievalHybridV2
 			}
-			return SearchOutcome{Results: res, RetrievalMode: mode, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+			return SearchOutcome{Results: res, Sponsored: sponsored, RetrievalMode: mode, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 		}
 	}
 
-	return SearchOutcome{Results: s.memoryHybridSearchExpanded(query, limit, minScore, alpha, filters, expansion, ruleSet), RetrievalMode: RetrievalMemory, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+	org := s.memoryHybridSearchExpanded(query, limit, minScore, alpha, filters, expansion, ruleSet)
+	sponsored := s.memorySponsoredMatches(ctx, query, alpha, filters)
+	return SearchOutcome{Results: org, Sponsored: sponsored, RetrievalMode: RetrievalMemory, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 }
 
 // vectorPlan describes how the vector leg of the hybrid query is executed.
@@ -373,7 +377,7 @@ func (s *SpannerService) planImageQuery(ctx context.Context, query string, filte
 var catalogFilterSQL = `COALESCE(is_visible, TRUE)
 					AND (@channel = '' OR @channel IN UNNEST(IFNULL(channels, ['web', 'mobile', 'store'])))
 					AND (NOT @only_available OR (IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0))
-					AND IFNULL(tenant_id, 'default') = @tenant_id
+					AND IFNULL(products.tenant_id, 'default') = @tenant_id
 					AND (@locale = '' OR IFNULL(locale, '') = @locale)
 					AND (@category = '' OR LOWER(IFNULL(category, '')) = @category)
 					AND (@brand = '' OR LOWER(IFNULL(brand, '')) = @brand)
@@ -439,57 +443,128 @@ func buildHybridSQLMode(column string, lexicalOnly, vectorOnly, folded bool) str
 			SELECT 'vector' AS source, @alpha AS weight, rank, product_id, title, product_data, is_available, stock FROM ann
 			UNION ALL
 			SELECT 'text' AS source, (1.0 - @alpha) AS weight, rank, product_id, title, product_data, is_available, stock FROM fts`
+	adTextBranch := `
+						SELECT product_id, 1.0 AS relevance
+						FROM products
+						WHERE SEARCH(` + titleTok + `, @query_text) OR SEARCH(` + descTok + `, @query_text)`
+	adVecBranch := `
+						SELECT product_id, (1.0 - COSINE_DISTANCE(` + column + `, @query_embedding)) AS relevance
+						FROM products
+						WHERE ` + column + ` IS NOT NULL
+							AND (1.0 - COSINE_DISTANCE(` + column + `, @query_embedding)) >= @ad_min_similarity`
+	adUnion := adVecBranch + `
+						UNION ALL` + adTextBranch
 	if vectorOnly && !lexicalOnly {
 		fts = ""
 		ann = strings.TrimSuffix(ann, ",")
 		union = `
 			SELECT 'vector' AS source, 1.0 AS weight, rank, product_id, title, product_data, is_available, stock FROM ann`
+		adUnion = adVecBranch
 	}
 	if lexicalOnly {
 		ann = ""
 		union = `
 			SELECT 'text' AS source, 1.0 AS weight, rank, product_id, title, product_data, is_available, stock FROM fts`
+		adUnion = adTextBranch
 	}
+	sponsoredCTE := `,
+		sponsored_matches AS (
+			SELECT sm.ad_rank, sm.product_id, sm.title, sm.product_data, sm.is_available, sm.stock,
+				` + effectivePriceSQL("p") + ` AS effective_price,
+				` + variantsArraySQL("sm") + ` AS variants,
+				sm.campaign_id, sm.cpc_micros, sm.relevance
+			FROM (
+				SELECT offset + 1 AS ad_rank, product_id, title, product_data, is_available, stock, campaign_id, cpc_micros, relevance
+				FROM UNNEST(ARRAY(
+					SELECT AS STRUCT
+						products.product_id AS product_id,
+						products.title AS title,
+						products.product_data AS product_data,
+						products.is_available AS is_available,
+						products.stock AS stock,
+						ac.campaign_id AS campaign_id,
+						ac.cpc_micros AS cpc_micros,
+						rel.relevance AS relevance
+					FROM ad_campaigns AS ac
+					JOIN products ON products.product_id = ac.product_id
+					JOIN (
+						SELECT product_id, MAX(relevance) AS relevance
+						FROM (` + adUnion + `
+						)
+						GROUP BY product_id
+					) AS rel ON rel.product_id = ac.product_id
+					WHERE ac.tenant_id = @tenant_id
+						AND ac.status = 'active'
+						AND ac.spent_micros + ac.cpc_micros <= ac.budget_micros
+						AND (ac.start_at IS NULL OR ac.start_at <= CURRENT_TIMESTAMP())
+						AND (ac.end_at IS NULL OR ac.end_at >= CURRENT_TIMESTAMP())
+						AND IFNULL(products.is_available, TRUE) AND IFNULL(products.stock, 1) > 0
+						AND ` + catalogFilterSQL + `
+					ORDER BY CAST(ac.cpc_micros AS FLOAT64) * rel.relevance DESC, ac.campaign_id
+					LIMIT @ad_k
+				)) WITH OFFSET AS offset
+			) AS sm
+			JOIN products AS p ON p.product_id = sm.product_id
+		)`
 	// The aggregate query is wrapped so the unavailable-last ORDER BY works on
 	// plain columns (ordering by ANY_VALUE(...) directly nests aggregates, which
 	// Spanner rejects: "Aggregations of aggregations are not allowed").
 	return `
-		WITH` + ann + fts + `
-		SELECT rrf_score, vector_score, text_score, product_id, title, product_data, is_available, stock, boost_score, rule_mult, effective_price, variants
+		WITH` + ann + fts + sponsoredCTE + `
+		SELECT rrf_score, vector_score, text_score, product_id, title, product_data, is_available, stock, boost_score, rule_mult, effective_price, variants, is_sponsored, campaign_id, cpc_micros
 		FROM (
-			/* ADR-004: final = rrf_score + boost_signal_score + merchandising_rule_delta,
-			   rule_delta = (rule_mult - 1) * rrf_score; pins first, buries last (within availability) */
-			SELECT a.*,
-				@boost_weight * ` + boostSignalSQL + ` AS boost_score,
-				IFNULL((SELECT EXP(SUM(LN(r.multiplier))) FROM UNNEST(@rule_boosts) AS r
-					WHERE (r.brand = '' OR LOWER(IFNULL(p.brand, '')) = r.brand)
-						AND (r.category = '' OR LOWER(IFNULL(p.category, '')) = r.category)), 1.0) AS rule_mult,
-				IFNULL((SELECT MIN(o) FROM UNNEST(@pin_ids) AS pid WITH OFFSET AS o WHERE pid = a.product_id), 1000) AS pin_rank,
-				IF(a.product_id IN UNNEST(@bury_ids), 1, 0) AS buried,
-				` + effectivePriceSQL("p") + ` AS effective_price,
-				` + variantsArraySQL("a") + ` AS variants
-			FROM (
-			SELECT
-				SUM(weight / (60.0 + rank)) AS rrf_score,
-				MAX(IF(source = 'vector', 1.0 / (60.0 + rank), 0.0)) AS vector_score,
-				MAX(IF(source = 'text', 1.0 / (60.0 + rank), 0.0)) AS text_score,
-				product_id,
-				ANY_VALUE(title) AS title,
-				ANY_VALUE(product_data) AS product_data,
-				ANY_VALUE(is_available) AS is_available,
-				ANY_VALUE(stock) AS stock
-			FROM (` + union + `
+			SELECT * FROM (
+				SELECT rrf_score, vector_score, text_score, product_id, title, product_data, is_available, stock, boost_score, rule_mult, effective_price, variants,
+					FALSE AS is_sponsored, '' AS campaign_id, 0 AS cpc_micros,
+					pin_rank, buried, 0 AS ad_rank
+				FROM (
+					/* ADR-004: final = rrf_score + boost_signal_score + merchandising_rule_delta,
+					   rule_delta = (rule_mult - 1) * rrf_score; pins first, buries last (within availability) */
+					SELECT a.*,
+						@boost_weight * ` + boostSignalSQL + ` AS boost_score,
+						IFNULL((SELECT EXP(SUM(LN(r.multiplier))) FROM UNNEST(@rule_boosts) AS r
+							WHERE (r.brand = '' OR LOWER(IFNULL(p.brand, '')) = r.brand)
+								AND (r.category = '' OR LOWER(IFNULL(p.category, '')) = r.category)), 1.0) AS rule_mult,
+						IFNULL((SELECT MIN(o) FROM UNNEST(@pin_ids) AS pid WITH OFFSET AS o WHERE pid = a.product_id), 1000) AS pin_rank,
+						IF(a.product_id IN UNNEST(@bury_ids), 1, 0) AS buried,
+						` + effectivePriceSQL("p") + ` AS effective_price,
+						` + variantsArraySQL("a") + ` AS variants
+					FROM (
+					SELECT
+						SUM(weight / (60.0 + rank)) AS rrf_score,
+						MAX(IF(source = 'vector', 1.0 / (60.0 + rank), 0.0)) AS vector_score,
+						MAX(IF(source = 'text', 1.0 / (60.0 + rank), 0.0)) AS text_score,
+						product_id,
+						ANY_VALUE(title) AS title,
+						ANY_VALUE(product_data) AS product_data,
+						ANY_VALUE(is_available) AS is_available,
+						ANY_VALUE(stock) AS stock
+					FROM (` + union + `
+					)
+					GROUP BY product_id
+					) AS a
+					JOIN products AS p ON p.product_id = a.product_id
+				)
+				ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */,
+					pin_rank, buried,
+					IF(@sort_by = 'price_asc', effective_price, NULL) ASC, IF(@sort_by = 'price_desc', effective_price, NULL) DESC,
+					rrf_score * rule_mult + boost_score DESC /* final_score */,
+					vector_score DESC, text_score DESC, product_id
+				LIMIT @limit
 			)
-			GROUP BY product_id
-			) AS a
-			JOIN products AS p ON p.product_id = a.product_id
+			UNION ALL
+			SELECT relevance AS rrf_score, relevance AS vector_score, relevance AS text_score, product_id, title, product_data, is_available, stock,
+				0.0 AS boost_score, 1.0 AS rule_mult, effective_price, variants,
+				TRUE AS is_sponsored, campaign_id, cpc_micros,
+				1000 AS pin_rank, 0 AS buried, ad_rank
+			FROM sponsored_matches
 		)
-		ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */,
+		ORDER BY is_sponsored, ad_rank,
+			IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */,
 			pin_rank, buried,
 			IF(@sort_by = 'price_asc', effective_price, NULL) ASC, IF(@sort_by = 'price_desc', effective_price, NULL) DESC,
 			rrf_score * rule_mult + boost_score DESC /* final_score */,
 			vector_score DESC, text_score DESC, product_id
-		LIMIT @limit
 	`
 }
 
@@ -531,6 +606,11 @@ func matchesChannel(requested string, channels []string) bool {
 }
 
 func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64, plan vectorPlan, filters models.SearchFilters) ([]models.SearchResult, error) {
+	organic, _, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
+	return organic, err
+}
+
+func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query string, limit int, minScore float64, alpha float64, plan vectorPlan, filters models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error) {
 	// The correlated product_prices lookups (#22) change the plan shape; SCORE() in
 	// the fts leg then requires query optimizer version >= 6, which is newer than the
 	// database default. A statement hint is the least invasive fix (verified by
@@ -574,9 +654,11 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		"limit":          int64(limit),
 		"channel":        f.Channel,
 		"only_available": f.OnlyInStock,
+		"ad_k":           int64(s.config.EffectiveAdMax()),
 	}
 	if !plan.lexicalOnly {
 		params["query_embedding"] = plan.embedding
+		params["ad_min_similarity"] = s.config.EffectiveAdMinSimilarity()
 	}
 
 	stmt := spanner.Statement{SQL: sql, Params: params}
@@ -584,14 +666,14 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 	iter := s.client.Single().Query(ctx, stmt)
 	defer iter.Stop()
 
-	var results []models.SearchResult
+	var results, sponsored []models.SearchResult
 	for {
 		row, err := iter.Next()
 		if err == iterator.Done {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		var rrfScore, vecScore, txtScore float64
 		var productID, title string
@@ -601,10 +683,13 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		var boostScore, ruleMult float64
 		var effPrice spanner.NullFloat64
 		var variants []*variantRow
-		if err := row.Columns(&rrfScore, &vecScore, &txtScore, &productID, &title, &productDataJSON, &isAvailable, &stock, &boostScore, &ruleMult, &effPrice, &variants); err != nil {
-			return nil, err
+		var isSponsored bool
+		var campaignID string
+		var cpcMicros int64
+		if err := row.Columns(&rrfScore, &vecScore, &txtScore, &productID, &title, &productDataJSON, &isAvailable, &stock, &boostScore, &ruleMult, &effPrice, &variants, &isSponsored, &campaignID, &cpcMicros); err != nil {
+			return nil, nil, err
 		}
-		if rrfScore < minScore {
+		if !isSponsored && rrfScore < minScore {
 			continue
 		}
 		var item models.SearchResult
@@ -648,9 +733,17 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 			"rule_multiplier": ruleMult,
 			"final_score":     rrfScore*ruleMult + boostScore,
 		}
-		results = append(results, item)
+		if isSponsored {
+			item.Sponsored = true
+			item.AdCampaignID = campaignID
+			item.Score["cpc_micros"] = float64(cpcMicros)
+			item.Score["ad_relevance"] = rrfScore
+			sponsored = append(sponsored, item)
+		} else {
+			results = append(results, item)
+		}
 	}
-	return results, nil
+	return results, sponsored, nil
 }
 
 func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore float64, alpha float64, filters models.SearchFilters) []models.SearchResult {

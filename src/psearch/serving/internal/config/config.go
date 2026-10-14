@@ -36,6 +36,9 @@ type Config struct {
 	MinScoreValue            float64
 	UseMemoryStore           bool
 	StaticDir                string
+	AdSlots                  []int   // ADR-011 (#35): 1-based slot positions for sponsored products (default [1,4,8])
+	AdMax                    int     // ADR-011 (#35): max sponsored products per response (default 3)
+	AdMinSimilarity          float64 // ADR-011 (#35): minimum cosine similarity for vector ad match (default 0.55)
 }
 
 // NormalizeModelID normalizes model aliases (e.g. gemini-4-pro / gemini-4.0-pro -> gemini-4-argon).
@@ -75,6 +78,18 @@ func Load() (*Config, error) {
 		MinScoreValue:            0.0,
 		UseMemoryStore:           getEnv("USE_MEMORY_STORE", "false") == "true",
 		StaticDir:                getEnv("STATIC_DIR", "/app/static"),
+		AdSlots:                  ParseAdSlots(getEnv("AD_SLOTS", "1,4,8")),
+		AdMax:                    3,
+		AdMinSimilarity:          0.55,
+	}
+
+	if adMax, err := strconv.Atoi(getEnv("AD_MAX", "3")); err == nil && adMax > 0 && adMax <= 10 {
+		cfg.AdMax = adMax
+	} else if len(cfg.AdSlots) > 0 {
+		cfg.AdMax = len(cfg.AdSlots)
+	}
+	if adSim, err := strconv.ParseFloat(getEnv("AD_MIN_SIMILARITY", "0.55"), 64); err == nil && adSim > 0 && adSim <= 1.0 {
+		cfg.AdMinSimilarity = adSim
 	}
 
 	if port, err := strconv.Atoi(getEnv("PORT", "8080")); err == nil {
@@ -142,3 +157,56 @@ func getEnv(key, defaultValue string) string {
 	}
 	return defaultValue
 }
+
+// ParseAdSlots parses a comma-separated 1-based slot list (e.g. "1,4,8").
+func ParseAdSlots(raw string) []int {
+	var out []int
+	seen := map[int]bool{}
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if n, err := strconv.Atoi(part); err == nil && n > 0 && !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	if len(out) == 0 {
+		return []int{1, 4, 8}
+	}
+	return out
+}
+
+// EffectiveAdSlots returns the active 1-based ad slots capped by EffectiveAdMax.
+func (c *Config) EffectiveAdSlots() []int {
+	slots := []int{1, 4, 8}
+	if c != nil && len(c.AdSlots) > 0 {
+		slots = append([]int(nil), c.AdSlots...)
+	}
+	k := c.EffectiveAdMax()
+	if len(slots) > k {
+		slots = slots[:k]
+	}
+	return slots
+}
+
+// EffectiveAdMax returns K (max sponsored products per response; default 3).
+func (c *Config) EffectiveAdMax() int {
+	if c != nil && c.AdMax > 0 {
+		return c.AdMax
+	}
+	if c != nil && len(c.AdSlots) > 0 {
+		return len(c.AdSlots)
+	}
+	return 3
+}
+
+// EffectiveAdMinSimilarity returns the minimum vector similarity for sponsored products (default 0.55).
+func (c *Config) EffectiveAdMinSimilarity() float64 {
+	if c != nil && c.AdMinSimilarity > 0 && c.AdMinSimilarity <= 1.0 {
+		return c.AdMinSimilarity
+	}
+	return 0.55
+}
+

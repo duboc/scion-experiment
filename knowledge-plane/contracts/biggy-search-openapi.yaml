@@ -43,8 +43,22 @@ paths:
         - { name: ltr, in: query, schema: { type: boolean } }
         - { name: parse_intent, in: query, schema: { type: boolean } }
         - { name: session_id, in: query, schema: { type: string } }
+        - { name: ads, in: query, schema: { type: boolean, default: true } }
     post:
       summary: Same search contract via JSON request body (`models.SearchRequest`)
+  /api/ads/campaigns:
+    get:
+      summary: List sponsored product ad campaigns for a tenant (Issue #35, ADR-011)
+    post:
+      summary: Create sponsored product ad campaign (requires `X-Admin-Token`)
+  /api/ads/campaigns/{id}:
+    put:
+      summary: Update sponsored product ad campaign (requires `X-Admin-Token`)
+    delete:
+      summary: Delete sponsored product ad campaign (requires `X-Admin-Token`)
+  /api/ads/click:
+    post:
+      summary: Record an idempotent CPC click and atomically burn campaign budget in Cloud Spanner (Issue #35, ADR-011)
   /api/autocomplete:
     get:
       summary: Spanner N-Gram (`SEARCH_NGRAMS`) + prefix autocomplete suggestions (Issue #9)

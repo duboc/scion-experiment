@@ -153,9 +153,9 @@ func TestHybridSearchDetailed_ReportsMemoryFallbackMode(t *testing.T) {
 func TestBuildHybridSQL_CatalogFiltersAndUnavailableLast(t *testing.T) {
 	for _, lexical := range []bool{false, true} {
 		sql := buildHybridSQL(vectorColumnV2, lexical)
-		wantLegs := 2
+		wantLegs := 3 // ann + fts + sponsored_matches
 		if lexical {
-			wantLegs = 1
+			wantLegs = 2 // fts + sponsored_matches
 		}
 		if n := strings.Count(sql, "COALESCE(is_visible, TRUE)"); n != wantLegs {
 			t.Errorf("lexical=%v: visibility filter appears %d times, want %d", lexical, n, wantLegs)

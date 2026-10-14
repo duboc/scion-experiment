@@ -26,6 +26,9 @@ type SearchRequest struct {
 	ImageBase64       string   `json:"image_base64,omitempty" form:"-"`                          // ADR-010 (#33): inline query photo (base64 or data URL); URLs are never fetched
 	ImageMimeType     string   `json:"image_mime_type,omitempty" form:"-"`                       // image/jpeg | image/png | image/webp
 	ImageWeight       *float64 `json:"image_weight,omitempty" form:"-"`                          // image share of the fused query vector (default 0.6)
+	Ads               *bool    `json:"ads,omitempty" form:"ads"`                                 // ADR-011 (#35): default true; false disables sponsored product injection
+	Page              int      `json:"page,omitempty" form:"page"`                               // ADR-011 (#35): 1-based page number (ads injected on page 1 only)
+	Offset            int      `json:"offset,omitempty" form:"offset"`                           // ADR-011 (#35): item offset (ads injected when offset == 0 only)
 }
 
 // SearchFilters are the catalog filters applied server-side (ADR-002, Issues #3/#4/#5).
@@ -83,6 +86,7 @@ type SearchResponse struct {
 	SortBy           string         `json:"sort_by,omitempty"`
 	SessionID        string         `json:"session_id,omitempty"` // Issue #20 (ADR-007)
 	Personalized     bool           `json:"personalized,omitempty"`
+	SponsoredCount   int            `json:"sponsored_count"` // ADR-011 (#35): number of sponsored items injected
 }
 
 type FacetBucket struct {
@@ -126,6 +130,9 @@ type SearchResult struct {
 	VariantCount      int                `json:"variant_count,omitempty"`
 	AvailableColors   []string           `json:"available_colors,omitempty"`
 	AvailableSizes    []string           `json:"available_sizes,omitempty"`
+	Sponsored         bool               `json:"sponsored,omitempty"`      // ADR-011 (#35): true when injected from ad_campaigns
+	AdCampaignID      string             `json:"ad_campaign_id,omitempty"` // ADR-011 (#35): campaign_id that placed this result
+	AdClickID         string             `json:"ad_click_id,omitempty"`    // ADR-011 (#35): opaque click token for idempotent CPC billing
 }
 
 type DeliveryPromise struct {
@@ -206,3 +213,39 @@ type Variant struct {
 	Stock     int64  `json:"stock"`
 	Available bool   `json:"available"`
 }
+
+// AdCampaign is one row of ad_campaigns (ADR-011, Issue #35).
+type AdCampaign struct {
+	CampaignID   string  `json:"campaign_id"`
+	TenantID     string  `json:"tenant_id"`
+	Advertiser   string  `json:"advertiser"`
+	ProductID    string  `json:"product_id"`
+	CPCMicros    int64   `json:"cpc_micros"`
+	BudgetMicros int64   `json:"budget_micros"`
+	SpentMicros  int64   `json:"spent_micros"`
+	Status       string  `json:"status"` // active | paused | exhausted
+	StartAt      *string `json:"start_at,omitempty"`
+	EndAt        *string `json:"end_at,omitempty"`
+	UpdatedAt    *string `json:"updated_at,omitempty"`
+}
+
+// AdClickRequest is the payload for POST /api/ads/click (ADR-011, Issue #35).
+type AdClickRequest struct {
+	CampaignID string `json:"campaign_id"`
+	ClickID    string `json:"click_id"`
+}
+
+// AdClickResponse is the result of POST /api/ads/click (ADR-011, Issue #35).
+type AdClickResponse struct {
+	CampaignID      string `json:"campaign_id"`
+	ClickID         string `json:"click_id"`
+	ProductID       string `json:"product_id,omitempty"`
+	Charged         bool   `json:"charged"`
+	CostMicros      int64  `json:"cost_micros"`
+	SpentMicros     int64  `json:"spent_micros"`
+	BudgetMicros    int64  `json:"budget_micros"`
+	RemainingMicros int64  `json:"remaining_micros"`
+	Status          string `json:"status"`
+	Reason          string `json:"reason,omitempty"`
+}
+

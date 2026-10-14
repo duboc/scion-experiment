@@ -75,8 +75,8 @@ func TestMemoryDeliveryFilterAndPromises(t *testing.T) {
 
 func TestDeliverySQL(t *testing.T) {
 	sql := buildHybridSQLWith(vectorColumnV2, false, true)
-	if strings.Count(sql, "FROM regional_inventory AS ri") != 2 || !strings.Contains(sql, "@zip5 BETWEEN ri.zip_prefix_start AND ri.zip_prefix_end") {
-		t.Fatal("delivery EXISTS filter must be in both legs")
+	if strings.Count(sql, "FROM regional_inventory AS ri") != 3 || !strings.Contains(sql, "@zip5 BETWEEN ri.zip_prefix_start AND ri.zip_prefix_end") {
+		t.Fatal("delivery EXISTS filter must be in all legs")
 	}
 	if !strings.Contains(deliveryPromiseSQL, "JOIN skus AS s") || !strings.Contains(deliveryPromiseSQL, "ORDER BY ri.product_id, ri.sla_hours") {
 		t.Fatal("promise SQL malformed")

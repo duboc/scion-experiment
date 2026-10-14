@@ -82,6 +82,105 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /api/ads/campaigns:
+    get:
+      summary: List Ad Campaigns
+      description: Lists all sponsored product ad campaigns for a tenant (ADR-011, Issue #35).
+      operationId: listAdCampaigns
+      tags:
+        - Retail Media
+      parameters:
+        - name: tenant_id
+          in: query
+          schema:
+            type: string
+            default: default
+      responses:
+        '200':
+          description: List of ad campaigns
+    post:
+      summary: Create Ad Campaign
+      description: Creates a new sponsored product ad campaign (requires X-Admin-Token).
+      operationId: createAdCampaign
+      tags:
+        - Retail Media
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdCampaign'
+      responses:
+        '201':
+          description: Campaign created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdCampaign'
+
+  /api/ads/campaigns/{id}:
+    put:
+      summary: Update Ad Campaign
+      description: Replaces an existing sponsored product ad campaign (requires X-Admin-Token).
+      operationId: updateAdCampaign
+      tags:
+        - Retail Media
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdCampaign'
+      responses:
+        '200':
+          description: Campaign updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdCampaign'
+    delete:
+      summary: Delete Ad Campaign
+      description: Deletes a sponsored product ad campaign (requires X-Admin-Token).
+      operationId: deleteAdCampaign
+      tags:
+        - Retail Media
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Campaign deleted
+
+  /api/ads/click:
+    post:
+      summary: Record Sponsored Ad Click
+      description: Atomically records an idempotent CPC click and burns campaign budget in a Spanner ReadWriteTransaction (ADR-011, Issue #35).
+      operationId: recordAdClick
+      tags:
+        - Retail Media
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdClickRequest'
+      responses:
+        '200':
+          description: Click processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdClickResponse'
+
 components:
   securitySchemes:
     apiKeyAuth:
@@ -136,6 +235,11 @@ components:
           minimum: 0.0
           maximum: 1.0
           nullable: true
+        ads:
+          type: boolean
+          description: Enable or disable sponsored product injection (ADR-011, default true).
+          example: true
+          nullable: true
       required:
         - query
 
@@ -150,8 +254,13 @@ components:
         total_found:
           type: integer
           format: int32
-          description: Total number of results found.
+          description: Total number of organic results found.
           example: 25
+        sponsored_count:
+          type: integer
+          format: int32
+          description: Number of sponsored items injected into results (ADR-011).
+          example: 2
       required:
         - results
         - total_found
@@ -240,6 +349,15 @@ components:
             - vector_score: Vector similarity score
             - text_score: Text match score
           example: {"rrf_score": 0.85, "vector_score": 0.9, "text_score": 0.75}
+        sponsored:
+          type: boolean
+          description: True when this result was injected from an active ad campaign (ADR-011).
+        ad_campaign_id:
+          type: string
+          description: ID of the ad campaign that placed this sponsored result.
+        ad_click_id:
+          type: string
+          description: Opaque click token used for idempotent CPC billing via POST /api/ads/click.
       required:
         - id
         - name
@@ -370,3 +488,91 @@ components:
           example: "Invalid request payload"
       required:
         - error
+
+    AdCampaign:
+      type: object
+      properties:
+        campaign_id:
+          type: string
+        tenant_id:
+          type: string
+        advertiser:
+          type: string
+        product_id:
+          type: string
+        cpc_micros:
+          type: integer
+          format: int64
+        budget_micros:
+          type: integer
+          format: int64
+        spent_micros:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: ["active", "paused", "exhausted"]
+        start_at:
+          type: string
+          format: date-time
+          nullable: true
+        end_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - product_id
+        - cpc_micros
+        - budget_micros
+
+    AdClickRequest:
+      type: object
+      properties:
+        campaign_id:
+          type: string
+        click_id:
+          type: string
+      required:
+        - campaign_id
+        - click_id
+
+    AdClickResponse:
+      type: object
+      properties:
+        campaign_id:
+          type: string
+        click_id:
+          type: string
+        product_id:
+          type: string
+        charged:
+          type: boolean
+        cost_micros:
+          type: integer
+          format: int64
+        spent_micros:
+          type: integer
+          format: int64
+        budget_micros:
+          type: integer
+          format: int64
+        remaining_micros:
+          type: integer
+          format: int64
+        status:
+          type: string
+        reason:
+          type: string
+      required:
+        - campaign_id
+        - click_id
+        - charged
+        - cost_micros
+        - spent_micros
+        - budget_micros
+        - remaining_micros
+        - status

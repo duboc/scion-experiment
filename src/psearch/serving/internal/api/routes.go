@@ -41,6 +41,11 @@ func SetupRouter(router *gin.Engine, cfg *config.Config) {
 	router.POST("/api/rules", controller.CreateRule)
 	router.PUT("/api/rules/:id", controller.UpdateRule)
 	router.DELETE("/api/rules/:id", controller.DeleteRule)
+	router.GET("/api/ads/campaigns", controller.ListAdCampaigns)
+	router.POST("/api/ads/campaigns", controller.CreateAdCampaign)
+	router.PUT("/api/ads/campaigns/:id", controller.UpdateAdCampaign)
+	router.DELETE("/api/ads/campaigns/:id", controller.DeleteAdCampaign)
+	router.POST("/api/ads/click", controller.RecordAdClick)
 	router.GET("/search", controller.Search)
 	router.POST("/search", controller.Search)
 	router.GET("/api/search", controller.Search)
@@ -86,6 +91,8 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     .meta { margin: 16px 0; color: var(--muted); font-size: 14px; display: flex; gap: 20px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
     .card { background: var(--card); border: 1px solid #334155; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .card.card-sponsored { background: linear-gradient(180deg, rgba(245, 158, 11, 0.12) 0%, var(--card) 100%); border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
+    .sponsored-badge { background: #78350f; border: 1px solid #f59e0b; color: #fef3c7; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.02em; }
     .card h3 { margin: 0; font-size: 16px; }
     .price { font-size: 20px; font-weight: 700; color: var(--accent); }
     .stock-in { color: var(--green); font-size: 12px; font-weight: 600; }
@@ -122,6 +129,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <span class="badge" id="price-table-badge" style="display:none;"></span>
       <span class="badge" id="sort-badge" style="display:none;"></span>
       <span class="badge" id="personalized-badge" style="display:none;background:#3b0764;border-color:#a855f7;color:#e9d5ff;"></span>
+      <span class="badge" id="sponsored-badge" style="display:none;background:#78350f;border:1px solid #f59e0b;color:#fef3c7;"></span>
     </div>
   </header>
   <main>
@@ -561,6 +569,14 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           document.getElementById('personalized-badge').style.display = 'none';
         }
       }
+      if (document.getElementById('sponsored-badge')) {
+        if (data.sponsored_count && data.sponsored_count > 0) {
+          document.getElementById('sponsored-badge').textContent = 'Sponsored: ' + data.sponsored_count;
+          document.getElementById('sponsored-badge').style.display = 'inline-block';
+        } else {
+          document.getElementById('sponsored-badge').style.display = 'none';
+        }
+      }
       const facetLat = data.facets_latency_ms !== undefined ? data.facets_latency_ms : (data.facets && data.facets.latency_ms);
       if (facetLat !== undefined && facetLat !== null) {
         document.getElementById('facets-latency').textContent = Number(facetLat).toFixed(1) + 'ms';
@@ -568,7 +584,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         document.getElementById('facets-latency').textContent = '';
       }
       document.getElementById('meta').textContent =
-        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none' ? ', intent=' + data.parsed_query.intent_source : '') + (data.price_table_id ? ', table=' + data.price_table_id : '') + (data.sort_by ? ', sort=' + data.sort_by : '') + (data.personalized ? ', personalized=true' : '') + ')';
+        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none' ? ', intent=' + data.parsed_query.intent_source : '') + (data.price_table_id ? ', table=' + data.price_table_id : '') + (data.sort_by ? ', sort=' + data.sort_by : '') + (data.personalized ? ', personalized=true' : '') + (data.sponsored_count ? ', sponsored_count=' + data.sponsored_count : '') + ')';
       
       const expEl = document.getElementById('expanded-terms');
       if (expEl) {
@@ -695,12 +711,15 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         const locBadge = p.locale
           ? '<span class="badge" style="background:#1e293b;border:1px solid #38bdf8;color:#38bdf8;font-size:11px;padding:2px 6px;">' + p.locale + '</span>'
           : '';
+        const sponsoredBadge = p.sponsored
+          ? '<span class="sponsored-badge" data-testid="sponsored-badge">Sponsored · Patrocinado</span>'
+          : '';
         const finalScore = s.final_score !== undefined ? s.final_score : (s.hybrid !== undefined ? s.hybrid : 0);
         const vecScore = s.vector !== undefined ? s.vector : 0;
         const txtScore = s.text !== undefined ? s.text : 0;
         const ltrScore = s.ltr_score !== undefined ? ' | ltr=' + s.ltr_score.toFixed(4) : '';
-        return '<div class="card">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="' + stockClass + '">' + stockBadge + '</span>' + locBadge + '<span class="rank-badge" style="display:none;"></span><span class="delivery-badge" style="display:none;"></span><span class="boost-badge" style="display:none;"></span></div><span style="color:#94a3b8;font-size:12px;">' + (p.categories || []).join(', ') + '</span></div>' +
+        return '<div class="card' + (p.sponsored ? ' card-sponsored' : '') + '" data-sponsored="' + (p.sponsored ? 'true' : 'false') + '">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' + sponsoredBadge + '<span class="' + stockClass + '">' + stockBadge + '</span>' + locBadge + '<span class="rank-badge" style="display:none;"></span><span class="delivery-badge" style="display:none;"></span><span class="boost-badge" style="display:none;"></span></div><span style="color:#94a3b8;font-size:12px;">' + (p.categories || []).join(', ') + '</span></div>' +
           '<h3>' + p.title + '</h3>' +
           '<div style="color:#94a3b8;font-size:13px;">' + (p.description || '') + '</div>' +
           '<div class="price"><span class="price-val">$' + ((p.priceInfo && p.priceInfo.price) || '0.00') + '</span><span class="base-price" style="display:none;text-decoration:line-through;color:var(--muted);font-size:14px;font-weight:normal;margin-left:8px;"></span><span class="contract-badge" style="display:none;margin-left:8px;"></span></div>' +
@@ -712,6 +731,12 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       (data.results || []).forEach((p, i) => {
         const card = container.children[i];
         if (!card) return;
+        if (p.sponsored && p.ad_campaign_id && p.ad_click_id) {
+          card.style.cursor = 'pointer';
+          card.onclick = function() {
+            recordAdClick(p.ad_campaign_id, p.ad_click_id);
+          };
+        }
         const s = p.score || {};
         if (s.stage1_rank !== undefined && s.stage2_rank !== undefined) {
           const rankEl = card.querySelector('.rank-badge');
@@ -838,6 +863,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           recordBtn.textContent = '+ Clique';
           recordBtn.onclick = async function(e) {
             e.stopPropagation();
+            if (p.sponsored && p.ad_campaign_id && p.ad_click_id) {
+              recordAdClick(p.ad_campaign_id, p.ad_click_id);
+            }
             recordBtn.disabled = true;
             recordBtn.textContent = 'Gravando...';
             try {
@@ -857,6 +885,15 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           };
         }
       });
+    }
+    function recordAdClick(campaignId, clickId) {
+      if (!campaignId || !clickId) return;
+      fetch('/api/ads/click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaign_id: campaignId, click_id: clickId }),
+        keepalive: true
+      }).catch(function() {});
     }
     const qInput = document.getElementById('q');
     const qDatalist = document.getElementById('q-suggestions');

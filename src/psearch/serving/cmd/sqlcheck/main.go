@@ -58,6 +58,14 @@ func main() {
 	}
 	svc.SetRules(memRules)
 
+	// Sponsored Products (Issue #35, ADR-011): verify ad_campaigns table is readable;
+	// the hybrid SQL cases below also exercise the sponsored_matches CTE.
+	if campaigns, err := (services.SpannerAdStore{Client: svc.Client()}).List(ctx, "default"); err != nil {
+		log.Fatalf("FAIL ad_campaigns table: %v", err)
+	} else {
+		log.Printf("OK   ad_campaigns rows=%d", len(campaigns))
+	}
+
 	cases := []struct {
 		q       string
 		alpha   float64

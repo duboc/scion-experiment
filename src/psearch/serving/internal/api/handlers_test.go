@@ -668,3 +668,121 @@ func TestSearchImageValidation(t *testing.T) {
 		t.Errorf("oversized body: want 413, got %d", w.Code)
 	}
 }
+
+// Issue #35 (ADR-011): Sponsored Products injection, deduplication, and opt-out.
+func TestSponsoredProductsSearchAndOptOut(t *testing.T) {
+	r := newTestRouter()
+	resp := doSearch(t, r, "q=running+shoes&limit=10")
+	if resp.SponsoredCount == 0 {
+		t.Fatalf("expected sponsored products for 'running shoes', got sponsored_count=0")
+	}
+	if !resp.Results[0].Sponsored || resp.Results[0].AdCampaignID == "" || resp.Results[0].AdClickID == "" {
+		t.Fatalf("slot 1 must be sponsored with campaign_id and click_id: %+v", resp.Results[0])
+	}
+	// Organic copy must be deduplicated (no duplicate product IDs).
+	seen := map[string]bool{}
+	for _, res := range resp.Results {
+		if seen[res.ID] {
+			t.Fatalf("duplicate product %s in results: %s", res.ID, ids(resp.Results))
+		}
+		seen[res.ID] = true
+	}
+
+	// ads=false disables injection on GET and POST.
+	noAds := doSearch(t, r, "q=running+shoes&limit=10&ads=false")
+	if noAds.SponsoredCount != 0 {
+		t.Fatalf("ads=false returned sponsored_count=%d", noAds.SponsoredCount)
+	}
+	for _, res := range noAds.Results {
+		if res.Sponsored {
+			t.Fatalf("ads=false returned sponsored item %s", res.ID)
+		}
+	}
+
+	// Page > 1 or offset > 0 disables ad injection (page 1 only).
+	if p2 := doSearch(t, r, "q=running+shoes&limit=10&page=2"); p2.SponsoredCount != 0 {
+		t.Fatalf("page=2 must not inject ads, got sponsored_count=%d", p2.SponsoredCount)
+	}
+
+	// Zero organic results => zero ads.
+	if zero := doSearch(t, r, "q=running+shoes&tenant_id=nonexistent"); len(zero.Results) != 0 || zero.SponsoredCount != 0 {
+		t.Fatalf("zero organic results must have zero ads: results=%d sponsored=%d", len(zero.Results), zero.SponsoredCount)
+	}
+}
+
+// Issue #35 (ADR-011): /api/ads/campaigns CRUD (admin-guarded writes) and /api/ads/click ACID budget burn.
+func TestAdCampaignsCRUDAndClickBurn(t *testing.T) {
+	r := newTokenRouter("s3cret")
+	do := func(method, path, token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("X-Admin-Token", token)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+
+	// Public GET lists seeded campaigns.
+	if w := do(http.MethodGet, "/api/ads/campaigns", "", ""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "camp-nike-pegasus") {
+		t.Fatalf("GET /api/ads/campaigns: %d %s", w.Code, w.Body.String())
+	}
+
+	// Writes require X-Admin-Token.
+	payload := `{"campaign_id":"camp-test-tv","advertiser":"LG","product_id":"prod-014","cpc_micros":300000,"budget_micros":600000,"status":"active"}`
+	if w := do(http.MethodPost, "/api/ads/campaigns", "", payload); w.Code != http.StatusForbidden {
+		t.Fatalf("POST without token = %d, want 403", w.Code)
+	}
+	if w := do(http.MethodPost, "/api/ads/campaigns", "s3cret", `{"product_id":"prod-014","cpc_micros":500000,"budget_micros":200000}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("POST budget<cpc = %d, want 400", w.Code)
+	}
+	if w := do(http.MethodPost, "/api/ads/campaigns", "s3cret", `{"product_id":"prod-999","cpc_micros":100000,"budget_micros":500000}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("POST unknown product = %d, want 400", w.Code)
+	}
+
+	w := do(http.MethodPost, "/api/ads/campaigns", "s3cret", payload)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("POST valid campaign = %d %s", w.Code, w.Body.String())
+	}
+
+	// Click 1: charges 300,000 micros (remaining 300,000 => still active).
+	w1 := do(http.MethodPost, "/api/ads/click", "", `{"campaign_id":"camp-test-tv","click_id":"clk-a"}`)
+	var c1 models.AdClickResponse
+	if w1.Code != http.StatusOK || json.Unmarshal(w1.Body.Bytes(), &c1) != nil || !c1.Charged || c1.SpentMicros != 300000 || c1.Status != "active" {
+		t.Fatalf("click 1 = %d %+v (%s)", w1.Code, c1, w1.Body.String())
+	}
+	// Duplicate click_id is idempotent (charged=false, spent unchanged).
+	wDup := do(http.MethodPost, "/api/ads/click", "", `{"campaign_id":"camp-test-tv","click_id":"clk-a"}`)
+	var cDup models.AdClickResponse
+	_ = json.Unmarshal(wDup.Body.Bytes(), &cDup)
+	if wDup.Code != http.StatusOK || cDup.Charged || cDup.SpentMicros != 300000 {
+		t.Fatalf("duplicate click = %d %+v", wDup.Code, cDup)
+	}
+	// Click 2: charges 300,000 micros (spent=600,000 == budget => status becomes exhausted).
+	w2 := do(http.MethodPost, "/api/ads/click", "", `{"campaign_id":"camp-test-tv","click_id":"clk-b"}`)
+	var c2 models.AdClickResponse
+	_ = json.Unmarshal(w2.Body.Bytes(), &c2)
+	if w2.Code != http.StatusOK || !c2.Charged || c2.SpentMicros != 600000 || c2.Status != "exhausted" {
+		t.Fatalf("click 2 = %d %+v", w2.Code, c2)
+	}
+	// Click 3 on exhausted campaign: not charged, no overspend.
+	w3 := do(http.MethodPost, "/api/ads/click", "", `{"campaign_id":"camp-test-tv","click_id":"clk-c"}`)
+	var c3 models.AdClickResponse
+	_ = json.Unmarshal(w3.Body.Bytes(), &c3)
+	if w3.Code != http.StatusOK || c3.Charged || c3.SpentMicros != 600000 {
+		t.Fatalf("click 3 = %d %+v", w3.Code, c3)
+	}
+
+	// PUT updates campaign; DELETE removes it.
+	if w := do(http.MethodPut, "/api/ads/campaigns/camp-test-tv", "s3cret", `{"advertiser":"LG OLED","product_id":"prod-014","cpc_micros":300000,"budget_micros":1200000,"spent_micros":600000,"status":"paused"}`); w.Code != http.StatusOK {
+		t.Fatalf("PUT = %d %s", w.Code, w.Body.String())
+	}
+	if w := do(http.MethodDelete, "/api/ads/campaigns/camp-test-tv", "", ""); w.Code != http.StatusForbidden {
+		t.Fatalf("DELETE without token = %d, want 403", w.Code)
+	}
+	if w := do(http.MethodDelete, "/api/ads/campaigns/camp-test-tv", "s3cret", ""); w.Code != http.StatusNoContent {
+		t.Fatalf("DELETE = %d", w.Code)
+	}
+}
+
