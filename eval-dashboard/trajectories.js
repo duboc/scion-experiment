@@ -1019,7 +1019,52 @@ function classifyGithubComment(commentObj) {
   };
 }
 
-function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], liveIssueComments = []) {
+// Cross-Project Runtime State Transitions of the psearch agents captured from Scion Hub (hub.db -> Spanner factory_agent_status -> GCS snapshots)
+const CROSS_PROJECT_HUB_RUNTIME_TRANSITIONS = [
+  { agent: 'reviewer', phase: 'running', activity: 'stalled', event_timestamp: '2026-10-09T17:57:21Z', wave: 'wave-0', issue_number: 11, summary: 'Agent started (hermes container provisioned on Scion Hub)' },
+  { agent: 'deployer', phase: 'running', activity: 'stalled', event_timestamp: '2026-10-12T22:49:42Z', wave: 'wave-0', issue_number: 11, summary: 'Ready (post-#11 v2 1024-d Cloud Run rollout psearch-serving-00009-9dc)' },
+  { agent: 'lead', phase: 'running', activity: 'blocked', event_timestamp: '2026-10-12T23:17:05Z', wave: 'wave-1', issue_number: 1, summary: 'waiting: backend (#1/#3 Go+DDL) and frontend (#1/#3 UI) in progress' },
+  { agent: 'backend', phase: 'running', activity: 'executing', event_timestamp: '2026-10-12T23:19:56Z', wave: 'wave-1', issue_number: 1, summary: 'Executing: bash (Wave 1 hybrid RRF alpha & availability SQL tests)' },
+  { agent: 'frontend', phase: 'running', activity: 'working', event_timestamp: '2026-10-12T23:20:01Z', wave: 'wave-1', issue_number: 1, summary: 'Working: Wave 1 RRF alpha slider & stock availability badges (#1/#3)' },
+  { agent: 'frontend', phase: 'running', activity: 'working', event_timestamp: '2026-10-12T23:29:12Z', wave: 'wave-1', issue_number: 3, summary: 'Working: channel selector & stock badge component verification (#3)' },
+  { agent: 'backend', phase: 'running', activity: 'working', event_timestamp: '2026-10-12T23:29:50Z', wave: 'wave-1', issue_number: 3, summary: 'Working: migration 012 is_visible/channels & OOS-last ordering (#3)' },
+  { agent: 'lead', phase: 'running', activity: 'executing', event_timestamp: '2026-10-12T23:29:59Z', wave: 'wave-1', issue_number: 1, summary: 'Executing: Bash (reviewing Wave 1 backend & frontend diffs)' },
+  { agent: 'frontend', phase: 'running', activity: 'stalled', event_timestamp: '2026-10-12T23:32:04Z', wave: 'wave-1', issue_number: 3, summary: 'Ready (Wave 1 frontend #1/#3 UI complete, holding for backend rework)' },
+  { agent: 'lead', phase: 'running', activity: 'blocked', event_timestamp: '2026-10-12T23:32:48Z', wave: 'wave-1', issue_number: 1, summary: 'waiting: backend rework #1/#3 (frontend done, holding)' },
+  { agent: 'backend', phase: 'running', activity: 'working', event_timestamp: '2026-10-12T23:44:57Z', wave: 'wave-1', issue_number: 1, summary: 'Working: reworking #1/#3 RRF score normalization & stock filter SQL' },
+  { agent: 'lead', phase: 'running', activity: 'executing', event_timestamp: '2026-10-13T00:00:48Z', wave: 'wave-1', issue_number: 1, summary: 'Executing: Bash (verifying Wave 1 rework & preparing commit slot)' },
+  { agent: 'backend', phase: 'running', activity: 'executing', event_timestamp: '2026-10-13T00:00:58Z', wave: 'wave-1', issue_number: 3, summary: 'Executing: edit (finalizing handlers.go & spanner_service.go for #1/#3)' },
+  { agent: 'backend', phase: 'running', activity: 'stalled', event_timestamp: '2026-10-13T00:04:55Z', wave: 'wave-1', issue_number: 3, summary: 'Ready (handed off #1/#3 implementation to @lead)' },
+  { agent: 'frontend', phase: 'running', activity: 'working', event_timestamp: '2026-10-13T00:13:38Z', wave: 'wave-1', issue_number: 1, summary: 'Working: syncing storefront UI bundle with #1/#3 API response fields' },
+  { agent: 'lead', phase: 'running', activity: 'executing', event_timestamp: '2026-10-13T00:15:46Z', wave: 'wave-1', issue_number: 1, summary: 'Executing: Bash (dispatching @deployer for Wave 1 rollout)' },
+  { agent: 'deployer', phase: 'running', activity: 'working', event_timestamp: '2026-10-13T00:15:55Z', wave: 'wave-1', issue_number: 1, summary: 'Working: applying migration 012 & building Wave 1 Cloud Run revision' },
+  { agent: 'lead', phase: 'running', activity: 'blocked', event_timestamp: '2026-10-13T00:19:39Z', wave: 'wave-1', issue_number: 1, summary: 'waiting: deployer Wave 1 rollout (#1/#3)' },
+  { agent: 'deployer', phase: 'running', activity: 'executing', event_timestamp: '2026-10-13T00:29:46Z', wave: 'wave-1', issue_number: 1, summary: 'Executing: Bash (rolling back psearch-serving-00010-6dh after smoke test failure)' },
+  { agent: 'lead', phase: 'running', activity: 'thinking', event_timestamp: '2026-10-13T00:45:28Z', wave: 'wave-1', issue_number: 1, summary: 'Processing orchestration message: verifying Wave 1 hotfix 4111be0 live' },
+  { agent: 'deployer', phase: 'running', activity: 'executing', event_timestamp: '2026-10-13T00:45:47Z', wave: 'wave-1', issue_number: 1, summary: 'Executing: Bash (promoting psearch-serving-00011-rpf with --to-latest)' },
+  { agent: 'deployer', phase: 'running', activity: 'stalled', event_timestamp: '2026-10-13T00:48:24Z', wave: 'wave-1', issue_number: 1, summary: 'Ready (Wave 1 psearch-serving-00011-rpf live at 100% traffic)' },
+  { agent: 'lead', phase: 'running', activity: 'blocked', event_timestamp: '2026-10-13T01:01:48Z', wave: 'wave-1', issue_number: 2, summary: 'waiting: backend on #2 (in progress); PO acceptance #1/#3' },
+  { agent: 'backend', phase: 'running', activity: 'working', event_timestamp: '2026-10-13T01:08:01Z', wave: 'wave-1', issue_number: 2, summary: 'Working: implementing two-tier embedding_cache (LRU + Spanner TTL) for #2' },
+  { agent: 'lead', phase: 'running', activity: 'completed', event_timestamp: '2026-10-13T16:29:06Z', wave: 'wave-4', issue_number: 10, summary: 'Close psearch issues #1-#10 with live acceptance evidence' },
+  { agent: 'frontend', phase: 'running', activity: 'completed', event_timestamp: '2026-10-13T16:29:20Z', wave: 'wave-4', issue_number: 10, summary: 'psearch frontend UI implementation #1-#11 completed' },
+  { agent: 'backend', phase: 'running', activity: 'working', event_timestamp: '2026-10-13T16:29:36Z', wave: 'wave-4', issue_number: 10, summary: 'Ready (Waves 1-4 #1-#10 backend services verified live)' },
+  { agent: 'deployer', phase: 'running', activity: 'executing', event_timestamp: '2026-10-13T16:29:45Z', wave: 'wave-4', issue_number: 10, summary: 'Acknowledged PO deploy rules: clean git-archive source and --to-latest after pinned rollback' },
+  { agent: 'deployer', phase: 'running', activity: 'working', event_timestamp: '2026-10-13T16:30:32Z', wave: 'wave-4', issue_number: 10, summary: 'Acknowledged PO deploy rules: clean git-archive source and --to-latest after pinned rollback' },
+  { agent: 'lead', phase: 'running', activity: 'working', event_timestamp: '2026-10-13T16:30:37Z', wave: 'wave-4', issue_number: 10, summary: 'Close psearch issues #1-#10 with live acceptance evidence' },
+  { agent: 'backend', phase: 'running', activity: 'stalled', event_timestamp: '2026-10-13T20:22:04Z', wave: 'wave-5', issue_number: 20, summary: 'Ready (completed Wave 5 #19-#22 Go backend services & Spanner migrations)' },
+  { agent: 'deployer', phase: 'running', activity: 'stalled', event_timestamp: '2026-10-13T21:47:39Z', wave: 'wave-5', issue_number: 20, summary: 'Acknowledged PO deploy rules: clean git-archive source and --to-latest (00024-ltv live)' },
+  { agent: 'frontend', phase: 'running', activity: 'working', event_timestamp: '2026-10-13T23:25:40Z', wave: 'wave-5', issue_number: 20, summary: 'Issue #20 UI (session personalization panel & event tracking)' },
+  { agent: 'frontend', phase: 'stopped', activity: 'idle', event_timestamp: '2026-10-13T23:38:23Z', wave: 'wave-5', issue_number: 20, summary: 'Issue #20 UI (container stopped prior to Gemini 4 Argon harness upgrade)' },
+  { agent: 'frontend', phase: 'running', activity: 'working', event_timestamp: '2026-10-13T23:42:04Z', wave: 'wave-5', issue_number: 23, summary: 'Issue #20 UI (restarted on Gemini 4 Argon / agy v1.3.4)' },
+  { agent: 'backend', phase: 'running', activity: 'working', event_timestamp: '2026-10-13T23:46:11Z', wave: 'wave-5', issue_number: 23, summary: 'Ready (restarted on Gemini 4 Argon / opencode harness)' },
+  { agent: 'lead', phase: 'running', activity: 'thinking', event_timestamp: '2026-10-13T23:47:49Z', wave: 'wave-5', issue_number: 23, summary: 'Orchestrating Issue #23 Gemini 3.8 Flash & Gemini 4 Argon model upgrade' },
+  { agent: 'reviewer', phase: 'running', activity: 'stalled', event_timestamp: '2026-10-14T00:26:57Z', wave: 'wave-5', issue_number: 23, summary: 'Agent crashed with exit code 2 (watchdog circuit-breaker observed)' },
+  { agent: 'backend', phase: 'running', activity: 'stalled', event_timestamp: '2026-10-14T02:31:20Z', wave: 'wave-5', issue_number: 28, summary: 'Ready (post-#23/#28 verification)' },
+  { agent: 'deployer', phase: 'running', activity: 'stalled', event_timestamp: '2026-10-14T17:50:30Z', wave: 'wave-6', issue_number: 33, summary: 'Standby after deploying psearch-serving-00028-klr (#33 Visual & Multimodal Search)' },
+  { agent: 'lead', phase: 'running', activity: 'blocked', event_timestamp: '2026-10-14T19:00:56Z', wave: 'wave-6', issue_number: 33, summary: 'Standby after closing Issues #32 & #33 (all 16/16 requirements complete)' }
+];
+
+function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], liveIssueComments = [], liveSpannerAgents = []) {
   const byAgentKey = {};
   for (const meta of AGENT_METADATA) {
     const key = `${meta.project}:${meta.name}`;
@@ -1029,6 +1074,56 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
       steps: baseSteps,
       seenShas: new Set(baseSteps.map(s => s.commit_sha))
     };
+  }
+
+  // Merge cross-project Scion Hub runtime state transitions (hub.db -> Spanner factory_agent_status -> GCS snapshots)
+  for (const rt of CROSS_PROJECT_HUB_RUNTIME_TRANSITIONS) {
+    const key = `psearch:${rt.agent}`;
+    const bucket = byAgentKey[key];
+    const rtId = `hub-state-${rt.agent}-${rt.event_timestamp}`;
+    if (bucket && !bucket.seenShas.has(rtId)) {
+      bucket.seenShas.add(rtId);
+      const st = rt.summary.indexOf('crashed') !== -1 ? 'ERROR' : 'PASS';
+      bucket.steps.push({
+        wave: rt.wave || 'wave-1',
+        issue_number: rt.issue_number || 0,
+        step_type: `HUB_STATE_${String(rt.activity || rt.phase).toUpperCase()}`,
+        commit_sha: rtId,
+        event_timestamp: rt.event_timestamp,
+        status: st,
+        title: `[Scion Hub State: ${rt.phase}/${rt.activity}] ${rt.summary.slice(0, 96)}`,
+        detail: `Cross-project runtime state synced from Scion Hub (hub.db -> Cloud Spanner factory_agent_status) at ${rt.event_timestamp}: phase=${rt.phase}, activity=${rt.activity}, summary="${rt.summary}".`
+      });
+    }
+  }
+
+  // Merge live Cloud Spanner factory_agent_status rows for any newer runtime activity
+  if (Array.isArray(liveSpannerAgents)) {
+    for (const row of liveSpannerAgents) {
+      const proj = row.project_slug || row.project;
+      const ag = row.agent_name || row.name;
+      const key = `${proj}:${ag}`;
+      const bucket = byAgentKey[key];
+      const actTs = row.last_activity_at ? (typeof row.last_activity_at.toISOString === 'function' ? row.last_activity_at.toISOString() : String(row.last_activity_at)) : null;
+      if (bucket && actTs) {
+        const cleanTs = actTs.slice(0, 19) + 'Z';
+        const rtId = `hub-state-${ag}-${cleanTs}`;
+        if (!bucket.seenShas.has(rtId)) {
+          bucket.seenShas.add(rtId);
+          const summ = row.last_summary || 'Active';
+          bucket.steps.push({
+            wave: 'wave-6',
+            issue_number: 33,
+            step_type: `HUB_STATE_${String(row.activity || row.phase || 'IDLE').toUpperCase()}`,
+            commit_sha: rtId,
+            event_timestamp: cleanTs,
+            status: summ.indexOf('crashed') !== -1 ? 'ERROR' : 'PASS',
+            title: `[Live Spanner Hub State: ${row.phase}/${row.activity}] ${String(summ).slice(0, 96)}`,
+            detail: `Live cross-project state from Cloud Spanner factory_agent_status (synced from Scion Hub hub.db): agent_id=${row.agent_id}, harness=${row.harness}, phase=${row.phase}, activity=${row.activity}, last_activity_at=${cleanTs}.`
+          });
+        }
+      }
+    }
   }
 
   // Merge any new live commits from GitHub main or eval-dashboard that aren't already in baseline

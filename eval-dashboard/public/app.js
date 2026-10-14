@@ -579,7 +579,9 @@
       const waveIssueCell = '<span class="mono">' + escapeHTML(s.wave || 'wave') + '</span> · ' + issuePart;
       const shaStr = String(s.commit_sha || '');
       let commitCell = '<span class="mono" style="color:var(--text-muted);">spanner</span>';
-      if (shaStr.indexOf('comment-') === 0) {
+      if (shaStr.indexOf('hub-state-') === 0) {
+        commitCell = '<span class="mono" style="color:var(--accent-primary);font-weight:600;">hub.db</span>';
+      } else if (shaStr.indexOf('comment-') === 0) {
         const cid = shaStr.replace('comment-', '');
         const cUrl = s.comment_url || ('https://github.com/duboc/scion-experiment/issues/' + encodeURIComponent(s.issue_number || 1) + '#issuecomment-' + encodeURIComponent(cid));
         commitCell = '<a href="' + escapeHTML(cUrl) + '" target="_blank" class="mono">#' + escapeHTML(cid.slice(-6)) + '</a>';
@@ -591,7 +593,7 @@
         ? '<div class="mono" style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">Artifacts: ' + s.artifacts.map(a => escapeHTML(a)).join(' · ') + '</div>'
         : '';
       const stVal = s.status || 'PASS';
-      const stClass = (stVal === 'ROLLED_BACK' || stVal === 'REJECTED')
+      const stClass = (stVal === 'ROLLED_BACK' || stVal === 'REJECTED' || stVal === 'ERROR')
         ? 'badge--critical'
         : (stVal === 'BLOCKED_RESOLVED' ? 'badge--partial' : 'badge--pass');
       const statusBadge = '<span class="badge ' + stClass + '"><span class="badge-dot"></span>' + escapeHTML(stVal) + '</span>';

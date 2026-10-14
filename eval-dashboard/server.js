@@ -157,7 +157,8 @@ app.get('/api/agents', async (req, res) => {
     const trajPayload = buildTrajectoriesPayload(
       liveData.mainCommits,
       liveData.evalCommits,
-      liveData.issueComments
+      liveData.issueComments,
+      rows
     );
 
     const agents = rows.map(r => {
@@ -259,24 +260,28 @@ app.get('/api/trajectories', async (req, res) => {
   try {
     const forceLive = req.query.live === 'true';
     const { mainCommits, evalCommits, issueComments } = await fetchLiveCommitsForTrajectories(forceLive);
-    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments);
 
-    // Check Cloud Spanner row count in agent_trajectories for telemetry verification
     let spannerRowCount = 0;
+    let spannerAgentRows = [];
     const db = getSpannerDatabase();
     if (db) {
       try {
-        const [countRows] = await db.run({
-          sql: 'SELECT COUNT(*) AS cnt FROM agent_trajectories',
-          json: true
-        });
+        const [[countRows], [agentRows]] = await Promise.all([
+          db.run({ sql: 'SELECT COUNT(*) AS cnt FROM agent_trajectories', json: true }),
+          db.run({ sql: 'SELECT project_slug, agent_name, agent_id, template, harness, phase, activity, parent_agent, last_summary, last_activity_at FROM factory_agent_status', json: true })
+        ]);
         if (countRows && countRows.length > 0) {
           spannerRowCount = Number(countRows[0].cnt || 0);
+        }
+        if (Array.isArray(agentRows)) {
+          spannerAgentRows = agentRows;
         }
       } catch (_) {
         // non-fatal
       }
     }
+
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, spannerAgentRows);
 
     const filterProject = req.query.project || '';
     const filterAgent = req.query.agent || '';
@@ -299,13 +304,23 @@ app.get('/api/trajectories', async (req, res) => {
   }
 });
 
-// POST /api/trajectories/rebuild - Rebuilds all psearch & psearch-eval agent trajectories from git + issue comments + ADRs + reviews and persists to Cloud Spanner
+// POST /api/trajectories/rebuild - Rebuilds all psearch & psearch-eval agent trajectories from Scion Hub state + git + issue comments + ADRs + reviews and persists to Cloud Spanner
 app.post('/api/trajectories/rebuild', async (req, res) => {
   const start = Date.now();
   try {
     const { mainCommits, evalCommits, issueComments } = await fetchLiveCommitsForTrajectories(true);
-    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments);
     const db = getSpannerDatabase();
+    let spannerAgentRows = [];
+    if (db) {
+      try {
+        const [agentRows] = await db.run({
+          sql: 'SELECT project_slug, agent_name, agent_id, template, harness, phase, activity, parent_agent, last_summary, last_activity_at FROM factory_agent_status',
+          json: true
+        });
+        if (Array.isArray(agentRows)) spannerAgentRows = agentRows;
+      } catch (_) {}
+    }
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, spannerAgentRows);
     let syncStats = { synced_steps: 0, synced_agents: 0, error: null };
     if (db) {
       try {
