@@ -90,16 +90,30 @@ Each runbook below has: **Trigger**, **Diagnose**, **Act**, **Check**, **Escalat
 
 ## OpenCode gets 404s from the model
 
-- **Trigger:** the OpenCode agent's pane shows 404 errors or a model other than Gemini 2.5 Pro (L3).
+- **Trigger:** the OpenCode agent's pane shows 404 errors or a model other than Gemini 4 Argon (L3, L26).
 - **Act:** make sure the agent uses the pinned launcher from
-  [`templates/backend/home/.local/bin/opencode-launch.sh`](templates/backend/home/.local/bin/opencode-launch.sh), then
-  restart the harness in place (this discards the current OpenCode session, not the workspace):
+  [`templates/backend/home/.local/bin/opencode-launch.sh`](templates/backend/home/.local/bin/opencode-launch.sh)
+  (which configures `GOOGLE_CLOUD_LOCATION=global` and `gemini-4-argon`), then restart the harness in place (this discards the current OpenCode session, not the workspace):
   ```bash
   # on the VM, as the Hub OS user
   docker exec -u scion <project>--backend tmux respawn-pane -k -t scion:0.0 "sh /home/scion/.local/bin/opencode-launch.sh"
   ```
   Then re-brief the agent: its conversation starts empty.
-- **Check:** the pane footer shows "Gemini 2.5 Pro" and the first reply arrives without errors.
+- **Check:** the pane footer shows "Build · Gemini 4 Argon" and the first reply arrives without errors.
+
+## Hermes exits on start or fails model calls
+
+- **Trigger:** the Hermes reviewer container exits on startup (exit 2) or reports Vertex AI 404s (L26).
+- **Diagnose:** check the reviewer container logs or tmux pane:
+  ```bash
+  docker logs <project>--reviewer --tail 50
+  docker exec -u scion <project>--reviewer tmux capture-pane -p -t scion:0.0
+  ```
+  If Hermes exited with unrecognized argument `--create-if-missing`, the harness config command base must point to
+  `sh /home/scion/.local/bin/hermes-launch.sh`. If it fails connecting to Vertex, verify that `VERTEX_REGION=global` is
+  present in `~/.hermes/.env` (which overrides `~/.hermes/config.yaml`).
+- **Act:** ensure the launcher from [`templates/reviewer/home/.local/bin/hermes-launch.sh`](templates/reviewer/home/.local/bin/hermes-launch.sh) is staged, then restart or recreate the agent.
+- **Check:** the reviewer pane shows `⚕ gemini-4-argon` and delivers review verdicts to the lead.
 
 ## A deploy failed or needs a rollback
 

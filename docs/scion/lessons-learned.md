@@ -26,6 +26,11 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
 | [L19](#l19-heartbeats-can-turn-into-chatter) | Heartbeats can turn into chatter | protocol |
 | [L20](#l20-local-patches-dont-survive-upgrades-silently) | Local patches don't survive upgrades silently | operations |
 | [L21](#l21-reincarnate-is-refused-for-agents-of-these-projects) | Reincarnate is refused for agents of these projects | Scion |
+| [L22](#l22-hub-secret-injection-as_needed-vs-always) | Hub secret injection: `as_needed` vs `always` | security |
+| [L23](#l23-deployer-workspace-cleanliness-and-cloud-run-traffic-routing) | Deployer workspace cleanliness and Cloud Run traffic routing | operations |
+| [L24](#l24-unannounced-hub-restarts-overwrite-managed-harness-files-update_policy-notify) | Unannounced Hub restarts overwrite managed harness files | Hub |
+| [L25](#l25-initialize-eval_branch-as-an-orphan-branch-git-switch---orphan-so-it-can-never-be-merged-into-main) | Initialize `EVAL_BRANCH` as an orphan branch | git |
+| [L26](#l26-multi-harness-upgrade-to-gemini-4-argon-antigravity-opencode-hermes) | Multi-harness upgrade to Gemini 4 Argon (Antigravity, OpenCode, Hermes) | harness |
 
 ---
 
@@ -359,3 +364,37 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
   [`templates/_shared/agents.md`](templates/_shared/agents.md),
   [`templates/lead/system-prompt.md`](templates/lead/system-prompt.md),
   [`templates/eval-lead/system-prompt.md`](templates/eval-lead/system-prompt.md).
+
+## L26. Multi-harness upgrade to Gemini 4 Argon (Antigravity, OpenCode, Hermes)
+
+- **When:** 2026-10-13 / 2026-10-14.
+- **Goal:** Upgrade all factory worker harnesses (6 Antigravity agents, 1 OpenCode backend agent, 1 Hermes reviewer agent) from legacy Gemini 2.5 / 3.x to Gemini 4 Argon on Vertex AI while leaving Claude Code agents (lead, deployer) undisturbed.
+- **Symptom & Root Causes across harnesses:**
+  1. **Vertex AI Global Endpoint (`locations/global`):**
+     Gemini 4 Argon on Vertex AI is served from the global publisher location (`https://aiplatform.googleapis.com/v1/projects/.../locations/global/publishers/google/models/gemini-4-argon`). Regional endpoints (e.g. `us-central1`) return `404 Not Found` or model not recognized. All harnesses require explicit global location overrides (`GOOGLE_CLOUD_LOCATION=global`, `VERTEX_LOCATION=global`, `VERTEX_REGION=global`).
+  2. **Hermes Configuration Override Precedence:**
+     Hermes loads `~/.hermes/.env` with `override=True` (in `env_loader.py`). Even if `~/.hermes/config.yaml` specifies `vertex.region: global`, an existing or defaulted `VERTEX_REGION=us-central1` in `~/.hermes/.env` overrides it silently, causing 404 errors on Vertex AI. The launch script must ensure `VERTEX_REGION=global` is written to `~/.hermes/.env`.
+  3. **Hermes CLI Flag Incompatibility (`--create-if-missing`):**
+     Scion's default harness config for Hermes configured `command.base: ["hermes", "chat", "--yolo", "-c", "scion-session", "--create-if-missing"]`. However, the Hermes CLI does not recognize `--create-if-missing` (it only supports `-c / --continue`). Passing this unrecognized flag caused the container entrypoint to immediately exit with code 2. The solution is the wrapper pattern `base: ["sh", "/home/scion/.local/bin/hermes-launch.sh"]` with `task_flag: "--prompt"` and `task_position: "before_base_args"`.
+  4. **Scion Hosted Harness Config Caching (`~/.scion/cache/harness-configs/`):**
+     In Scion's hosted/broker architecture, the Runtime Broker's `HCResolver` resolves and caches harness configurations under `~/.scion/cache/harness-configs/<contentHash>/config.yaml`. Updating only `~/.scion/harness-configs/` does not update running or restarted containers if SQLite `hub.db` or cached hashes point to the bundled configs in `workspace-storage/hubs/<hub-id>/harness-configs/global/`. To update a harness persistently, the harness config must be updated in `hub.db`, `workspace-storage`, and the broker cache cleared or updated.
+  5. **Antigravity Role Directory Detection:**
+     In Scion project staging, agent configurations are organized by agent role name under `~/.scion/project-configs/<project>__<id>/.scion/agents/<role>/home/`. The previous provisioner hook patch script only checked agent names, missing custom role directories or misidentifying role folders during provisioner patching.
+- **Fix:**
+  - Automated patching via [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py) and [`scripts/patch-opencode-and-hermes.py`](scripts/patch-opencode-and-hermes.py).
+  - Configured `model: "Gemini 4 Argon (High)"` and `location: global` across all 6 Antigravity agent templates and container `settings.json`.
+  - Configured OpenCode catalog `models.json` with `gemini-4-argon` and `gemini-3.8-flash`, setting `GOOGLE_CLOUD_LOCATION=global` and `model: google-vertex/gemini-4-argon`.
+  - Added wrapper [`templates/reviewer/home/.local/bin/hermes-launch.sh`](templates/reviewer/home/.local/bin/hermes-launch.sh) for Hermes, setting `VERTEX_REGION=global` and launching `hermes chat --yolo --accept-hooks --provider vertex -m google/gemini-4-argon`.
+  - Pushed updated templates to Hub via [`scripts/push-templates.py`](scripts/push-templates.py).
+- **Encoded in:**
+  - [`templates/backend/home/.local/bin/opencode-launch.sh`](templates/backend/home/.local/bin/opencode-launch.sh)
+  - [`templates/reviewer/home/.local/bin/hermes-launch.sh`](templates/reviewer/home/.local/bin/hermes-launch.sh)
+  - [`templates/frontend/scion-agent.yaml`](templates/frontend/scion-agent.yaml)
+  - [`templates/eval-deployer/scion-agent.yaml`](templates/eval-deployer/scion-agent.yaml)
+  - [`templates/eval-lead/scion-agent.yaml`](templates/eval-lead/scion-agent.yaml)
+  - [`templates/factory-analyst/scion-agent.yaml`](templates/factory-analyst/scion-agent.yaml)
+  - [`templates/search-evaluator/scion-agent.yaml`](templates/search-evaluator/scion-agent.yaml)
+  - [`templates/ui-craftsman/scion-agent.yaml`](templates/ui-craftsman/scion-agent.yaml)
+  - [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py)
+  - [`scripts/patch-opencode-and-hermes.py`](scripts/patch-opencode-and-hermes.py)
+  - [`scripts/push-templates.py`](scripts/push-templates.py)

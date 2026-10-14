@@ -190,7 +190,7 @@ scripts/push-templates.py --project "$EVAL_PROJECT" \
   --roles eval-lead,factory-analyst,search-evaluator,ui-craftsman,eval-deployer --apply
 ```
 
-([templates/README.md](templates/README.md#uploading-to-the-hub) explains what it does; reviewer uses Gemini 2.5 Pro via `model: google/gemini-2.5-pro`). Then start the agents as the
+([templates/README.md](templates/README.md#uploading-to-the-hub) explains what it does; reviewer uses Gemini 4 Argon via `model: google/gemini-4-argon`, backend uses `google-vertex/gemini-4-argon`, and all Antigravity agents use `Gemini 4 Argon (High)`; L26). Then start the agents as the
 admin, in each project (assigning the deployer service account registered in Step 6 via `--service-account <id>`):
 
 ```bash
@@ -207,7 +207,7 @@ cover that. (Having each lead start its own team would route notifications to it
 deployer identity was not tested.)
 
 **Check:** `scripts/run-on-hub.sh scripts/factory-status.sh --panes 10` shows 10 running agents, each terminal at a
-prompt, the OpenCode one on "Gemini 2.5 Pro" (L3).
+prompt, the OpenCode one on "Gemini 4 Argon Vertex" (L3, L26), Antigravity ones on "Gemini 4 Argon · high" (L26), and Hermes on "google/gemini-4-argon" (L26).
 
 ## 9. Heartbeats
 

@@ -12,18 +12,18 @@ scripts/render-templates.py            # -> build/templates/<role>/ (git-ignored
 | Role | Project | Harness | GCP identity | Purpose |
 |---|---|---|---|---|
 | `lead` | build | Claude Code | Hub VM SA (passthrough) | plans and delegates issues, reviews diffs, hands over to the PO; never codes |
-| `backend` | build | OpenCode (Gemini 2.5 Pro) | Hub VM SA | Go service and SQL |
-| `frontend` | build | Antigravity | Hub VM SA | UI |
-| `reviewer` | build | Hermes (Gemini 2.5 Pro) | Hub VM SA | tests and ADR verdicts |
+| `backend` | build | OpenCode (Gemini 4 Argon) | Hub VM SA | Go service and SQL |
+| `frontend` | build | Antigravity (Gemini 4 Argon) | Hub VM SA | UI |
+| `reviewer` | build | Hermes (Gemini 4 Argon) | Hub VM SA | tests and ADR verdicts |
 | `deployer` | build | Claude Code | `${DEPLOYER_SA}` (assign) | migrations, Cloud Run deploys, live checks, rollback |
-| `eval-lead` | eval | Antigravity | Hub VM SA | measures the build factory; orchestrates the eval team |
-| `factory-analyst` | eval | Antigravity | Hub VM SA | agent activity and issue-flow analysis |
-| `search-evaluator` | eval | Antigravity | Hub VM SA | live relevance and latency probes, `eval_runs` |
-| `ui-craftsman` | eval | Antigravity | Hub VM SA | dashboard design (Impeccable skill) |
-| `eval-deployer` | eval | Antigravity | `${DEPLOYER_SA}` (assign) | dashboard deploys |
+| `eval-lead` | eval | Antigravity (Gemini 4 Argon) | Hub VM SA | measures the build factory; orchestrates the eval team |
+| `factory-analyst` | eval | Antigravity (Gemini 4 Argon) | Hub VM SA | agent activity and issue-flow analysis |
+| `search-evaluator` | eval | Antigravity (Gemini 4 Argon) | Hub VM SA | live relevance and latency probes, `eval_runs` |
+| `ui-craftsman` | eval | Antigravity (Gemini 4 Argon) | Hub VM SA | dashboard design (Impeccable skill) |
+| `eval-deployer` | eval | Antigravity (Gemini 4 Argon) | `${DEPLOYER_SA}` (assign) | dashboard deploys |
 
 Mixing harnesses was deliberate (to compare them) and has a cost: each one failed differently (L3 OpenCode model
-catalog, L4 Hermes printing instead of messaging, L6 Antigravity hooks). In this run the Claude Code agents (lead,
+catalog, L4 Hermes printing instead of messaging, L6 Antigravity hooks, L26 multi-harness upgrade to Gemini 4 Argon). In this run the Claude Code agents (lead,
 deployer) had the fewest harness-specific problems.
 
 ## Files in a role folder

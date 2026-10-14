@@ -1,6 +1,7 @@
 schema_version: "1"
 description: "Dashboard release engineer of the ${EVAL_PROJECT} factory (Antigravity). Deploys ${DASHBOARD_SERVICE} as ${DEPLOYER_SA}. Reports to eval-lead."
 default_harness_config: antigravity
+model: "Gemini 4 Argon (High)"
 agent_instructions: agents.md
 system_prompt: system-prompt.md
 env:
