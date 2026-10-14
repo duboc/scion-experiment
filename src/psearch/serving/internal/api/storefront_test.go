@@ -81,3 +81,23 @@ func TestStorefrontPhotoSearch(t *testing.T) {
 		t.Error("storefront must send inline bytes, never an image URL (SSRF)")
 	}
 }
+
+// #34: facet items are clickable and re-run the search with the clicked filter;
+// facet values are rendered as text (never innerHTML).
+func TestStorefrontClickableFacets(t *testing.T) {
+	for _, frag := range []string{
+		"function toggleFacet(kind, val)", "function renderFacetGroup(", "function renderActiveFilters()", "function priceBounds(",
+		"'&category=' + encodeURIComponent(facetFilters.category)", "'&brand=' + encodeURIComponent(facetFilters.brand)",
+		"'&min_price=' + pb.min", "'&max_price=' + pb.max", `id="active-filters"`, ".facet-active", "runSearch({ keepFacets: true })",
+		"renderFacetGroup('facets-cat-list', facets.categories, 'category')", "renderFacetGroup('facets-avail-list', facets.availability, 'availability')",
+	} {
+		if !strings.Contains(defaultStorefrontHTML, frag) {
+			t.Errorf("storefront missing %q", frag)
+		}
+	}
+	for _, bad := range []string{"renderFacetList", "-list').innerHTML"} {
+		if strings.Contains(defaultStorefrontHTML, bad) {
+			t.Errorf("facets must not be rendered via innerHTML (%q found)", bad)
+		}
+	}
+}

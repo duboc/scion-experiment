@@ -98,6 +98,10 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     .facet-title { font-size: 13px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px; }
     .facet-list { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
     .facet-item { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
+    .facet-click { cursor: pointer; border-radius: 4px; padding: 2px 4px; margin: 0 -4px; }
+    .facet-click:hover, .facet-click:focus { background: #1e293b; color: #f8fafc; outline: none; }
+    .facet-active { background: #0c4a6e; color: #e0f2fe; font-weight: 600; }
+    .filter-chip { display: inline-flex; align-items: center; gap: 4px; background: #0c4a6e; border: 1px solid #38bdf8; color: #e0f2fe; border-radius: 999px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
     .facet-count { background: #0f172a; padding: 1px 6px; border-radius: 999px; font-size: 11px; color: #cbd5e1; }
   </style>
 </head>
@@ -226,6 +230,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         </div>
       </aside>
       <div style="flex:1;min-width:0;">
+        <div id="active-filters" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:10px;"></div>
         <div class="meta" id="meta">Loading catalog...</div>
         <div id="expanded-terms" style="color:var(--muted);font-size:13px;margin:-8px 0 16px 0;display:none;"></div>
         <div id="recovery-banner" style="display:none;margin:-8px 0 16px 0;padding:10px 14px;background:var(--card);border:1px solid #38bdf8;border-radius:8px;font-size:14px;color:var(--text);"></div>
@@ -278,9 +283,11 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       // Reuse the GET parameters built by runSearch as the JSON body of POST /api/search.
       const p = new URLSearchParams(url.split('?')[1] || '');
       const body = { query: q, image_base64: queryImage, image_mime_type: 'image/jpeg', limit: 20 };
-      ['channel', 'tenant_id', 'locale', 'cep', 'price_table_id', 'sort_by', 'color', 'size', 'session_id'].forEach(function(k) {
+      ['channel', 'tenant_id', 'locale', 'cep', 'price_table_id', 'sort_by', 'color', 'size', 'session_id', 'category', 'brand'].forEach(function(k) {
         if (p.get(k)) body[k] = p.get(k);
       });
+      if (p.get('min_price')) body.min_price = parseFloat(p.get('min_price'));
+      if (p.get('max_price')) body.max_price = parseFloat(p.get('max_price'));
       if (p.get('only_in_stock') === 'true') body.only_in_stock = true;
       if (p.get('ltr') === 'true') body.ltr = true;
       if (p.get('max_sla_hours')) body.max_sla_hours = parseInt(p.get('max_sla_hours'), 10);
@@ -291,9 +298,127 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       return body;
     }
     let alphaTouched = false;
+    // Clickable facets (#34): clicking a facet item re-runs the same search with
+    // that item as an extra filter; clicking an active item removes it. Category,
+    // brand and price live here; color/size/in-stock reuse the existing controls.
+    let facetFilters = {};
+    let lastSearchedQuery = null;
+    function facetIsActive(kind, val) {
+      const v = String(val).toLowerCase();
+      if (kind === 'category' || kind === 'brand' || kind === 'price') {
+        return facetFilters[kind] !== undefined && String(facetFilters[kind]).toLowerCase() === v;
+      }
+      if (kind === 'color' || kind === 'size') {
+        const el = document.getElementById(kind);
+        return !!el && el.value.toLowerCase() === v;
+      }
+      if (kind === 'availability') {
+        const el = document.getElementById('only_in_stock');
+        return !!el && el.checked && val === 'IN_STOCK';
+      }
+      return false;
+    }
+    function facetClickable(kind, val) {
+      return val !== '' && !(kind === 'availability' && val !== 'IN_STOCK');
+    }
+    function setSelectValue(id, val) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (val && !Array.prototype.some.call(el.options, function(o) { return o.value === val; })) {
+        const opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = val;
+        el.appendChild(opt);
+      }
+      el.value = val;
+    }
+    function toggleFacet(kind, val) {
+      const active = facetIsActive(kind, val);
+      if (kind === 'category' || kind === 'brand' || kind === 'price') {
+        if (active) { delete facetFilters[kind]; } else { facetFilters[kind] = val; }
+      } else if (kind === 'color' || kind === 'size') {
+        setSelectValue(kind, active ? '' : val);
+      } else if (kind === 'availability') {
+        document.getElementById('only_in_stock').checked = !active;
+      }
+      runSearch({ keepFacets: true });
+    }
+    function priceBounds(range) {
+      // Facet buckets: "0-100", "100-500", "500-1500", "1500+".
+      const m = /^(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?)|\+)$/.exec(String(range || ''));
+      if (!m) return null;
+      return { min: parseFloat(m[1]), max: m[2] !== undefined ? parseFloat(m[2]) : 0 };
+    }
+    function renderFacetGroup(elId, list, kind) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.textContent = '';
+      if (!list || !list.length) {
+        const none = document.createElement('span');
+        none.style.cssText = 'color:#64748b;font-size:11px;';
+        none.textContent = '(none)';
+        el.appendChild(none);
+        return;
+      }
+      list.forEach(function(item) {
+        const val = typeof item === 'object' ? String(item.value) : String(item);
+        const cnt = typeof item === 'object' ? item.count : 0;
+        const row = document.createElement('div');
+        row.className = 'facet-item';
+        row.setAttribute('data-facet', kind);
+        const label = document.createElement('span');
+        label.textContent = val === '' ? '(sem valor)' : val;
+        const count = document.createElement('span');
+        count.className = 'facet-count';
+        count.textContent = String(cnt);
+        row.appendChild(label);
+        row.appendChild(count);
+        if (facetClickable(kind, val)) {
+          const active = facetIsActive(kind, val);
+          row.classList.add('facet-click');
+          if (active) row.classList.add('facet-active');
+          row.setAttribute('role', 'button');
+          row.setAttribute('tabindex', '0');
+          row.setAttribute('aria-pressed', active ? 'true' : 'false');
+          row.title = active ? 'Remover filtro' : 'Filtrar por ' + val;
+          row.onclick = function() { toggleFacet(kind, val); };
+          row.onkeydown = function(e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFacet(kind, val); } };
+        }
+        el.appendChild(row);
+      });
+    }
+    function renderActiveFilters() {
+      const box = document.getElementById('active-filters');
+      if (!box) return;
+      box.textContent = '';
+      const chips = [];
+      [['category', 'Departamento'], ['brand', 'Marca'], ['price', 'Preço']].forEach(function(k) {
+        if (facetFilters[k[0]] !== undefined) chips.push([k[1] + ': ' + facetFilters[k[0]], function() { delete facetFilters[k[0]]; }]);
+      });
+      ['color', 'size'].forEach(function(k) {
+        const el = document.getElementById(k);
+        if (el && el.value) chips.push([(k === 'color' ? 'Cor: ' : 'Tamanho: ') + el.value, function() { el.value = ''; }]);
+      });
+      const stock = document.getElementById('only_in_stock');
+      if (stock && stock.checked) chips.push(['Em estoque', function() { stock.checked = false; }]);
+      chips.forEach(function(c) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'filter-chip';
+        chip.textContent = c[0] + ' \u00d7';
+        chip.title = 'Remover filtro';
+        chip.onclick = function() { c[1](); runSearch({ keepFacets: true }); };
+        box.appendChild(chip);
+      });
+      box.style.display = chips.length ? 'flex' : 'none';
+    }
     async function runSearch(opts) {
       opts = opts || {};
       const q = document.getElementById('q').value;
+      if (!opts.keepFacets && lastSearchedQuery !== null && q.trim() !== lastSearchedQuery) {
+        facetFilters = {}; // a new query text starts from a clean facet state
+      }
+      lastSearchedQuery = q.trim();
       const alpha = document.getElementById('alpha').value;
       const channel = document.getElementById('channel').value;
       const onlyInStock = document.getElementById('only_in_stock').checked;
@@ -326,6 +451,17 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       }
       if (color) {
         url += '&color=' + encodeURIComponent(color);
+      }
+      if (facetFilters.category) {
+        url += '&category=' + encodeURIComponent(facetFilters.category);
+      }
+      if (facetFilters.brand) {
+        url += '&brand=' + encodeURIComponent(facetFilters.brand);
+      }
+      const pb = priceBounds(facetFilters.price);
+      if (pb) {
+        if (pb.min > 0) url += '&min_price=' + pb.min;
+        if (pb.max > 0) url += '&max_price=' + pb.max;
       }
       if (size) {
         url += '&size=' + encodeURIComponent(size);
@@ -539,20 +675,13 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       }
       
       const facets = data.facets || {};
-      const renderFacetList = (list) => {
-        if (!list || !list.length) return '<span style="color:#64748b;font-size:11px;">(none)</span>';
-        return list.map(item => {
-          const val = typeof item === 'object' ? item.value : item;
-          const cnt = typeof item === 'object' ? item.count : 0;
-          return '<div class="facet-item"><span>' + val + '</span><span class="facet-count">' + cnt + '</span></div>';
-        }).join('');
-      };
-      document.getElementById('facets-cat-list').innerHTML = renderFacetList(facets.categories);
-      document.getElementById('facets-brand-list').innerHTML = renderFacetList(facets.brands);
-      document.getElementById('facets-price-list').innerHTML = renderFacetList(facets.price_ranges);
-      document.getElementById('facets-color-list').innerHTML = renderFacetList(facets.colors);
-      document.getElementById('facets-size-list').innerHTML = renderFacetList(facets.sizes);
-      document.getElementById('facets-avail-list').innerHTML = renderFacetList(facets.availability);
+      renderFacetGroup('facets-cat-list', facets.categories, 'category');
+      renderFacetGroup('facets-brand-list', facets.brands, 'brand');
+      renderFacetGroup('facets-price-list', facets.price_ranges, 'price');
+      renderFacetGroup('facets-color-list', facets.colors, 'color');
+      renderFacetGroup('facets-size-list', facets.sizes, 'size');
+      renderFacetGroup('facets-avail-list', facets.availability, 'availability');
+      renderActiveFilters();
       const container = document.getElementById('results');
       container.innerHTML = (data.results || []).map(p => {
         const s = p.score || {};
@@ -765,6 +894,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     function showAllCatalog() {
       // Browse the whole catalog across locales (empty query = catalog browse, #30).
       document.getElementById('q').value = '';
+      facetFilters = {};
+      const stockEl = document.getElementById('only_in_stock');
+      if (stockEl) stockEl.checked = false;
       queryImage = null;
       document.getElementById('image-chip').style.display = 'none';
       const loc = document.getElementById('locale');
