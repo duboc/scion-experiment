@@ -4,6 +4,7 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
+const { AGENT_METADATA, buildTrajectoriesPayload, syncTrajectoriesToSpanner } = require('./trajectories');
 
 process.env.SPANNER_ENABLE_PROXIED_GCP_METRICS = 'false';
 
@@ -139,7 +140,7 @@ app.get('/api/backlog', async (req, res) => {
   }
 });
 
-// Live factory agent telemetry synced from Cloud Spanner factory_agent_status
+// Live factory agent telemetry synced from Cloud Spanner factory_agent_status + reconstructed trajectory metadata
 app.get('/api/agents', async (req, res) => {
   try {
     const db = getSpannerDatabase();
@@ -152,23 +153,44 @@ app.get('/api/agents', async (req, res) => {
       json: true
     });
 
-    const agents = rows.map(r => ({
-      project: r.project_slug,
-      name: r.agent_name,
-      agent_id: r.agent_id,
-      template: r.template,
-      role: r.template || r.agent_name,
-      harness: r.harness,
-      phase: r.phase,
-      activity: r.activity,
-      parent_agent: r.parent_agent,
-      current_turns: (r.current_turns === null || r.current_turns === undefined) ? 'n/a' : r.current_turns,
-      model_calls: (r.model_calls === null || r.model_calls === undefined) ? 'n/a' : r.model_calls,
-      last_summary: r.last_summary,
-      active_issue: r.last_summary || 'Standby',
-      updated_at: r.updated_at,
-      last_activity_at: r.last_activity_at
-    }));
+    const trajPayload = buildTrajectoriesPayload(
+      backlogCache ? backlogCache.main_commits : [],
+      backlogCache ? backlogCache.eval_commits : []
+    );
+
+    const agents = rows.map(r => {
+      const key = `${r.project_slug}:${r.agent_name}`;
+      const trajAgent = trajPayload.agents_by_key[key] || {};
+      const turns = (r.current_turns !== null && r.current_turns !== undefined && Number(r.current_turns) > 0)
+        ? Number(r.current_turns)
+        : (trajAgent.reconstructed_turns ?? 'n/a');
+      const calls = (r.model_calls !== null && r.model_calls !== undefined && Number(r.model_calls) > 0)
+        ? Number(r.model_calls)
+        : (trajAgent.reconstructed_model_calls ?? 'n/a');
+      const summary = trajAgent.last_summary || r.last_summary || 'Standby';
+      return {
+        project: r.project_slug,
+        name: r.agent_name,
+        agent_id: r.agent_id,
+        template: r.template,
+        role: trajAgent.role || r.template || r.agent_name,
+        harness: r.harness || trajAgent.harness,
+        model: trajAgent.model || 'gemini-4-argon',
+        phase: r.phase,
+        activity: r.activity,
+        parent_agent: r.parent_agent,
+        current_turns: turns,
+        model_calls: calls,
+        last_summary: summary,
+        active_issue: summary,
+        trajectory_steps_count: trajAgent.steps_count || 0,
+        issues_covered: trajAgent.issues_covered || [],
+        commits_count: trajAgent.commits_count || 0,
+        waves_covered: trajAgent.waves_covered || [],
+        updated_at: r.updated_at,
+        last_activity_at: r.last_activity_at
+      };
+    });
 
     const projectSet = new Set(agents.map(a => a.project));
     const projects = projectSet.size > 0 ? Array.from(projectSet) : ['psearch', 'psearch-eval'];
@@ -185,6 +207,124 @@ app.get('/api/agents', async (req, res) => {
       error: err.message,
       projects: ['psearch', 'psearch-eval'],
       agents: []
+    });
+  }
+});
+
+// Helper to fetch live GitHub commits for trajectory reconstruction
+async function fetchLiveCommitsForTrajectories() {
+  const headers = {
+    'User-Agent': 'psearch-eval-dashboard',
+    'Accept': 'application/vnd.github.v3+json'
+  };
+  const token = process.env.GITHUB_TOKEN;
+  if (token && token.trim()) {
+    headers['Authorization'] = `Bearer ${token.trim()}`;
+  }
+  const fetchBranchCommits = async (branch) => {
+    try {
+      const resp = await fetch(`https://api.github.com/repos/duboc/scion-experiment/commits?sha=${branch}&per_page=50`, { headers });
+      if (!resp.ok) return [];
+      const data = await resp.json();
+      return Array.isArray(data) ? data : [];
+    } catch (_) {
+      return [];
+    }
+  };
+  const [mainCommits, evalCommits] = await Promise.all([
+    fetchBranchCommits('main'),
+    fetchBranchCommits('eval-dashboard')
+  ]);
+  return { mainCommits, evalCommits };
+}
+
+// GET /api/trajectories - Returns per-agent and chronological execution trajectories across psearch and psearch-eval
+app.get('/api/trajectories', async (req, res) => {
+  try {
+    let mainCommits = backlogCache ? backlogCache.main_commits : [];
+    let evalCommits = backlogCache ? backlogCache.eval_commits : [];
+    if (req.query.live === 'true' || (!mainCommits.length && !evalCommits.length)) {
+      const fetched = await fetchLiveCommitsForTrajectories();
+      mainCommits = fetched.mainCommits;
+      evalCommits = fetched.evalCommits;
+    }
+
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits);
+
+    // Check Cloud Spanner row count in agent_trajectories for telemetry verification
+    let spannerRowCount = 0;
+    const db = getSpannerDatabase();
+    if (db) {
+      try {
+        const [countRows] = await db.run({
+          sql: 'SELECT COUNT(*) AS cnt FROM agent_trajectories',
+          json: true
+        });
+        if (countRows && countRows.length > 0) {
+          spannerRowCount = Number(countRows[0].cnt || 0);
+        }
+      } catch (_) {
+        // non-fatal
+      }
+    }
+
+    const filterProject = req.query.project || '';
+    const filterAgent = req.query.agent || '';
+    let selectedAgent = null;
+    if (filterProject && filterAgent) {
+      selectedAgent = payload.agents_by_key[`${filterProject}:${filterAgent}`] || null;
+    } else if (filterAgent) {
+      selectedAgent = payload.agents.find(a => a.name === filterAgent) || null;
+    }
+
+    return res.json({
+      ...payload,
+      spanner_table: 'agent_trajectories',
+      spanner_persisted_steps: spannerRowCount,
+      selected_agent: selectedAgent
+    });
+  } catch (err) {
+    console.error('Error building trajectories payload:', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/trajectories/rebuild - Rebuilds all psearch & psearch-eval agent trajectories from git + ADRs + reviews and persists to Cloud Spanner
+app.post('/api/trajectories/rebuild', async (req, res) => {
+  const start = Date.now();
+  try {
+    const { mainCommits, evalCommits } = await fetchLiveCommitsForTrajectories();
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits);
+    const db = getSpannerDatabase();
+    let syncStats = { synced_steps: 0, synced_agents: 0, error: null };
+    if (db) {
+      try {
+        const resSync = await syncTrajectoriesToSpanner(db, payload);
+        syncStats = {
+          ...resSync,
+          synced_steps: resSync.total_steps_synced || payload.total_steps,
+          synced_agents: resSync.agents_updated || payload.total_agents,
+          error: null
+        };
+      } catch (syncErr) {
+        syncStats.error = syncErr.message;
+      }
+    }
+    return res.json({
+      status: 'ok',
+      rebuilt: true,
+      rebuild_latency_ms: Date.now() - start,
+      spanner_table: 'agent_trajectories',
+      spanner_persisted_steps: syncStats.synced_steps || payload.total_steps,
+      spanner_sync: syncStats,
+      ...payload
+    });
+  } catch (err) {
+    console.error('Failed to rebuild agent trajectories:', err.message);
+    return res.status(500).json({
+      status: 'error',
+      rebuilt: false,
+      error: err.message
     });
   }
 });

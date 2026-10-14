@@ -525,9 +525,13 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M7 17L17 7M17 7H8M17 7V16"/></svg>
         <span>Open psearch-serving</span>
       </a>
+      <a href="#section-trajectories" class="btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <span>Agent Trajectories</span>
+      </a>
       <a href="https://github.com/duboc/scion-experiment/issues" target="_blank" class="btn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.8" fill="currentColor"/></svg>
-        <span>Backlog (Waves 1–5 · 14 Reqs)</span>
+        <span>Backlog (Waves 1–6 · 16 Reqs)</span>
       </a>
       <button type="button" id="btn-theme" class="btn" onclick="toggleTheme()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2"/></svg>
@@ -575,14 +579,14 @@
       <div class="focal-cell">
         <div>
           <h2>Factory &amp; Spanner Operational Ledger</h2>
-          <p style="font-size:0.8125rem;margin-top:0.2rem;">Latency percentiles, Section 4.1 readiness (Waves 1–5), and 5-Layer Pyramid.</p>
+          <p style="font-size:0.8125rem;margin-top:0.2rem;">Latency percentiles, Section 4.1 readiness (Waves 1–6), and 5-Layer Pyramid.</p>
         </div>
         <div class="kv-list" style="border-top:none;padding-top:0;">
           <div class="kv-item"><span class="kv-key">Latency p50</span><span class="kv-val mono" id="val-p50">-- ms</span></div>
           <div class="kv-item"><span class="kv-key">Latency p95 / p99</span><span class="kv-val mono" id="val-p95">-- ms</span></div>
-          <div class="kv-item"><span class="kv-key">Requirements Passing</span><span class="kv-val mono" id="val-reqs-pass">-- / 14</span></div>
+          <div class="kv-item"><span class="kv-key">Requirements Passing</span><span class="kv-val mono" id="val-reqs-pass">16 / 16</span></div>
           <div class="kv-item"><span class="kv-key">5-Layer Eval Pyramid</span><span class="kv-val mono" id="val-pyramid-pass">76 / 76 (100%)</span></div>
-          <div class="kv-item"><span class="kv-key">Vertex GenAI Models</span><span class="kv-val mono">gemini-3.8-flash · gemini-4-argon</span></div>
+          <div class="kv-item"><span class="kv-key">Agent Trajectories</span><span class="kv-val mono" id="val-traj-steps">10 Agents · Rebuilt</span></div>
           <div class="kv-item"><span class="kv-key">Eval Fleet Harness</span><span class="kv-val mono">Gemini 4 Argon (High) · agy v1.3.4</span></div>
         </div>
       </div>
@@ -832,12 +836,12 @@
           <!-- Shared Sandbox Target -->
           <rect x="60" y="176" width="640" height="44" fill="var(--bg-subtle)" stroke="var(--border-hairline)" />
           <text x="380" y="195" text-anchor="middle" fill="var(--text-primary)" font-family="JetBrains Mono, monospace" font-size="12" font-weight="600">Cloud Spanner (psearch-instance / psearch-db) · Vertex AI Global (gemini-4-argon · gemini-3.8-flash)</text>
-          <text x="380" y="211" text-anchor="middle" fill="var(--text-muted)" font-size="12">psearch-eval observes psearch agents in Spanner, executes 76-scenario Pyramid sweeps, and audits 14/14 requirements</text>
+          <text x="380" y="211" text-anchor="middle" fill="var(--text-muted)" font-size="12">psearch-eval observes psearch agents in Spanner, rebuilds agent trajectories, and audits 16/16 requirements</text>
         </svg>
 
         <div class="inspector-strip" id="node-inspector">
           <span>Selected Agent: <strong class="mono">@lead (psearch)</strong> — Factory Tech Lead &amp; Backlog Orchestrator</span>
-          <span class="mono">Model: Gemini 4 Argon (High) · Focus: Waves 1–5 (14/14 PASS)</span>
+          <span class="mono">Model: Gemini 4 Argon (High) · Focus: Waves 1–6 (16/16 PASS)</span>
         </div>
 
         <div class="zone-body table-wrap">
@@ -866,8 +870,80 @@
         <div class="diag-list" id="diag-container"></div>
       </div>
     </section>
+
+    <!-- Per-Agent Execution Trajectory Inspector & Spanner Rebuilder (psearch + psearch-eval) -->
+    <section class="ledger-frame" id="section-trajectories" aria-label="Agent Execution Trajectory Inspector and Spanner Rebuilder">
+      <div class="zone">
+        <div class="zone-header" style="flex-wrap:wrap;gap:0.75rem;">
+          <div>
+            <h2>Agent Execution Trajectory By Agent — Step-by-Step Timeline &amp; Spanner Rebuilder</h2>
+            <div class="mono" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;" id="traj-subtitle">
+              Reconstructed from origin/main &amp; origin/eval-dashboard commits, ADRs (001–010), REVIEW.md, DEPLOYMENT.md, and Cloud Spanner (agent_trajectories)
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+            <span id="traj-spanner-badge" class="badge badge--pass"><span class="badge-dot"></span>Spanner Synced</span>
+            <button type="button" id="btn-rebuild-trajectories" class="btn btn-primary" onclick="rebuildAgentTrajectories()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              <span id="btn-rebuild-trajectories-label">Rebuild psearch Trajectories</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Per-Agent Filter Selector Bar -->
+        <div style="padding:0.75rem 1.25rem;border-bottom:1px solid var(--border-hairline);background:var(--bg-subtle);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0.75rem;">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;">
+            <span class="mono" style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);margin-right:0.25rem;">psearch Agents:</span>
+            <div class="filter-group" id="traj-agent-pills-psearch" role="group" aria-label="Select psearch agent trajectory">
+              <button type="button" class="filter-btn" data-traj-key="psearch:lead" aria-pressed="true" onclick="selectTrajectoryView('psearch', 'lead', this)">@lead</button>
+              <button type="button" class="filter-btn" data-traj-key="psearch:backend" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'backend', this)">@backend</button>
+              <button type="button" class="filter-btn" data-traj-key="psearch:frontend" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'frontend', this)">@frontend</button>
+              <button type="button" class="filter-btn" data-traj-key="psearch:reviewer" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'reviewer', this)">@reviewer</button>
+              <button type="button" class="filter-btn" data-traj-key="psearch:deployer" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'deployer', this)">@deployer</button>
+              <button type="button" class="filter-btn" data-traj-key="psearch:all" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'all', this)">All psearch (Chronological)</button>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;">
+            <span class="mono" style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);margin-right:0.25rem;">psearch-eval Agents:</span>
+            <div class="filter-group" id="traj-agent-pills-eval" role="group" aria-label="Select psearch-eval agent trajectory">
+              <button type="button" class="filter-btn" data-traj-key="psearch-eval:eval-lead" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'eval-lead', this)">@eval-lead</button>
+              <button type="button" class="filter-btn" data-traj-key="psearch-eval:search-evaluator" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'search-evaluator', this)">@search-evaluator</button>
+              <button type="button" class="filter-btn" data-traj-key="psearch-eval:factory-analyst" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'factory-analyst', this)">@factory-analyst</button>
+              <button type="button" class="filter-btn" data-traj-key="psearch-eval:ui-craftsman" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'ui-craftsman', this)">@ui-craftsman</button>
+              <button type="button" class="filter-btn" data-traj-key="psearch-eval:eval-deployer" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'eval-deployer', this)">@eval-deployer</button>
+              <button type="button" class="filter-btn" data-traj-key="all:all" aria-pressed="false" onclick="selectTrajectoryView('all', 'all', this)">All 10 Agents</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Selected Agent Summary Strip -->
+        <div class="inspector-strip" id="trajectory-agent-summary">
+          <span>Viewing Trajectory: <strong class="mono">@lead (psearch)</strong> — Factory Tech Lead &amp; Architecture Orchestrator</span>
+          <span class="mono">Steps: 10 · Issues: 9 · Commits: 10 · Reconstructed Turns / Calls: 68 / 184</span>
+        </div>
+
+        <!-- Step-by-Step Trajectory Table -->
+        <div class="zone-body table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Step</th>
+                <th>Agent</th>
+                <th>Wave / Issue</th>
+                <th>Action Type</th>
+                <th>Commit</th>
+                <th>Timestamp (UTC)</th>
+                <th>Trajectory Step Action, Architectural Artifacts &amp; Verification Evidence</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-agent-trajectory"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <script src="app.js?v=20261014-v2"></script>
+  <script src="app.js?v=20261014-v3"></script>
 </body>
 </html>

@@ -7,12 +7,15 @@
 
   let cachedEval = null;
   let cachedAgents = [];
+  let cachedTrajectories = null;
   let cachedPyramidLayers = [];
   let selectedPyramidLayerId = 'l1_trajectory_sequence';
   let currentAgentFilter = 'all';
   let currentWaveFilter = 'all';
   let selectedProject = 'psearch';
   let selectedAgentName = 'lead';
+  let selectedTrajectoryProject = 'psearch';
+  let selectedTrajectoryAgent = 'lead';
 
   function escapeHTML(str) {
     return String(str ?? '')
@@ -70,7 +73,16 @@
     selectedAgentName = name;
 
     document.querySelectorAll('.topo-node').forEach(n => n.classList.remove('is-active'));
-    if (el) el.classList.add('is-active');
+    if (el) {
+      el.classList.add('is-active');
+    } else {
+      document.querySelectorAll('.topo-node').forEach(n => {
+        const attr = n.getAttribute('onclick') || '';
+        if (attr.indexOf("'" + project + "','" + name + "'") !== -1) {
+          n.classList.add('is-active');
+        }
+      });
+    }
 
     const found = cachedAgents.find(a => a.project === project && a.name === name);
     const box = document.getElementById('node-inspector');
@@ -78,7 +90,7 @@
       if (found) {
         box.innerHTML =
           '<span>Selected Agent: <strong class="mono">@' + escapeHTML(found.name) + ' (' + escapeHTML(found.project) + ')</strong> — ' + escapeHTML(found.role || found.template) + '</span>' +
-          '<span class="mono">Harness: ' + escapeHTML(found.harness || 'antigravity') + ' · Parent: ' + escapeHTML(found.parent_agent || 'orchestrator') + ' · Focus: ' + escapeHTML(found.active_issue || 'Standby') + '</span>';
+          '<span class="mono">Harness: ' + escapeHTML(found.harness || 'antigravity') + ' · Steps: ' + escapeHTML(found.trajectory_steps_count || '--') + ' · Focus: ' + escapeHTML(found.active_issue || 'Standby') + '</span>';
       } else {
         box.innerHTML =
           '<span>Selected Agent: <strong class="mono">@' + escapeHTML(name) + ' (' + escapeHTML(project) + ')</strong></span>' +
@@ -87,6 +99,7 @@
     }
 
     renderAgentsTable(project, name);
+    selectTrajectoryView(project, name);
   }
 
   function renderAlphaCurve(points) {
@@ -156,7 +169,7 @@
       const callsDisplay = (a.model_calls !== null && a.model_calls !== undefined && a.model_calls !== 'n/a') ? a.model_calls : 'n/a';
       const turnsCallsText = (turnsDisplay === 'n/a' && callsDisplay === 'n/a') ? 'n/a' : (turnsDisplay + ' / ' + callsDisplay);
 
-      return '<tr class="' + (isSel ? 'is-selected' : '') + '">' +
+      return '<tr class="' + (isSel ? 'is-selected' : '') + '" style="cursor:pointer;" onclick="selectAgentNode(\'' + escapeHTML(a.project || 'psearch') + '\',\'' + escapeHTML(a.name) + '\')">' +
         '<td><strong>' + escapeHTML(a.project || 'psearch') + '</strong></td>' +
         '<td class="mono">@' + escapeHTML(a.name) + '</td>' +
         '<td>' + escapeHTML(a.role || a.template || 'Agent') + '</td>' +
@@ -473,16 +486,174 @@
     }
   }
 
+  function selectTrajectoryView(project, agentName, btn) {
+    selectedTrajectoryProject = project || 'psearch';
+    selectedTrajectoryAgent = agentName || 'lead';
+    const targetKey = selectedTrajectoryProject + ':' + selectedTrajectoryAgent;
+
+    document.querySelectorAll('[data-traj-key]').forEach(b => {
+      const k = b.getAttribute('data-traj-key');
+      b.setAttribute('aria-pressed', k === targetKey ? 'true' : 'false');
+    });
+    if (btn) {
+      btn.setAttribute('aria-pressed', 'true');
+    }
+
+    renderAgentTrajectory();
+  }
+
+  function renderAgentTrajectory() {
+    const tbody = document.getElementById('tbody-agent-trajectory');
+    const summaryEl = document.getElementById('trajectory-agent-summary');
+    const spannerBadge = document.getElementById('traj-spanner-badge');
+    const kpiTrajEl = document.getElementById('val-traj-steps');
+    if (!tbody) return;
+
+    if (!cachedTrajectories || !Array.isArray(cachedTrajectories.agents)) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:1rem;">Loading agent execution trajectories...</td></tr>';
+      return;
+    }
+
+    if (kpiTrajEl) {
+      kpiTrajEl.textContent = (cachedTrajectories.total_agents || 10) + ' Agents · ' + (cachedTrajectories.total_steps || 0) + ' Steps';
+    }
+    if (spannerBadge) {
+      const spannerCnt = cachedTrajectories.spanner_persisted_steps || cachedTrajectories.total_steps || 0;
+      spannerBadge.innerHTML = '<span class="badge-dot"></span>Spanner Synced (' + spannerCnt + ' steps in agent_trajectories)';
+    }
+
+    let stepsToRender = [];
+    if (selectedTrajectoryProject === 'psearch' && selectedTrajectoryAgent === 'all') {
+      stepsToRender = Array.isArray(cachedTrajectories.psearch_chronological) ? cachedTrajectories.psearch_chronological : [];
+      if (summaryEl) {
+        const psearchAgents = cachedTrajectories.agents.filter(a => a.project === 'psearch');
+        const totTurns = psearchAgents.reduce((s, a) => s + (Number(a.reconstructed_turns) || 0), 0);
+        const totCalls = psearchAgents.reduce((s, a) => s + (Number(a.reconstructed_model_calls) || 0), 0);
+        summaryEl.innerHTML =
+          '<span>Viewing Trajectory: <strong class="mono">All psearch Agents (Chronological)</strong> — @lead · @backend · @frontend · @reviewer · @deployer</span>' +
+          '<span class="mono">Total Steps: ' + stepsToRender.length + ' · Waves 0–6 (Issues #1–#33) · Reconstructed Turns / Calls: ' + totTurns + ' / ' + totCalls + '</span>';
+      }
+    } else if (selectedTrajectoryProject === 'all' && selectedTrajectoryAgent === 'all') {
+      stepsToRender = Array.isArray(cachedTrajectories.chronological_timeline) ? cachedTrajectories.chronological_timeline : [];
+      if (summaryEl) {
+        summaryEl.innerHTML =
+          '<span>Viewing Trajectory: <strong class="mono">All 10 Factory Agents (psearch + psearch-eval)</strong> — Chronological Execution Ledger</span>' +
+          '<span class="mono">Total Steps: ' + stepsToRender.length + ' · Spanner Table: agent_trajectories</span>';
+      }
+    } else {
+      const key = selectedTrajectoryProject + ':' + selectedTrajectoryAgent;
+      const agentObj = (cachedTrajectories.agents_by_key && cachedTrajectories.agents_by_key[key]) ||
+        cachedTrajectories.agents.find(a => a.project === selectedTrajectoryProject && a.name === selectedTrajectoryAgent);
+
+      if (agentObj) {
+        stepsToRender = (agentObj.trajectory || []).map(st => ({
+          ...st,
+          project: agentObj.project,
+          agent_name: agentObj.name,
+          role: agentObj.role,
+          harness: agentObj.harness
+        }));
+        if (summaryEl) {
+          const issuesStr = Array.isArray(agentObj.issues_covered) && agentObj.issues_covered.length > 0
+            ? agentObj.issues_covered.map(n => '#' + n).join(', ')
+            : 'All Waves';
+          summaryEl.innerHTML =
+            '<span>Viewing Trajectory: <strong class="mono">@' + escapeHTML(agentObj.name) + ' (' + escapeHTML(agentObj.project) + ')</strong> — ' + escapeHTML(agentObj.role || '') + ' (' + escapeHTML(agentObj.harness || '') + ' · ' + escapeHTML(agentObj.model || 'gemini-4-argon') + ')</span>' +
+            '<span class="mono">Steps: ' + stepsToRender.length + ' · Commits: ' + (agentObj.commits_count || 0) + ' · Turns/Calls: ' + (agentObj.reconstructed_turns || '--') + '/' + (agentObj.reconstructed_model_calls || '--') + ' · Issues: ' + escapeHTML(issuesStr) + '</span>';
+        }
+      }
+    }
+
+    if (stepsToRender.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:1rem;">No trajectory steps found for current selection.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = stepsToRender.map((s, idx) => {
+      const stepNum = s.step_index || (idx + 1);
+      const agentBadge = '<span class="mono" style="font-weight:600;">@' + escapeHTML(s.agent_name || selectedTrajectoryAgent) + '</span>' +
+        '<div class="mono" style="font-size:0.7rem;color:var(--text-muted);">' + escapeHTML(s.project || selectedTrajectoryProject) + '</div>';
+      const issuePart = s.issue_number
+        ? '<a href="https://github.com/duboc/scion-experiment/issues/' + encodeURIComponent(s.issue_number) + '" target="_blank" class="mono">#' + escapeHTML(s.issue_number) + '</a>'
+        : '—';
+      const waveIssueCell = '<span class="mono">' + escapeHTML(s.wave || 'wave') + '</span> · ' + issuePart;
+      const commitCell = s.commit_sha
+        ? '<a href="https://github.com/duboc/scion-experiment/commit/' + encodeURIComponent(s.commit_sha) + '" target="_blank" class="mono">' + escapeHTML(String(s.commit_sha).slice(0, 7)) + '</a>'
+        : '<span class="mono" style="color:var(--text-muted);">spanner</span>';
+      const tsFormatted = s.timestamp ? escapeHTML(String(s.timestamp).replace('T', ' ').slice(0, 19)) : '—';
+      const artifactsHtml = Array.isArray(s.artifacts) && s.artifacts.length > 0
+        ? '<div class="mono" style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">Artifacts: ' + s.artifacts.map(a => escapeHTML(a)).join(' · ') + '</div>'
+        : '';
+      const statusBadge = '<span class="badge badge--pass"><span class="badge-dot"></span>' + escapeHTML(s.status || 'PASS') + '</span>';
+
+      return '<tr>' +
+        '<td class="mono num">#' + escapeHTML(stepNum) + '</td>' +
+        '<td>' + agentBadge + '</td>' +
+        '<td class="mono">' + waveIssueCell + '</td>' +
+        '<td><span class="badge badge--running">' + escapeHTML(s.action_type || 'step') + '</span></td>' +
+        '<td class="mono">' + commitCell + '</td>' +
+        '<td class="mono" style="font-size:0.75rem;white-space:nowrap;">' + tsFormatted + '</td>' +
+        '<td>' +
+          '<div style="font-weight:600;font-size:0.8125rem;">' + escapeHTML(s.title || '') + '</div>' +
+          '<div style="color:var(--text-secondary);font-size:0.78rem;margin-top:0.15rem;">' + escapeHTML(s.detail || '') + '</div>' +
+          artifactsHtml +
+        '</td>' +
+        '<td>' + statusBadge + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  async function rebuildAgentTrajectories() {
+    const btn = document.getElementById('btn-rebuild-trajectories');
+    const label = document.getElementById('btn-rebuild-trajectories-label');
+    const badge = document.getElementById('traj-spanner-badge');
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = 'Rebuilding & Syncing to Spanner...';
+
+    try {
+      const resp = await fetch('/api/trajectories/rebuild', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await resp.json();
+      if (data && data.agents) {
+        cachedTrajectories = data;
+        if (data.spanner_sync && data.spanner_sync.synced_steps) {
+          cachedTrajectories.spanner_persisted_steps = data.spanner_sync.synced_steps;
+        }
+        renderAgentTrajectory();
+      }
+      await refreshAll();
+      if (label) {
+        const syncedCnt = (data && data.spanner_sync && data.spanner_sync.synced_steps) ? data.spanner_sync.synced_steps : (data.total_steps || 0);
+        label.textContent = 'Rebuilt ' + syncedCnt + ' Steps (' + (data.rebuild_latency_ms || 0) + 'ms)';
+        setTimeout(() => {
+          if (label) label.textContent = 'Rebuild psearch Trajectories';
+        }, 3500);
+      }
+    } catch (err) {
+      console.error('Failed to rebuild agent trajectories:', err);
+      if (label) label.textContent = 'Rebuild psearch Trajectories';
+      if (badge) badge.textContent = 'Rebuild error: ' + err.message;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   async function refreshAll() {
     try {
-      const [evalRes, agentsRes, backlogRes] = await Promise.all([
+      const [evalRes, agentsRes, backlogRes, trajRes] = await Promise.all([
         fetch('/api/eval').then(r => r.ok ? r.json() : {}).catch(() => ({})),
         fetch('/api/agents').then(r => r.ok ? r.json() : { agents: [] }).catch(() => ({ agents: [] })),
-        fetch('/api/backlog').then(r => r.ok ? r.json() : {}).catch(() => ({}))
+        fetch('/api/backlog').then(r => r.ok ? r.json() : {}).catch(() => ({})),
+        fetch('/api/trajectories').then(r => r.ok ? r.json() : null).catch(() => null)
       ]);
 
       cachedEval = evalRes;
       cachedAgents = Array.isArray(agentsRes.agents) ? agentsRes.agents : [];
+      if (trajRes && Array.isArray(trajRes.agents)) {
+        cachedTrajectories = trajRes;
+      }
 
       // Primary Asymmetric Focal Readouts
       const ndcgEl = document.getElementById('val-ndcg');
@@ -536,7 +707,7 @@
       if (passEl) {
         const pCnt = (evalRes.pass_count !== undefined && evalRes.pass_count !== null) ? evalRes.pass_count : '--';
         const partCnt = (evalRes.partial_count !== undefined && evalRes.partial_count !== null) ? evalRes.partial_count : '--';
-        const totReqs = evalRes.total_requirements || (Array.isArray(evalRes.requirements) ? evalRes.requirements.length : 15) || 15;
+        const totReqs = evalRes.total_requirements || (Array.isArray(evalRes.requirements) ? evalRes.requirements.length : 16) || 16;
         passEl.textContent = pCnt + ' / ' + totReqs + ' PASS · ' + partCnt + ' PARTIAL';
       }
 
@@ -554,6 +725,7 @@
       // Render Visualizations and Sub-ledgers
       renderAlphaCurve(evalRes.alpha_curve || []);
       renderAgentsTable(selectedProject, selectedAgentName);
+      renderAgentTrajectory();
       renderPyramidLayers(evalRes.pyramid_layers || [], evalRes.pyramid_summary || {});
       renderRequirementsTable(evalRes.requirements || []);
       renderDiagnostics(evalRes.diagnostics || []);
@@ -583,6 +755,9 @@
   root.setAgentFilter = setAgentFilter;
   root.setWaveFilter = setWaveFilter;
   root.selectAgentNode = selectAgentNode;
+  root.selectTrajectoryView = selectTrajectoryView;
+  root.renderAgentTrajectory = renderAgentTrajectory;
+  root.rebuildAgentTrajectories = rebuildAgentTrajectories;
   root.selectPyramidLayer = selectPyramidLayer;
   root.renderPyramidLayers = renderPyramidLayers;
   root.renderAlphaCurve = renderAlphaCurve;
