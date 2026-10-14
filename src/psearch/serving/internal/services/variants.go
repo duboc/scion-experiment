@@ -43,9 +43,14 @@ type variantRow struct {
 	Available bool   `spanner:"available"`
 }
 
-func toVariants(rows []variantRow) []models.Variant {
+// toVariants converts decoded ARRAY<STRUCT> rows. The Spanner client only decodes
+// ARRAY<STRUCT> into a slice of struct POINTERS (rollout finding on #32).
+func toVariants(rows []*variantRow) []models.Variant {
 	out := make([]models.Variant, 0, len(rows))
 	for _, r := range rows {
+		if r == nil {
+			continue
+		}
 		out = append(out, models.Variant{SKUID: r.SKUID, Color: r.Color, Size: r.Size, Stock: r.Stock, Available: r.Available})
 	}
 	return out

@@ -550,7 +550,7 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		var stock spanner.NullInt64
 		var boostScore, ruleMult float64
 		var effPrice spanner.NullFloat64
-		var variants []variantRow
+		var variants []*variantRow
 		if err := row.Columns(&rrfScore, &vecScore, &txtScore, &productID, &title, &productDataJSON, &isAvailable, &stock, &boostScore, &ruleMult, &effPrice, &variants); err != nil {
 			return nil, err
 		}
@@ -886,7 +886,7 @@ func (s *SpannerService) spannerBrowse(ctx context.Context, limit int, filters m
 		var stock spanner.NullInt64
 		var effPrice spanner.NullFloat64
 		var boost float64
-		var variants []variantRow
+		var variants []*variantRow
 		if err := row.Columns(&productID, &title, &productDataJSON, &isAvailable, &stock, &effPrice, &boost, &variants); err != nil {
 			return nil, err
 		}

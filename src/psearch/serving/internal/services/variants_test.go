@@ -1,6 +1,7 @@
 package services
 
 import (
+	"cloud.google.com/go/spanner"
 	"context"
 	"strings"
 	"testing"
@@ -98,5 +99,27 @@ func TestVariantSQL(t *testing.T) {
 	}
 	if !strings.Contains(browseSQL(), "s.product_id = products.product_id") {
 		t.Error("browse SQL must aggregate variants")
+	}
+}
+
+// #32 rollout regression: decode a real Spanner ARRAY<STRUCT> column into the
+// type used by spannerHybridSearch/spannerBrowse (memory-mode tests never decode rows).
+func TestVariantRowsDecodeFromSpannerArrayOfStruct(t *testing.T) {
+	in := []*variantRow{{SKUID: "prod-001-std", Color: "azul", Size: "42", Stock: 3, Available: true}, nil}
+	row, err := spanner.NewRow([]string{"variants"}, []interface{}{in})
+	if err != nil {
+		t.Fatalf("NewRow: %v", err)
+	}
+	var got []*variantRow
+	if err := row.Columns(&got); err != nil {
+		t.Fatalf("decode ARRAY<STRUCT> into []*variantRow: %v", err)
+	}
+	vs := toVariants(got)
+	if len(vs) != 1 || vs[0].SKUID != "prod-001-std" || vs[0].Color != "azul" || !vs[0].Available {
+		t.Fatalf("decoded variants = %+v", vs)
+	}
+	var wrong []variantRow
+	if err := row.Columns(&wrong); err == nil {
+		t.Log("note: this client version also decodes into []variantRow")
 	}
 }
