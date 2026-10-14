@@ -294,3 +294,9 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
 
 ### #33 UI + ADR-010 (0af06f1, f54277c)
 - **Status:** PASS (reviewer, private worktree `/tmp/rev-33ui`): `go vet` / `go test -race` PASS incl. `TestStorefrontInlineJSParses`, `TestStorefrontPhotoSearch`; independent node --check exits 0; storefront Photo button + hidden jpeg/png/webp input, canvas resize to ≤512 px JPEG, POST `/api/search` with `image_base64` + active filters, alpha only when the slider moved, clear / Show All drop the photo, browse `limit=100` guarded; no innerHTML with user data, no URL fetching. React: Photo button, preview, remove; payload adds `image_base64` / `image_mime_type` and drops alpha; refetch when only the photo changes; `npm run build` PASS (pre-existing eslint warnings only). ADR-010 matches code. Issues: none.
+
+## #34 Clickable facets (21cfaa9)
+- **Date:** 2026-10-14
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), private worktree `/tmp/rev-21cfaa9` (removed)
+- **Status:** PASS
+- **Checks:** `go vet` / `go test -race` PASS incl. `TestStorefrontInlineJSParses`, `TestStorefrontClickableFacets`; independent node --check exits 0; jsdom end-to-end against a local memory-mode server: ALL PASS. Clicking a Department / Brand / Price facet re-runs the same query with `category` / `brand` / `min_price`+`max_price`; Color / Size sync the selects; `IN_STOCK` toggles `only_in_stock`, `OUT_OF_STOCK` is not clickable; `.facet-active` + `aria-pressed`, Enter/Space; removable chips; new query text and Show All reset facet filters; photo queries forward the facet filters; facets rendered with createElement/textContent only. No real IDs/URLs/tokens. Issues: none.
