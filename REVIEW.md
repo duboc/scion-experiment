@@ -267,3 +267,9 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
 - **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), private worktree `/tmp/rev-0fa411e` (removed after review)
 - **Status:** PASS
 - **Checks:** (1) every path, route, `/api/search` parameter, response field, env var and default in README.md, PRODUCT.md, DESIGN.md, DEPLOYMENT.md, REVIEW.md and knowledge-plane/INDEX.md matches `src/psearch/serving`; `go vet` / `go test -race` PASS; (2) model IDs (`gemini-3.8-flash`, `gemini-4-argon`, `gemini-embedding-2` 1024-d, `global`) and live revision `psearch-serving-00025-5mx` consistent; (3) migrations 011–021 accurate; (4) no real project IDs, project numbers, emails, Cloud Run URLs or secrets; (5) all 44 internal links/anchors resolve; (6) requirements 4.1.1–4.1.14 consistent with ADR-001–ADR-008. Inaccuracies found: none.
+
+## #30 Storefront fix, catalog browse and README (d0ef229, 82c1ad9)
+- **Date:** 2026-10-14
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), private worktree `/tmp/rev-30` (removed)
+- **Status:** PASS
+- **Checks:** `go vet` / `go test -race` PASS incl. `TestStorefrontInlineJSParses` (node --check of the inline storefront script), `TestStorefrontShowAllCatalog`, `TestCatalogBrowse`, `TestBrowseSQL`; independent node --check of the extracted script exits 0; missing brace restored, empty initial query, "Show All Catalog"; empty/`*` queries use Spanner `catalog_browse` (all catalog filters, bound params, optimizer hint, availability first) and skip zero-results recovery; sqlcheck browse cases; README has all 14 sections with accurate paths, routes, parameters and Gen AI endpoints; no real IDs/URLs/emails/tokens. Issues found: none.
