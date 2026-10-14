@@ -211,8 +211,8 @@ def save_state(state):
     os.replace(tmp, WATCHDOG_STATE)
 
 
-OLD_HOOK = '"| sciontool hook --dialect=antigravity"'
-NEW_HOOK = '"| SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity"'
+OLD_DISABLED_HOOK = '"| SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity"'
+CLEAN_HOOK = '"| sciontool hook --dialect=antigravity"'
 
 
 def patch_provisioner_file(path):
@@ -220,13 +220,11 @@ def patch_provisioner_file(path):
         return False
     with open(path, "r", encoding="utf-8") as f:
         src = f.read()
-    if NEW_HOOK in src:
-        return True
-    if OLD_HOOK in src:
+    if OLD_DISABLED_HOOK in src:
         bak = f"{path}.bak-{datetime.date.today():%Y%m%d}"
         if not os.path.exists(bak):
             shutil.copy2(path, bak)
-        new_src = src.replace(OLD_HOOK, NEW_HOOK)
+        new_src = src.replace(OLD_DISABLED_HOOK, CLEAN_HOOK)
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix="." + os.path.basename(path) + ".")
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(new_src)
@@ -247,13 +245,13 @@ def check_antigravity_drift(apply):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
-            if "SCION_TELEMETRY_ENABLED=false" not in content:
+            if "Gemini 4 Argon (High)" not in content or "SCION_TELEMETRY_ENABLED=false" in content:
                 drifted.append(path)
         except Exception as e:
             print(f"WARNING: could not read {path}: {e}", file=sys.stderr)
 
     if not drifted:
-        print("Check 1 (Antigravity provisioner): OK (no drift)")
+        print("Check 1 (Antigravity provisioner): OK (no drift, Argon and clean telemetry hooks active)")
         return True
 
     print(f"Check 1 (Antigravity provisioner): DRIFT DETECTED in {len(drifted)} file(s)")

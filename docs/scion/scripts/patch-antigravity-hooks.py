@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-"""Make Antigravity's Scion hooks run with telemetry off. Runs ON the Hub VM, as the Hub's OS user.
+"""Ensure Antigravity hooks run cleanly with telemetry enabled and Gemini 4 Argon. Runs ON the Hub VM, as the Hub's OS user.
 
-Why (lessons-learned.md L6): with Hub telemetry and cloud export enabled, `sciontool hook --dialect=antigravity`
-prints its decision but doesn't exit. Antigravity (`agy`) kills the hook after its 10 s timeout and aborts the
-tool call, so the agent can't run any tool. The Hub injects SCION_TELEMETRY_ENABLED=true into every agent and that
-wins over template settings, so the fix has to be in the hook command itself:
-
-    ... | SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity
+Telemetry was previously turned off in hooks because sciontool init (PID 1) had lacked SCION_GCP_PROJECT_ID,
+causing the local OTLP receiver on 127.0.0.1:4317 to fail starting. Now that the pipeline starts properly and
+listens on :4317/:4318, hooks flush immediately to loopback and exit without hanging.
 
 Places checked and patched:
   1. All provision.py locations under ~/.scion:
@@ -57,8 +54,7 @@ HOOK_FILES_PATTERN = os.path.join(SCION_HOME, "projects", "*", ".agents", "hooks
 AGENT_HOMES_PATTERN = os.path.join(SCION_HOME, "project-configs", "*", ".scion", "agents", "*", "home")
 
 OLD = '"| sciontool hook --dialect=antigravity"'
-NEW = '"| SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity"'
-FIXED = "SCION_TELEMETRY_ENABLED=false sciontool hook"
+DISABLED_HOOK = '"| SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity"'
 
 ARGON_MODEL = "Gemini 4 Argon (High)"
 OLD_FLASH = 'FLASH_MODEL = "Gemini 3.8 Flash (Medium)"'
@@ -69,7 +65,8 @@ NEW_PRO = f'PRO_MODEL = "{ARGON_MODEL}"'
 CUSTOM_HOOK_SCRIPT = """#!/bin/sh
 f=/workspace/.agents/hooks.json
 if [ -f "$f" ]; then
-  sed -i 's/| sciontool hook --dialect=antigravity/| SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity/g' "$f"
+  sed -i 's/| SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity/| sciontool hook --dialect=antigravity/g' "$f"
+  sed -i 's/SCION_TELEMETRY_ENABLED=false //g' "$f"
 fi
 
 # Ensure settings.json has Gemini 4 Argon (High) and location: global
@@ -119,8 +116,12 @@ def check_or_patch_provisioner(path, apply):
     new_src = src
     needs_patch = False
 
-    if OLD in new_src:
-        new_src = new_src.replace(OLD, NEW)
+    # Remove SCION_TELEMETRY_ENABLED=false so sciontool hook flushes telemetry to loopback
+    if "SCION_TELEMETRY_ENABLED=false sciontool hook" in new_src:
+        new_src = new_src.replace("SCION_TELEMETRY_ENABLED=false sciontool hook", "sciontool hook")
+        needs_patch = True
+    if "SCION_TELEMETRY_ENABLED=false " in new_src:
+        new_src = new_src.replace("SCION_TELEMETRY_ENABLED=false ", "")
         needs_patch = True
 
     is_antigravity = "antigravity" in path or "FLASH_MODEL" in new_src or "agy" in new_src
@@ -172,7 +173,7 @@ def hook_commands(data):
     for entries in data.get("scion-hooks", {}).values():
         for entry in entries:
             for hook in entry.get("hooks", [entry]):
-                if "| sciontool hook" in hook.get("command", ""):
+                if "| sciontool hook" in hook.get("command", "") or "SCION_TELEMETRY_ENABLED=false" in hook.get("command", ""):
                     yield hook
 
 
@@ -180,16 +181,17 @@ def check_or_patch_hooks_file(path, apply):
     if not os.path.exists(path):
         return f"{path}: not found"
     data = json.load(open(path))
-    pending = [h for h in hook_commands(data) if FIXED not in h["command"]]
+    pending = [h for h in hook_commands(data) if "SCION_TELEMETRY_ENABLED=false" in h.get("command", "")]
     if not pending:
-        return f"{path}: patched"
+        return f"{path}: patched (telemetry enabled)"
     if not apply:
-        return f"{path}: NOT patched ({len(pending)} commands)"
+        return f"{path}: NOT patched ({len(pending)} commands have telemetry disabled)"
     bak = backup(path)
     for hook in pending:
-        hook["command"] = hook["command"].replace("| sciontool hook", "| " + FIXED)
+        hook["command"] = hook["command"].replace("SCION_TELEMETRY_ENABLED=false sciontool hook", "sciontool hook")
+        hook["command"] = hook["command"].replace("SCION_TELEMETRY_ENABLED=false ", "")
     atomic_write(path, json.dumps(data, indent=2) + "\n")
-    return f"{path}: patched {len(pending)} commands now (backup {bak})"
+    return f"{path}: re-enabled telemetry in {len(pending)} commands now (backup {bak})"
 
 
 def check_or_stage_pre_start_hook(home_path, apply):
@@ -247,8 +249,8 @@ def check_or_stage_pre_start_hook(home_path, apply):
         try:
             content = open(hook_path, "r", encoding="utf-8").read()
             is_exec = (os.stat(hook_path).st_mode & 0o700) == 0o700
-            if "SCION_TELEMETRY_ENABLED=false" in content and is_exec:
-                res.append(f"{hook_path}: patched")
+            if "SCION_TELEMETRY_ENABLED=false sciontool hook" not in content and is_exec and "Gemini 4 Argon" in content:
+                res.append(f"{hook_path}: patched (telemetry enabled, Argon verified)")
                 return "\n".join(res)
         except Exception:
             pass
@@ -338,13 +340,13 @@ def ensure_project_pre_start_hooks(apply):
             (pid,),
         ).fetchone()
 
-        is_ok = row and row["status"] == "active" and "SCION_TELEMETRY_ENABLED=false" in (row["script"] or "")
+        is_ok = row and row["status"] == "active" and "SCION_TELEMETRY_ENABLED=false sciontool hook" not in (row["script"] or "") and "Gemini 4 Argon" in (row["script"] or "")
         if is_ok:
-            lines.append(f"project {pslug}: hook agy-telemetry-off active")
+            lines.append(f"project {pslug}: hook agy-telemetry-off active (clean telemetry & Argon)")
             continue
 
         if not apply:
-            lines.append(f"project {pslug}: hook agy-telemetry-off NOT active")
+            lines.append(f"project {pslug}: hook agy-telemetry-off NOT clean")
             continue
 
         # Apply via Hub API
@@ -357,19 +359,20 @@ def ensure_project_pre_start_hooks(apply):
             hook_id = matching["id"]
             api("PUT", f"/api/v1/projects/{pid}/pre-start-hooks/{hook_id}", {
                 "script": CUSTOM_HOOK_SCRIPT,
+                "description": "Ensure Gemini 4 Argon and clean telemetry hooks",
             })
         else:
             status, created = api("POST", f"/api/v1/projects/{pid}/pre-start-hooks", {
                 "name": "agy-telemetry-off",
                 "slug": "agy-telemetry-off",
-                "description": "Disable telemetry in antigravity hooks",
+                "description": "Ensure Gemini 4 Argon and clean telemetry hooks",
                 "script": CUSTOM_HOOK_SCRIPT,
             })
             hook_id = created.get("id")
 
         if hook_id:
             api("POST", f"/api/v1/projects/{pid}/pre-start-hooks/{hook_id}/activate")
-            lines.append(f"project {pslug}: hook agy-telemetry-off created/activated now")
+            lines.append(f"project {pslug}: hook agy-telemetry-off updated/activated now")
         else:
             lines.append(f"project {pslug}: hook agy-telemetry-off UNEXPECTED failed to create")
 

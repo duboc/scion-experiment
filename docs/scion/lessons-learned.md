@@ -10,7 +10,7 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
 | [L3](#l3-opencode-picked-models-that-dont-exist) | OpenCode picked models that don't exist | harness |
 | [L4](#l4-a-printed-verdict-deadlocked-the-factory-for-about-60-hours) | A printed verdict deadlocked the factory for ~60 hours | protocol |
 | [L5](#l5-leads-looked-stalled-and-nothing-woke-them) | Leads looked stalled and nothing woke them | protocol |
-| [L6](#l6-antigravity-couldnt-run-any-tool-telemetry-hook-hang) | Antigravity couldn't run any tool (telemetry hook hang) | harness |
+| [L6](#l6-antigravity-couldnt-run-any-tool-telemetry-hook-hang--and-its-phase-j-resolution) | Antigravity couldn't run any tool (telemetry hook hang) — resolved in Phase J | harness |
 | [L7](#l7-the-default-compute-service-account-is-not-a-runtime-identity) | The default compute SA is not a runtime identity | GCP |
 | [L8](#l8-workspaces-shared-folder-today-worktrees-later) | Workspaces: shared folder today, worktrees later | Scion |
 | [L9](#l9-agents-fabricated-telemetry-and-claimed-storage-that-didnt-exist) | Agents fabricated telemetry and claimed storage that didn't exist | protocol |
@@ -102,24 +102,37 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
   [setup-runbook.md](setup-runbook.md#9-heartbeats), "End every turn with a status" in
   [`_shared/agents.md`](templates/_shared/agents.md).
 
-## L6. Antigravity couldn't run any tool (telemetry hook hang)
+## L6. Antigravity couldn't run any tool (telemetry hook hang) — and its Phase J resolution
 
-- **When:** 2026-10-12 12:17Z (fixed 12:31Z, durable fix 12:38Z).
+- **When:** 2026-10-12 12:17Z (initial workaround 12:31Z, durable workaround 12:38Z; definitively resolved in Phase J on 2026-10-14).
 - **Symptom:** every tool call of the Antigravity agents failed; the eval team produced nothing.
-- **Cause:** with Hub telemetry and cloud export on, `sciontool hook --dialect=antigravity` prints `{"decision":"allow"}`
-  but doesn't exit (it waits on the export to `monitoring.googleapis.com`). Antigravity kills hooks after 10 seconds and
-  aborts the tool call. Reproduced: more than 15 s with telemetry on, under 1 s with `SCION_TELEMETRY_ENABLED=false`;
-  `OTEL_SDK_DISABLED=true` didn't help. Template settings can't fix it: the Hub injects `SCION_TELEMETRY_ENABLED=true`
-  into every agent and that wins (all 10 agents ran with it, including those whose template disabled telemetry).
-- **Fix:** run the hook with telemetry off: `... | SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity`.
-  To ensure durability across agent starts and container recreations:
-  1. The Hub executes project pre-start hooks registered in `project_pre_start_hooks` (`agy-telemetry-off`).
-  2. Each agent container's `<agent-home>/.scion/hooks/pre-start.d/30-project-custom` executes before the harness starts,
-     re-applying the hook patch inside `/workspace/.agents/hooks.json`.
-  3. The provisioner scripts in `~/.scion/workspace-storage/hubs/<hub-id>/harness-configs/global/antigravity/provision.py`
-     and `<agent-home>/.scion/harness/provision.py` are patched.
-- **Encoded in:** [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py). The proper fix is upstream:
-  `sciontool hook` must never block (see the [v2 design](specs/factory-orchestration-v2-design.md), follow-ups).
+- **Initial Diagnosis & Temporary Workaround:** with Hub telemetry and cloud export on, `sciontool hook --dialect=antigravity` printed `{"decision":"allow"}`
+  but did not exit (it waited on cloud export to `monitoring.googleapis.com`). Antigravity kills hooks after 10 seconds and
+  aborts the tool call. As a temporary workaround, telemetry was turned off in the hook command:
+  `... | SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity`.
+- **Root Cause (diagnosed in Phase J):** The container entrypoint (`sciontool init`, PID 1) was failing to bind the local OpenTelemetry
+  receiver on ports `127.0.0.1:4317` (gRPC) and `127.0.0.1:4318` (HTTP) because `SCION_GCP_PROJECT_ID` (and GCP credentials) were missing
+  from the container runtime environment. Because no background OTLP collector was listening inside the container, short-lived `sciontool hook`
+  processes had nowhere to flush locally, attempting synchronous cloud export directly on each hook invocation and hanging when network or credentials were unconfigured.
+- **Definitive Fix (Phase J End-to-End Telemetry):**
+  1. **Telemetry Infrastructure & Credentials:** [`scripts/setup-telemetry.sh`](scripts/setup-telemetry.sh) enabled GCP Cloud Logging, Cloud Monitoring,
+     and Cloud Trace APIs, provisioned the `scion-telemetry-writer` service account with required IAM roles, and deployed credentials to `~/.scion/telemetry-gcp-credentials.json`
+     on the Hub VM and container homes.
+  2. **Sciontool Wrapper:** [`scripts/patch-sciontool-telemetry.sh`](scripts/patch-sciontool-telemetry.sh) moved the real binary to `/usr/local/bin/sciontool.real`
+     and installed an executable wrapper `/usr/local/bin/sciontool` across all 10 running containers and base container images (`scion-antigravity`,
+     `scion-claude`, `scion-opencode`, `scion-hermes`). The wrapper exports `SCION_GCP_PROJECT_ID`, `SCION_OTEL_GCP_CREDENTIALS`, `SCION_TELEMETRY_ENABLED=true`,
+     `SCION_TELEMETRY_CLOUD_PROVIDER=gcp`, and `SCION_USAGE_SOURCE=native` before executing `sciontool.real`.
+  3. **Verified Listening Ports & Clean Hook Execution:** On restart, PID 1 successfully initializes the GCP-native cloud exporter and starts the telemetry
+     pipeline listening on `127.0.0.1:4317` (gRPC) and `127.0.0.1:4318` (HTTP). Short-lived `sciontool hook` invocations flush immediately to loopback and
+     exit in <0.3s.
+  4. **Clean Hooks Restored:** [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py) and [`scripts/factory-watchdog.py`](scripts/factory-watchdog.py)
+     were updated to restore clean `sciontool hook --dialect=antigravity` calls in all `provision.py`, `.agents/hooks.json`, pre-start scripts, and Hub DB project hooks,
+     with telemetry enabled and Gemini 4 Argon preserved.
+  5. **Verified End-to-End Flow:** All 10 agent containers report `scion.telemetry.pipeline.status=1` in Google Cloud Monitoring, container and server logs flow to
+     `projects/<id>/logs/scion-agents` and `projects/<id>/logs/scion-server` in Cloud Logging, traces flow to Cloud Trace, and the Hub metrics dashboard API
+     (`GET /api/v1/metrics/dashboard`) serves metrics at HTTP 200.
+- **Encoded in:** [`scripts/setup-telemetry.sh`](scripts/setup-telemetry.sh), [`scripts/patch-sciontool-telemetry.sh`](scripts/patch-sciontool-telemetry.sh),
+  [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py), and [`scripts/factory-watchdog.py`](scripts/factory-watchdog.py).
 
 ## L7. The default compute service account is not a runtime identity
 

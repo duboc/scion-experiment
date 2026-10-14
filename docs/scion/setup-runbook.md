@@ -169,17 +169,28 @@ scion project service-accounts list          # note the ID; `verify <id>` re-che
 
 **Check:** `scion project service-accounts list` shows the SA as verified in both projects. Inside each project folder, `git status -sb` tracks its respective branch, and `git merge-base "origin/$BUILD_BRANCH" "origin/$EVAL_BRANCH"` exits with code 1 (proving independent orphan trunks with no shared ancestry).
 
-## 7. Patch the Antigravity hooks (before any Antigravity agent starts)
+## 7. Telemetry & Harness Hooks (before agents start)
+
+Configure end-to-end OpenTelemetry (Cloud Logging, Cloud Monitoring, Cloud Trace) and ensure harness hooks run cleanly with sub-second latency (L6):
 
 ```bash
+# 1. Provision GCP telemetry infrastructure, IAM roles, service account keys, and Hub config
+DRY_RUN=1 scripts/setup-telemetry.sh
+scripts/setup-telemetry.sh
+
+# 2. Patch sciontool binary wrapper across containers and base images
+scripts/patch-sciontool-telemetry.sh
+
+# 3. Configure Antigravity provisioners and hooks for clean telemetry and Gemini 4 Argon
 scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py --apply
 scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py          # check
 ```
 
-Without this, Antigravity agents can't run any tool while Hub telemetry is on (L6).
-The `--apply` command patches all `provision.py` files (under `harness-configs`, `workspace-storage`, and agent homes), all `hooks.json` files, stages an executable pre-start hook `30-project-custom` across all agent homes, and creates/activates `agy-telemetry-off` in `project_pre_start_hooks` in the Hub database via the API, ensuring hooks stay patched across container starts and upgrades (C1).
+- `scripts/setup-telemetry.sh` enables `cloudtrace`, `monitoring`, and `logging` APIs, provisions `scion-telemetry-writer` service account credentials, assigns Hub VM SA telemetry viewer/writer roles, and configures `~/.scion/hub.env` and `~/.scion/settings.yaml`.
+- `scripts/patch-sciontool-telemetry.sh` inserts `/usr/local/bin/sciontool` wrapper delegating to `sciontool.real` with GCP project credentials, allowing PID 1 to bind loopback OTLP ports `127.0.0.1:4317` (gRPC) and `127.0.0.1:4318` (HTTP).
+- `scripts/patch-antigravity-hooks.py --apply` patches all `provision.py` files, `.agents/hooks.json` copies, stages `30-project-custom` across agent homes, and ensures clean `sciontool hook --dialect=antigravity` calls and Gemini 4 Argon model configurations.
 
-**Check:** the check run prints `provision.py: patched`, `30-project-custom: patched`, `project <slug>: hook agy-telemetry-off active`, and exits 0.
+**Check:** `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py` exits 0 with `no drift`, all containers listen on port 4317 (`sudo docker exec <container> ss -tlnp`), and `curl -s http://localhost:8080/api/v1/metrics/dashboard` returns HTTP 200.
 
 ## 8. Templates and agents
 

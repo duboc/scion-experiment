@@ -190,6 +190,24 @@ def cmd_experiments(args):
     print(f"HTTP {status} {name} enabled={enabled} (users see it after reloading the page)")
 
 
+def cmd_metrics(args):
+    path = "/api/v1/metrics/dashboard"
+    if args.project:
+        pid = project_id(args.project)
+        path = f"/api/v1/projects/{pid}/metrics/dashboard"
+    status, body = api("GET", path)
+    if args.json:
+        print(json.dumps(body, indent=2))
+    else:
+        print(f"Metrics Dashboard (HTTP {status})")
+        overview = body.get("overview", {})
+        print("Overview:", json.dumps(overview, indent=2))
+        charts = body.get("charts", [])
+        print(f"Charts count: {len(charts)}")
+        for c in charts:
+            print(f"  - {c.get('id')}: {c.get('title')} ({len(c.get('series', []))} series)")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -222,6 +240,11 @@ def main():
     exp = sub.add_parser("experiments", help="show or override hub experiments (feature flags)")
     exp.add_argument("--set", metavar="NAME=true|false|default")
     exp.set_defaults(func=cmd_experiments)
+
+    met = sub.add_parser("metrics", help="query Hub metrics dashboard")
+    met.add_argument("--project", help="project slug (optional)")
+    met.add_argument("--json", action="store_true", help="output full raw JSON")
+    met.set_defaults(func=cmd_metrics)
 
     args = parser.parse_args()
     args.func(args)

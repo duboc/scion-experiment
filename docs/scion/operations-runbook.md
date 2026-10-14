@@ -80,13 +80,17 @@ Each runbook below has: **Trigger**, **Diagnose**, **Act**, **Check**, **Escalat
 ## Antigravity tool calls fail
 
 - **Trigger:** Antigravity agents report "hook timed out" or abort every tool call; nothing gets written (L6).
-- **Diagnose:** `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py` (check mode). Container pre-start hooks
-  (`30-project-custom`) and Hub database hooks (`project_pre_start_hooks: agy-telemetry-off`) protect workspaces on
-  container starts, but check that all paths and database entries are active (C1).
-- **Act:** `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py --apply`. This idempotently patches all
-  `provision.py` files, `hooks.json` copies, stages `30-project-custom` in all agent homes, and ensures `agy-telemetry-off`
-  is active in the Hub database.
-- **Check:** the check mode exits 0, and the agent's next tool call succeeds (watch its pane).
+- **Diagnose:** `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py` (check mode). Check whether the container's
+  loopback OTLP ports `127.0.0.1:4317` (gRPC) and `127.0.0.1:4318` (HTTP) are listening under PID 1:
+  `gcloud compute ssh "$HUB_VM" --command="sudo docker exec <container> ss -tlnp"`. If ports 4317/4318 are closed,
+  short-lived `sciontool hook` invocations attempt synchronous remote export and timeout after 10 seconds.
+- **Act:**
+  1. If ports 4317/4318 are closed, run `scripts/patch-sciontool-telemetry.sh` to ensure `/usr/local/bin/sciontool` wrapper
+     is installed and restart the agent container.
+  2. Run `scripts/run-on-hub.sh scripts/patch-antigravity-hooks.py --apply`. This idempotently patches all `provision.py`
+     files, `hooks.json` copies, stages `30-project-custom` in all agent homes, and ensures clean telemetry hooks and
+     Gemini 4 Argon model settings are active.
+- **Check:** the check mode exits 0, port 4317 is listening inside the container, and hook invocations exit in <0.3s.
 
 ## OpenCode gets 404s from the model
 
@@ -203,6 +207,79 @@ It performs four automatic recovery and alerting functions:
 
 Logs: `~/.scion/watchdog.log` and `~/.scion/watchdog-state.json` on the Hub VM.
 Manual check: `scripts/run-on-hub.sh scripts/factory-watchdog.py`
+
+## Telemetry & Cloud Observability Operations
+
+Scion publishes OpenTelemetry spans, metrics, and logs to Google Cloud Observability (Cloud Logging, Cloud Monitoring, Cloud Trace) as well as the Hub Metrics Dashboard API.
+
+### 1. Hub Metrics Dashboard API
+
+Query high-level aggregated metrics across all projects or scoped to a single project:
+
+```bash
+# Global overview & chart definitions
+scripts/run-on-hub.sh scripts/scion-admin.py metrics
+
+# Scoped to project with JSON output
+scripts/run-on-hub.sh scripts/scion-admin.py metrics --project psearch --json
+```
+
+Direct HTTP API check from Hub VM:
+```bash
+curl -s http://localhost:8080/api/v1/metrics/dashboard | jq .
+curl -s http://localhost:8080/api/v1/projects/<project_id>/metrics/dashboard | jq .
+```
+
+### 2. Google Cloud Monitoring (Agent Pipeline Status)
+
+Each agent container runs a background telemetry pipeline reporting health to `workload.googleapis.com/scion.telemetry.pipeline.status` (value `1` = running):
+
+```bash
+# Query active reporting agents across both projects (last 1 hour)
+curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  "https://monitoring.googleapis.com/v3/projects/$HUB_PROJECT/timeSeries?filter=metric.type=%22workload.googleapis.com/scion.telemetry.pipeline.status%22&interval.startTime=$(date -u -v-1H +%Y-%m-%dT%H:%M:%SZ)&interval.endTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  | jq '[.timeSeries[] | {agent: .metric.labels.scion_agent_slug, status: .points[0].value.int64Value, time: .points[0].interval.endTime}]'
+```
+
+Other registered Scion metrics in Cloud Monitoring:
+- `workload.googleapis.com/agent.tool.calls`: cumulative tool invocations by agent and tool name.
+- `workload.googleapis.com/gen_ai.api.calls`: cumulative LLM API calls by harness and model.
+- `workload.googleapis.com/scion.usage.tokens`: prompt, candidate, and cached tokens by token type.
+- `workload.googleapis.com/scion.telemetry.export.errors`: telemetry export failures by signal type.
+
+### 3. Google Cloud Logging
+
+View live streaming agent and server logs in Google Cloud Logging:
+
+```bash
+# View last 20 log entries across server and agents
+gcloud logging read 'logName="projects/'"$HUB_PROJECT"'/logs/scion-agents" OR logName="projects/'"$HUB_PROJECT"'/logs/scion-server"' \
+  --limit=20 --project="$HUB_PROJECT" --format="table(timestamp,logName,severity,textPayload,jsonPayload.message)"
+```
+
+### 4. Google Cloud Trace
+
+Inspect distributed traces from agent hooks and HTTP requests:
+
+```bash
+curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  "https://cloudtrace.googleapis.com/v1/projects/$HUB_PROJECT/traces?pageSize=10" | jq .
+```
+
+### 5. Verifying Container Loopback Telemetry Ports
+
+Each container must have `sciontool` PID 1 listening on ports 4317 (gRPC) and 4318 (HTTP):
+
+```bash
+# Check ports inside container
+gcloud compute ssh "$HUB_VM" --command="sudo docker exec psearch--lead ss -tlnp"
+# Expected: LISTEN on 127.0.0.1:4317 and 127.0.0.1:4318 under sciontool
+
+# Inspect container delivery snapshot
+gcloud compute ssh "$HUB_VM" --command="sudo docker logs --tail 30 psearch--frontend | grep 'Telemetry delivery snapshot'"
+```
+
+If ports are missing, run `scripts/patch-sciontool-telemetry.sh` and restart the container.
 
 ## Change the heartbeat text or cadence
 
