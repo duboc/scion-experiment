@@ -210,3 +210,28 @@
 
 ## #20 UI (299f7ec)
 - **Status:** PASS (reviewer, read-only worktree): npm run build PASS (pre-existing eslint warnings only), go build PASS; session panel, personas, click/purchase tracking and personalized badges present; storefront uses textContent.
+
+## Comprehensive Gemini 4 Argon Audit — Closed PRs (#12–#17, #24) & Waves 1–5 (#1–#11, #19–#23)
+- **Date:** 2026-10-14
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`)
+- **Status:** PASS
+- **Scope & Verification:**
+    1. **PRs #12–#17 (Wave 1–4 core foundation):**
+       - PR #12 & #13: Spanner backfill tables and automated embedding pipelines verified functional.
+       - PR #14: RRF hybrid search parameterization ($\alpha \in [0.0, 1.0]$) compliant with ADR-001.
+       - PR #15: 1024d `v2` vector cache migration compliant with ADR-001.
+       - PR #16: Multilingual catalog tenant isolation (`pt-BR`, `en-US`, `es-MX`) and dynamic facets compliant with ADR-002 & ADR-003.
+       - PR #17: Final squash and security verification compliant with ADRs #001–#006.
+    2. **PR #24 (Harness Fleet Upgrade):**
+       - Antigravity, OpenCode, and Hermes harnesses running Gemini 4 Argon on Vertex AI `global`.
+       - Zero secret/credential leakage verified across all commits.
+    3. **Wave 5 Features (#19–#22):**
+       - **#19 (Conversational Query Understanding):** Natural language intent extraction, semantic query parsing, structured filter extraction (`max_price`, `brand`), and Gemini Flash fallback verified compliant with ADR-007.
+       - **#20 (Session-Aware Personalization):** Real-time session vector centroid re-ranking (`user_session_events`, purchase 3x, click 1x, recency decay) verified compliant with ADR-007.
+       - **#21 (Zero-Results Recovery & Spell Check):** Damerau-Levenshtein catalog vocabulary matching, `SEARCH_NGRAMS` autocomplete index integration, `did_you_mean` generation, and implicit-AND relaxation verified compliant with ADR-008.
+       - **#22 (B2B Contract Pricing):** `INTERLEAVE IN PARENT product_prices` schema, contract pricing tier selection, exclusive assortment filtering, and `@{OPTIMIZER_VERSION=latest_version}` statement hints verified compliant with ADR-008.
+    4. **Issue #23 (Platform Model Upgrade to `gemini-3.8-flash` & `gemini-4-argon`):**
+       - Go serving config (`IntentLLMModel`: `gemini-3.8-flash`, `ProLLMModel`: `gemini-4-argon`, `NormalizeModelID`: `gemini-4-pro` -> `gemini-4-argon`).
+       - `/api/info` exposing `embedding_model`, `text_model`, `pro_model`, and `genai_location`.
+       - Python services and tooling updated to `gemini-3.8-flash` / `gemini-4-argon`.
+       - Tests: `go test -race -count=1 ./...` PASS. Zero occurrences of `gemini-3.5` remaining.
