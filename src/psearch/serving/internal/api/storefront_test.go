@@ -65,3 +65,19 @@ func TestCatalogBrowse(t *testing.T) {
 		t.Fatalf("browse must honor filters: pt-BR=%d, want 5", len(pt.Results))
 	}
 }
+
+// #33 (ADR-010): photo search UI posts the resized image inline to /api/search.
+func TestStorefrontPhotoSearch(t *testing.T) {
+	for _, frag := range []string{
+		`id="image-file"`, `accept="image/jpeg,image/png,image/webp"`, `id="image-btn"`, `id="image-chip"`,
+		"function onImagePicked(", "function clearQueryImage()", "function imageSearchBody(",
+		"canvas.toDataURL('image/jpeg'", "image_base64: queryImage", "method: 'POST'", "data.image_query",
+	} {
+		if !strings.Contains(defaultStorefrontHTML, frag) {
+			t.Errorf("storefront missing %q", frag)
+		}
+	}
+	if strings.Contains(defaultStorefrontHTML, "image_url") {
+		t.Error("storefront must send inline bytes, never an image URL (SSRF)")
+	}
+}

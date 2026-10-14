@@ -124,9 +124,16 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     <div class="search-bar">
       <input type="text" id="q" list="q-suggestions" value="" placeholder="Search products (e.g. running shoes, tenis corrida, laptop, geladeira) — empty shows the full catalog" autocomplete="off" onkeydown="if(event.key==='Enter') runSearch()" />
       <datalist id="q-suggestions"></datalist>
+      <input type="file" id="image-file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="onImagePicked(this)" />
+      <button type="button" id="image-btn" onclick="document.getElementById('image-file').click()" title="Search by photo; the text box refines it (e.g. mas em verde)">&#128247; Photo</button>
+      <span id="image-chip" style="display:none;align-items:center;gap:6px;background:#1e293b;border:1px solid #a855f7;border-radius:8px;padding:2px 6px;">
+        <img id="image-thumb" alt="query photo" style="width:32px;height:32px;object-fit:cover;border-radius:4px;" />
+        <span style="font-size:11px;color:#e9d5ff;">photo query</span>
+        <button type="button" id="image-clear" onclick="clearQueryImage()" title="Remove photo" style="padding:0 6px;">&times;</button>
+      </span>
       <div class="slider-wrap">
         <span>FTS (0.0)</span>
-        <input type="range" id="alpha" min="0" max="1" step="0.1" value="0.5" oninput="document.getElementById('alpha-val').textContent=this.value" />
+        <input type="range" id="alpha" min="0" max="1" step="0.1" value="0.5" oninput="alphaTouched=true;document.getElementById('alpha-val').textContent=this.value" />
         <span>Vector (1.0) · α=<strong id="alpha-val">0.5</strong></span>
       </div>
       <input type="text" id="session_id" placeholder="Session (sess-...)" style="flex:0 0 140px;min-width:120px;" title="ID da Sessão" onkeydown="if(event.key==='Enter') runSearch()" />
@@ -228,6 +235,62 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     </div>
   </main>
   <script>
+    // Visual search (#33, ADR-010): the photo is resized client-side (max 512 px,
+    // JPEG) and sent inline as a data URL; the text box acts as the refinement.
+    let queryImage = null;
+    function onImagePicked(input) {
+      const file = input.files && input.files[0];
+      input.value = '';
+      if (!file) return;
+      if (['image/jpeg', 'image/png', 'image/webp'].indexOf(file.type) < 0) {
+        document.getElementById('meta').textContent = 'Error: photo must be JPEG, PNG or WebP';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function() {
+        const img = new Image();
+        img.onload = function() {
+          const max = 512;
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          queryImage = canvas.toDataURL('image/jpeg', 0.85);
+          document.getElementById('image-thumb').src = queryImage;
+          document.getElementById('image-chip').style.display = 'inline-flex';
+          runSearch();
+        };
+        img.onerror = function() {
+          document.getElementById('meta').textContent = 'Error: could not read the photo';
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+    function clearQueryImage() {
+      queryImage = null;
+      document.getElementById('image-chip').style.display = 'none';
+      document.getElementById('image-thumb').removeAttribute('src');
+      runSearch();
+    }
+    function imageSearchBody(q, url) {
+      // Reuse the GET parameters built by runSearch as the JSON body of POST /api/search.
+      const p = new URLSearchParams(url.split('?')[1] || '');
+      const body = { query: q, image_base64: queryImage, image_mime_type: 'image/jpeg', limit: 20 };
+      ['channel', 'tenant_id', 'locale', 'cep', 'price_table_id', 'sort_by', 'color', 'size', 'session_id'].forEach(function(k) {
+        if (p.get(k)) body[k] = p.get(k);
+      });
+      if (p.get('only_in_stock') === 'true') body.only_in_stock = true;
+      if (p.get('ltr') === 'true') body.ltr = true;
+      if (p.get('max_sla_hours')) body.max_sla_hours = parseInt(p.get('max_sla_hours'), 10);
+      body.parse_intent = p.get('parse_intent') !== 'false';
+      // alpha is omitted unless the slider was moved: the server then weights the
+      // vector (photo) leg at 0.7 instead of the text-tuned 0.5.
+      if (alphaTouched) body.alpha = parseFloat(p.get('alpha'));
+      return body;
+    }
+    let alphaTouched = false;
     async function runSearch(opts) {
       opts = opts || {};
       const q = document.getElementById('q').value;
@@ -246,7 +309,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const size = document.getElementById('size') ? document.getElementById('size').value : '';
       const sessionId = document.getElementById('session_id') ? document.getElementById('session_id').value.trim() : '';
       let url = '/api/search?q=' + encodeURIComponent(q) + '&alpha=' + encodeURIComponent(alpha);
-      if (opts.browseAll || q.trim() === '' || q.trim() === '*') {
+      if (!queryImage && (opts.browseAll || q.trim() === '' || q.trim() === '*')) {
         url += '&limit=100'; // catalog browse: show every product (#30)
       }
       if (sessionId) {
@@ -290,7 +353,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       } else {
         url += '&parse_intent=false';
       }
-      const res = await fetch(url);
+      const res = queryImage
+        ? await fetch('/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(imageSearchBody(q, url)) })
+        : await fetch(url);
       const data = await res.json();
       if (!res.ok) {
         document.getElementById('meta').textContent = 'Error: ' + (data.error || ('Request failed with status ' + res.status));
@@ -301,7 +366,8 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       }
       document.getElementById('backend-badge').textContent = 'Backend: ' + (data.backend_mode || 'spanner');
       if (document.getElementById('retrieval-badge')) {
-        document.getElementById('retrieval-badge').textContent = 'Mode: ' + (data.retrieval_mode || 'hybrid');
+        document.getElementById('retrieval-badge').textContent = 'Mode: ' + (data.retrieval_mode || 'hybrid') +
+          (data.image_query ? ' · photo w=' + data.image_weight + (data.image_cache_hit ? ' (cached)' : '') : '');
       }
       if (document.getElementById('tenant-badge')) {
         if (data.tenant_id) {
@@ -699,6 +765,8 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     function showAllCatalog() {
       // Browse the whole catalog across locales (empty query = catalog browse, #30).
       document.getElementById('q').value = '';
+      queryImage = null;
+      document.getElementById('image-chip').style.display = 'none';
       const loc = document.getElementById('locale');
       if (loc) loc.value = '';
       const colEl = document.getElementById('color');

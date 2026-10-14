@@ -33,6 +33,29 @@ import {
     Paper
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
+import PhotoCameraIcon from '@mui/icons-material/PhotoCamera';
+import CloseIcon from '@mui/icons-material/Close';
+
+// Visual search (#33, ADR-010): resize the photo client-side (max 512 px, JPEG)
+// and send it inline; the text box refines it ("mas em verde").
+const resizeImageToDataUrl = (file, max = 512) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('could not read the photo'));
+    reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('could not decode the photo'));
+        img.onload = () => {
+            const scale = Math.min(1, max / Math.max(img.width, img.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(img.width * scale));
+            canvas.height = Math.max(1, Math.round(img.height * scale));
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.85));
+        };
+        img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+});
 
 // SearchInput component that isolates input handling from parent component
 // and provides controls for alpha (hybrid weight), channel, and availability
@@ -85,6 +108,9 @@ const SearchInput = memo(({
     const [internalColor, setInternalColor] = useState('');
     const [internalSize, setInternalSize] = useState('');
     const [cepError, setCepError] = useState('');
+    const [imageDataUrl, setImageDataUrl] = useState(null);
+    const [imageError, setImageError] = useState('');
+    const fileInputRef = useRef(null);
     const [suggestions, setSuggestions] = useState([]);
     const [isOpen, setIsOpen] = useState(false);
     const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -189,6 +215,7 @@ const SearchInput = memo(({
             sortBy,
             color,
             size,
+            image: imageDataUrl,
         });
     };
 
@@ -228,7 +255,36 @@ const SearchInput = memo(({
             sortBy,
             color,
             size,
+            image: imageDataUrl,
         });
+    };
+
+    const searchOptions = (image) => ({
+        alpha: localAlpha, channel, onlyInStock, tenantId, locale, cep, maxSla24h,
+        ltr, parseIntent, priceTableId, sortBy, color, size, image,
+    });
+
+    const handleImagePicked = async (event) => {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = '';
+        if (!file) return;
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+            setImageError('Photo must be JPEG, PNG or WebP');
+            return;
+        }
+        try {
+            const dataUrl = await resizeImageToDataUrl(file);
+            setImageError('');
+            setImageDataUrl(dataUrl);
+            onSearch(inputValue, searchOptions(dataUrl));
+        } catch (e) {
+            setImageError(e.message);
+        }
+    };
+
+    const handleClearImage = () => {
+        setImageDataUrl(null);
+        onSearch(inputValue, searchOptions(null));
     };
 
     // Handle keyboard navigation (up/down/enter/esc)
@@ -298,6 +354,23 @@ const SearchInput = memo(({
                     InputProps={{
                         endAdornment: (
                             <InputAdornment position="end">
+                                <input
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    ref={fileInputRef}
+                                    style={{ display: 'none' }}
+                                    onChange={handleImagePicked}
+                                    data-testid="image-file"
+                                />
+                                <Button
+                                    variant="outlined"
+                                    onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                                    startIcon={<PhotoCameraIcon />}
+                                    title="Search by photo; the text refines it (e.g. mas em verde)"
+                                    sx={{ mr: 1 }}
+                                >
+                                    Photo
+                                </Button>
                                 <Button
                                     variant="contained"
                                     color="primary"
@@ -310,6 +383,18 @@ const SearchInput = memo(({
                         )
                     }}
                 />
+                {(imageDataUrl || imageError) && (
+                    <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {imageDataUrl && (
+                            <>
+                                <img src={imageDataUrl} alt="query photo" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4 }} />
+                                <Typography variant="caption">Photo query — type text to refine it</Typography>
+                                <Button size="small" onClick={handleClearImage} startIcon={<CloseIcon />}>Remove photo</Button>
+                            </>
+                        )}
+                        {imageError && <Typography variant="caption" color="error">{imageError}</Typography>}
+                    </Box>
+                )}
                 {isOpen && suggestions.length > 0 && (
                     <Paper
                         elevation={4}

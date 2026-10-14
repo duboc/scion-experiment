@@ -561,6 +561,7 @@ function ProductSearch({
         ? selectedFilters.sizes[0]
         : '');
 
+    const queryImageRef = useRef(null); // #33: current photo query (data URL) or null
     const fetchProducts = useCallback(async (searchParams) => {
         setLoading(true);
         setError(null);
@@ -586,6 +587,9 @@ function ProductSearch({
             const sizeToUse = (searchParams && searchParams.size !== undefined)
                 ? searchParams.size
                 : selectedSize;
+            const imageToUse = (searchParams && searchParams.image !== undefined)
+                ? searchParams.image
+                : queryImageRef.current;
             const sessionIdToUse = (searchParams && searchParams.sessionId !== undefined)
                 ? searchParams.sessionId
                 : (sessionIdRef.current || getSessionId());
@@ -653,6 +657,14 @@ function ProductSearch({
             }
             if (sortByToUse) {
                 payload.sort_by = sortByToUse;
+            }
+
+            if (imageToUse) {
+                // Visual search (#33, ADR-010): inline photo; omit alpha so the
+                // server weights the vector (photo) leg at its multimodal default.
+                payload.image_base64 = imageToUse;
+                payload.image_mime_type = 'image/jpeg';
+                delete payload.alpha;
             }
 
             const response = await axios.post(`${API_URL}/search`, payload);
@@ -929,6 +941,10 @@ function ProductSearch({
 
     // Handle search submission from SearchInput component - now resets all filters
     const handleSearch = useCallback((searchText, options = {}) => {
+        const imageChanged = options.image !== undefined && options.image !== queryImageRef.current;
+        if (options.image !== undefined) {
+            queryImageRef.current = options.image;
+        }
         // Reset all filters when a new search is performed
         setSelectedFilters({});
         setServerFacets(null);
@@ -985,7 +1001,7 @@ function ProductSearch({
         setDidYouMean('');
         setResponseQuery('');
         const nextQuery = typeof searchText === 'string' ? searchText : searchText?.query || '';
-        if (nextQuery === activeSearchQuery && nextQuery.trim()) {
+        if (nextQuery === activeSearchQuery && (nextQuery.trim() || imageChanged)) {
             fetchProducts({
                 query: nextQuery,
                 parseIntent: options.parseIntent !== undefined ? options.parseIntent : parseIntentRef.current,
