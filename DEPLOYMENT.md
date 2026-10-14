@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00026-7qm`** (100% traffic, follows latest) — Issue #30, deployed from a clean `git archive` of `2915faf`. Rollback target: `psearch-serving-00025-5mx`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00027-dmv`** (100% traffic, follows latest) — Issue #32, deployed from a clean `git archive` of `8367cb0`. Rollback target: `psearch-serving-00026-7qm`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -101,7 +101,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `00023-z7g` | `1fad8cf` | #22, #20 | B2B pricing (optimizer hint), session personalization |
 | `00024-ltv` | `299f7ec` | #20 | session UI |
 | `00025-5mx` | `41af0a6` | #23 | `gemini-3.8-flash` / `gemini-4-argon`, project env fallbacks |
-| **`00026-7qm`** | `2915faf` | #30 | storefront script fix (unclosed autocomplete block), catalog browse (`q=` / `q=*`), "Show All Catalog" — **current** |
+| `00026-7qm` | `2915faf` | #30 | storefront script fix (unclosed autocomplete block), catalog browse (`q=` / `q=*`), "Show All Catalog" |
+| **`00027-dmv`** | `8367cb0` | #32 | variant grouping (color/size over interleaved SKUs, variant facets) + `[]*variantRow` decode fix + UI selects — **current** |
 
 ---
 
@@ -515,3 +516,26 @@ Verification on `00026-7qm` (`<SERVICE_URL>`):
 - `q=*&price_table_id=b2b-gold&sort_by=price_asc` → 15, ascending contract prices among available (109.48, 137.54, …), OOS last
 - Regressions: tenis → prod-002 first; sansung → samsung (auto-corrected, prod-010); cep SP → 12 promises; b2b-corporate asc → prod-015 at 107.1; session `sess-qa-runner1` personalized; LTR baseline; acme → 0 results, `hybrid_v2`; intent "ate 200 reais" → 5; autocomplete `gel` → geladeira; health 200
 - Logs: clean (no WARN, fallback, InvalidArgument, PermissionDenied, SCORE or ERROR)
+
+## Issue #32 variant grouping (color/size): LIVE 2026-10-14
+
+Source: clean `git archive` of **`8367cb0`** (backend `e5cd6b7`, sqlcheck cases `de966b8`, UI `de626d7`, decode fix `2442093`, review records). Env unchanged; runtime SA `<RUNTIME_SA>`.
+
+| Step | Result |
+|---|---|
+| DDL `022_sku_variants.sql` (4 `ADD COLUMN` on `skus`: `color`, `size`, `stock`, `is_available`) | ✅ |
+| DML `022b` (the 10 `-std` SKUs become the first variant) → `022c` (74 variant SKUs) | ✅ "modified 10 rows", "modified 74 rows". **skus = 89** (15 + 74), **color NOT NULL = 84**, size NOT NULL = 72, available = 58; prod-001…004 have 18 variants each, 005…010 have 2, 011…015 have 1; `regional_inventory` unchanged (57) |
+| sqlcheck on `a65176d` (1st attempt) | ❌ 14 OK / 25 FAIL on every search/browse case: `failed to decode column 11 … type *[]services.variantRow cannot be used for decoding ARRAY[STRUCT]`. The Spanner Go client requires a slice of struct pointers. Not deployed; prod unaffected. Fix proven in a private copy (`[]*variantRow`) → 39/39 |
+| sqlcheck on `8367cb0` (fix `2442093` + `spanner.NewRow` decoding test) | ✅ **39 OK / 0 FAIL**: `running shoes` azul/42 → 3; `laptop` prata → 3; browse preto/40 → 3; variant facets colors=[azul 2, branco 2, preto 2, grafite 1, prata 1], sizes=6 |
+| Deploy → **`psearch-serving-00027-dmv`**, then `update-traffic --to-latest` | ✅ 100%, follows latest. Rollback target: `00026-7qm` |
+
+Verification on `00027-dmv` (`<SERVICE_URL>`):
+- `q=running+shoes&color=azul&size=42` → **3 results, all Footwear** (prod-001/002/003); each result's `variants` restricted to **azul/42**, available; `variant_count=1`, `available_colors=[azul]`, `available_sizes=[42]`
+- Unfiltered: **prod-001 `variant_count=18`**, `available_colors=[azul, branco, preto]`, `available_sizes=[38…43]`
+- Facets include **`colors`** and **`sizes`** (azul/branco/preto ×3; sizes 38–43 ×3)
+- `color=roxo` → **0 results** (`hybrid_v2`)
+- 40-char `size` → **400** `color must be <= 64 chars and size <= 32 chars`
+- `q=*` browse → 15 products, 10 carrying variants (84 in total), colors/sizes facets; browse `color=preto&size=40` → prod-001/002/003 with preto/40 only
+- Storefront `GET /` → 200; the inline script (25.0 KB) **passes `node --check`**; HTML has `<select id="color">` and `<select id="size">`, "Show All Catalog", the LTR toggle and the session field
+- Regressions: #30 browse pt-BR → 5; tenis → prod-002 first; sansung → samsung → prod-010; cep SP → 12 promises; b2b-corporate asc → prod-015 at 107.1; session personalized; LTR baseline; acme → 0 results, `hybrid_v2`; autocomplete `gel`
+- Logs: clean (no decode errors, WARN, fallback, InvalidArgument, SCORE or ERROR)
