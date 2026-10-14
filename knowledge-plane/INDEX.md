@@ -64,7 +64,7 @@ All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult 
 
 ## 3. Live State, Product Docs & Evaluation
 
-- **Active revision:** `psearch-serving-00025-5mx` (Issue #23; source `41af0a6`), rollback `00024-ltv`. Models: `gemini-3.8-flash` (text), `gemini-4-argon` (pro), `gemini-embedding-2` 1024-d, Vertex AI `global`. All 14 requirements (4.1.1–4.1.14) live.
+- **Active revision:** `psearch-serving-00029-7ss` (Issue #34 clickable storefront facets, UI-only, accepted; source `21cfaa9` via `git archive` of `4e8951b`), rollback `00028-klr`. History: `00025-5mx` (#23) → `00027-dmv` (#32) → `00028-klr` (#33) → `00029-7ss` (#34). Models: `gemini-3.8-flash` (text), `gemini-4-argon` (pro), `gemini-embedding-2` 1024-d, Vertex AI `global`. All 14 requirements (4.1.1–4.1.14) live.
 - **Product & engineering docs:** [`../README.md`](../README.md) · [`../PRODUCT.md`](../PRODUCT.md) · [`../DESIGN.md`](../DESIGN.md) · [`../DEPLOYMENT.md`](../DEPLOYMENT.md) · [`../REVIEW.md`](../REVIEW.md).
 - **Verification & evaluation:** [`../docs/scion/verification-and-eval.md`](../docs/scion/verification-and-eval.md) — control-plane verification and the 5-layer (L1–L5) product evaluation pyramid.
 - **Migrations:** `src/iac/migrations/011`–`021` (see DEPLOYMENT.md §3).
