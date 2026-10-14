@@ -145,10 +145,24 @@ def check_or_patch_provisioner(path, apply):
             new_src = new_src.replace(old_gcp_loc, new_gcp_loc)
             needs_patch = True
 
+        if '["agy", "--version"], text=True, timeout=5' in new_src:
+            new_src = new_src.replace(
+                '["agy", "--version"], text=True, timeout=5',
+                '["agy", "--version"], text=True, timeout=30',
+            )
+            needs_patch = True
+
+        if 'export GOOGLE_CLOUD_LOCATION="${_gcp_location:-global}"' in new_src:
+            new_src = new_src.replace(
+                'export GOOGLE_CLOUD_LOCATION="${_gcp_location:-global}"',
+                'export GOOGLE_CLOUD_LOCATION="global"',
+            )
+            needs_patch = True
+
         if 'export GOOGLE_CLOUD_LOCATION=' not in new_src and 'exec agy' in new_src:
             new_src = new_src.replace(
                 'exec agy',
-                'export GOOGLE_CLOUD_LOCATION="${_gcp_location:-global}"\nexec agy'
+                'export GOOGLE_CLOUD_LOCATION="global"\nexec agy'
             )
             needs_patch = True
 

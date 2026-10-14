@@ -118,19 +118,29 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
   1. **Telemetry Infrastructure & Credentials:** [`scripts/setup-telemetry.sh`](scripts/setup-telemetry.sh) enabled GCP Cloud Logging, Cloud Monitoring,
      and Cloud Trace APIs, provisioned the `scion-telemetry-writer` service account with required IAM roles, and deployed credentials to `~/.scion/telemetry-gcp-credentials.json`
      on the Hub VM and container homes.
-  2. **Sciontool Wrapper:** [`scripts/patch-sciontool-telemetry.sh`](scripts/patch-sciontool-telemetry.sh) moved the real binary to `/usr/local/bin/sciontool.real`
-     and installed an executable wrapper `/usr/local/bin/sciontool` across all 10 running containers and base container images (`scion-antigravity`,
-     `scion-claude`, `scion-opencode`, `scion-hermes`). The wrapper exports `SCION_GCP_PROJECT_ID`, `SCION_OTEL_GCP_CREDENTIALS`, `SCION_TELEMETRY_ENABLED=true`,
-     `SCION_TELEMETRY_CLOUD_PROVIDER=gcp`, and `SCION_USAGE_SOURCE=native` before executing `sciontool.real`.
-  3. **Verified Listening Ports & Clean Hook Execution:** On restart, PID 1 successfully initializes the GCP-native cloud exporter and starts the telemetry
+  2. **Sciontool Wrapper & `ETXTBSY` Prevention:** [`scripts/patch-sciontool-telemetry.sh`](scripts/patch-sciontool-telemetry.sh) installs the patched
+     binary at `/usr/local/bin/sciontool.real` and unlinks `/usr/local/bin/sciontool` (`rm -f /usr/local/bin/sciontool` to avoid Linux `ETXTBSY` while PID 1
+     is running) before installing the executable wrapper `/usr/local/bin/sciontool` across all 10 running containers and base container images
+     (`scion-antigravity`, `scion-claude`, `scion-opencode`, `scion-hermes`). The wrapper exports `SCION_GCP_PROJECT_ID`, `SCION_OTEL_GCP_CREDENTIALS`,
+     `SCION_TELEMETRY_ENABLED=true`, `SCION_TELEMETRY_CLOUD_PROVIDER=gcp`, and per-harness `SCION_USAGE_SOURCE` / `SCION_MODEL` (`native` + `opus` for
+     `claude`; `hooks` + `Gemini 4 Argon (High)` for `antigravity`; `hooks` + `google-vertex/gemini-4-argon` for `opencode`; `hooks` + `google/gemini-4-argon`
+     for `hermes`) before executing `sciontool.real`.
+  3. **Fix for `collectorEpoch=0` in `flushMetricBuffer` (`pkg/sciontool/telemetry/pipeline.go:915`):** In `sciontool` `20261002`, `metricFlushLoop` ticks 1s
+     after startup and calls `flushMetricBuffer`, which initialized `p.metricStreams = newMetricStreams()` with `gcp: false` before any metric arrived via
+     `handleMetrics`. Subsequent hook/usage counters inherited `collectorEpoch = 0` (`StartTimeUnixNano: 0`), which Cloud Monitoring rejected with
+     `InvalidArgument: Field points[0].interval.start_time had an invalid value ... The start time must be positive`. Setting `p.metricStreams.gcp = p.config.IsGCP()`
+     and `p.metricStreams.now = p.now` in both `flushMetricBuffer` and `handleMetrics` resolves this completely.
+  4. **Verified Listening Ports & Clean Hook Execution:** On restart, PID 1 initializes the GCP-native cloud exporter and starts the telemetry
      pipeline listening on `127.0.0.1:4317` (gRPC) and `127.0.0.1:4318` (HTTP). Short-lived `sciontool hook` invocations flush immediately to loopback and
      exit in <0.3s.
-  4. **Clean Hooks Restored:** [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py) and [`scripts/factory-watchdog.py`](scripts/factory-watchdog.py)
-     were updated to restore clean `sciontool hook --dialect=antigravity` calls in all `provision.py`, `.agents/hooks.json`, pre-start scripts, and Hub DB project hooks,
+  5. **Clean Hooks Restored:** [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py) and [`scripts/factory-watchdog.py`](scripts/factory-watchdog.py)
+     restore clean `sciontool hook --dialect=antigravity` calls in all `provision.py`, `.agents/hooks.json`, pre-start scripts, and Hub DB project hooks,
      with telemetry enabled and Gemini 4 Argon preserved.
-  5. **Verified End-to-End Flow:** All 10 agent containers report `scion.telemetry.pipeline.status=1` in Google Cloud Monitoring, container and server logs flow to
-     `projects/<id>/logs/scion-agents` and `projects/<id>/logs/scion-server` in Cloud Logging, traces flow to Cloud Trace, and the Hub metrics dashboard API
-     (`GET /api/v1/metrics/dashboard`) serves metrics at HTTP 200.
+  6. **Verified End-to-End Flow:** All 10 agent containers report `scion.telemetry.pipeline.status=1`, `gen_ai.api.calls`, `scion.usage.tokens`, and
+     `agent.tool.calls` in Google Cloud Monitoring (`Failed:0`), container and server logs flow to `projects/<id>/logs/scion-agents` and
+     `projects/<id>/logs/scion-server` in Cloud Logging, traces flow to Cloud Trace, the Hub metrics dashboard API (`GET /api/v1/metrics/dashboard`) serves
+     live multi-harness session/call/token metrics at HTTP 200, and [`scripts/sync-factory-agents.py`](scripts/sync-factory-agents.py) syncs live Cloud Monitoring
+     call/tool counts per `scion_agent_id` into Cloud Spanner `factory_agent_status`.
 - **Encoded in:** [`scripts/setup-telemetry.sh`](scripts/setup-telemetry.sh), [`scripts/patch-sciontool-telemetry.sh`](scripts/patch-sciontool-telemetry.sh),
   [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py), and [`scripts/factory-watchdog.py`](scripts/factory-watchdog.py).
 

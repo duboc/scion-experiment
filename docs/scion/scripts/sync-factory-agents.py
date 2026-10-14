@@ -23,11 +23,84 @@ so "unknown" is the honest value, not zero (lessons-learned.md L9).
 """
 import argparse
 import datetime
+import json
 import os
 import re
 import sqlite3
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
+
+
+def read_hub_project_id(scion_home):
+    for k in ("HUB_PROJECT_ID", "SCION_GCP_PROJECT_ID", "HUB_PROJECT"):
+        v = os.environ.get(k, "").strip()
+        if v:
+            return v
+    hub_env = os.path.join(scion_home, "hub.env")
+    if os.path.exists(hub_env):
+        with open(hub_env) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("SCION_GCP_PROJECT_ID="):
+                    return line.split("=", 1)[1].strip().strip("'\"")
+    return ""
+
+
+def get_gcp_access_token():
+    try:
+        req = urllib.request.Request(
+            "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
+            headers={"Metadata-Flavor": "Google"},
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return json.loads(resp.read().decode()).get("access_token", "")
+    except Exception:
+        try:
+            res = subprocess.run(
+                ["gcloud", "auth", "print-access-token"],
+                capture_output=True, text=True, timeout=5
+            )
+            return res.stdout.strip() if res.returncode == 0 else ""
+        except Exception:
+            return ""
+
+
+def fetch_monitoring_counts(project_id, token, metric_type, days=7):
+    """Return {agent_id: int_count} from Cloud Monitoring CUMULATIVE series via ALIGN_DELTA + REDUCE_SUM."""
+    if not project_id or not token:
+        return {}
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    start_dt = now_dt - datetime.timedelta(days=days)
+    params = urllib.parse.urlencode({
+        "filter": f'metric.type = "{metric_type}"',
+        "interval.startTime": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "interval.endTime": now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "aggregation.alignmentPeriod": f"{days * 86400}s",
+        "aggregation.perSeriesAligner": "ALIGN_DELTA",
+        "aggregation.crossSeriesReducer": "REDUCE_SUM",
+        "aggregation.groupByFields": "metric.label.scion_agent_id",
+    })
+    url = f"https://monitoring.googleapis.com/v3/projects/{project_id}/timeSeries?{params}"
+    try:
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+        counts = {}
+        for ts_entry in data.get("timeSeries", []):
+            aid = ts_entry.get("metric", {}).get("labels", {}).get("scion_agent_id", "")
+            if not aid:
+                continue
+            total = 0
+            for pt in ts_entry.get("points", []):
+                val = pt.get("value", {})
+                total += int(val.get("int64Value") or val.get("doubleValue") or 0)
+            if total > 0:
+                counts[aid] = counts.get(aid, 0) + total
+        return counts
+    except Exception:
+        return {}
 
 
 def load_sync_env():
@@ -112,7 +185,12 @@ def main():
                f"--instance={env('SPANNER_INSTANCE')}", f"--project={sandbox}",
                f"--billing-project={os.environ.get('BILLING_PROJECT') or sandbox}", "--quiet"]
     prune_minutes = int(os.environ.get("PRUNE_MINUTES", "10"))
-    hub_db = os.path.join(os.path.expanduser(os.environ.get("SCION_HOME", "~/.scion")), "hub.db")
+    scion_home = os.path.expanduser(os.environ.get("SCION_HOME", "~/.scion"))
+    hub_db = os.path.join(scion_home, "hub.db")
+    hub_project = read_hub_project_id(scion_home)
+    gcp_token = get_gcp_access_token() if hub_project else ""
+    api_calls_by_agent = fetch_monitoring_counts(hub_project, gcp_token, "workload.googleapis.com/gen_ai.api.calls")
+    tool_calls_by_agent = fetch_monitoring_counts(hub_project, gcp_token, "workload.googleapis.com/agent.tool.calls")
 
     db = sqlite3.connect(f"file:{hub_db}?mode=ro", uri=True)
     db.row_factory = sqlite3.Row
@@ -133,10 +211,13 @@ def main():
     values = []
     for r in rows:
         parent = names.get(r["created_by"])  # None when a user (not an agent) created it
+        aid = r["id"]
+        turns_val = max(int(r["current_turns"] or 0), int(tool_calls_by_agent.get(aid, 0)))
+        calls_val = max(int(r["current_model_calls"] or 0), int(api_calls_by_agent.get(aid, 0)))
         values.append("(" + ", ".join([
             lit(r["project_slug"]), lit(r["name"]), lit(r["id"]), lit(r["template"]), lit(r["harness"]),
-            lit(r["phase"]), lit(r["activity"]), lit(parent), counter(r["current_turns"]),
-            counter(r["current_model_calls"]), lit(r["task_summary"] or r["message"], 500),
+            lit(r["phase"]), lit(r["activity"]), lit(parent), counter(turns_val),
+            counter(calls_val), lit(r["task_summary"] or r["message"], 500),
             ts(r["last_activity_event"]), "CURRENT_TIMESTAMP()",
         ]) + ")")
     statements = [

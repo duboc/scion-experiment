@@ -25,7 +25,7 @@ set -a
 set +a
 
 HUB_PROJECT_ID="${HUB_PROJECT_ID:-${HUB_PROJECT:-}}"
-HUB_VM="${HUB_VM:-scion-hub-dev}"
+HUB_VM="${HUB_VM:-}"
 HUB_ZONE="${HUB_ZONE:-us-central1-a}"
 HUB_OS_USER="${HUB_OS_USER:-scion}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -95,27 +95,65 @@ for c in '"${CONTAINERS[*]}"'; do
     docker exec -u 0 "$c" chown -R scion:scion /home/scion/.scion
   fi
 
-  # Backup real sciontool if not already backed up
-  docker exec -u 0 "$c" sh -c '\''
-    if [ ! -f /usr/local/bin/sciontool.real ]; then
-      if [ -f /usr/local/bin/sciontool ]; then
-        cp -p /usr/local/bin/sciontool /usr/local/bin/sciontool.real
-        chmod 755 /usr/local/bin/sciontool.real
+  # Backup real sciontool if not already backed up, or install staged sciontool.real from host
+  if [ -s "/home/'"${HUB_OS_USER}"'/.scion/sciontool.real" ]; then
+    docker exec -u 0 "$c" rm -f /usr/local/bin/sciontool.real
+    docker cp "/home/'"${HUB_OS_USER}"'/.scion/sciontool.real" "$c:/usr/local/bin/sciontool.real"
+    docker exec -u 0 "$c" chmod 755 /usr/local/bin/sciontool.real
+  else
+    docker exec -u 0 "$c" sh -c '\''
+      if [ ! -f /usr/local/bin/sciontool.real ]; then
+        if [ -f /usr/local/bin/sciontool ]; then
+          cp -p /usr/local/bin/sciontool /usr/local/bin/sciontool.real
+          chmod 755 /usr/local/bin/sciontool.real
+        fi
       fi
-    fi
-  '\''
+    '\''
+  fi
 
-  # Install wrapper script
+  # Install wrapper script (unlink first to avoid ETXTBSY if PID 1 is running the binary)
+  docker exec -u 0 "$c" rm -f /usr/local/bin/sciontool
   docker exec -u 0 "$c" sh -c '\''cat << "EOF" > /usr/local/bin/sciontool
 #!/bin/sh
 # Sciontool wrapper injecting telemetry environment variables for PID 1 init and hooks
 
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/scion/.local/bin:${PATH:-}"
 export SCION_TELEMETRY_ENABLED="${SCION_TELEMETRY_ENABLED:-true}"
 export SCION_TELEMETRY_CLOUD_ENABLED="${SCION_TELEMETRY_CLOUD_ENABLED:-true}"
 export SCION_TELEMETRY_CLOUD_PROVIDER="${SCION_TELEMETRY_CLOUD_PROVIDER:-gcp}"
 export SCION_GCP_PROJECT_ID="${SCION_GCP_PROJECT_ID:-'"$HUB_PROJECT_ID"'}"
 export SCION_OTEL_GCP_CREDENTIALS="${SCION_OTEL_GCP_CREDENTIALS:-/home/scion/.scion/telemetry-gcp-credentials.json}"
-export SCION_USAGE_SOURCE="${SCION_USAGE_SOURCE:-native}"
+if [ -z "${SCION_HARNESS:-}" ]; then
+  for arg in "$@"; do
+    case "$arg" in
+      --dialect=*) export SCION_HARNESS="${arg#--dialect=}" ;;
+    esac
+  done
+fi
+case "${SCION_HARNESS:-}" in
+  claude)
+    export SCION_USAGE_SOURCE="native"
+    export SCION_MODEL="${SCION_MODEL:-opus}"
+    ;;
+  codex|copilot)
+    export SCION_USAGE_SOURCE="native"
+    ;;
+  opencode)
+    export SCION_USAGE_SOURCE="hooks"
+    export SCION_MODEL="${SCION_MODEL:-google-vertex/gemini-4-argon}"
+    ;;
+  antigravity)
+    export SCION_USAGE_SOURCE="hooks"
+    export SCION_MODEL="${SCION_MODEL:-Gemini 4 Argon (High)}"
+    ;;
+  hermes)
+    export SCION_USAGE_SOURCE="hooks"
+    export SCION_MODEL="${SCION_MODEL:-google/gemini-4-argon}"
+    ;;
+  *)
+    export SCION_USAGE_SOURCE="${SCION_USAGE_SOURCE:-hooks}"
+    ;;
+esac
 
 exec /usr/local/bin/sciontool.real "$@"
 EOF
@@ -139,12 +177,43 @@ KEY="/home/'"${HUB_OS_USER}"'/.scion/telemetry-gcp-credentials.json"
 
 cat << "EOF" > /tmp/sciontool-wrapper
 #!/bin/sh
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/scion/.local/bin:${PATH:-}"
 export SCION_TELEMETRY_ENABLED="${SCION_TELEMETRY_ENABLED:-true}"
 export SCION_TELEMETRY_CLOUD_ENABLED="${SCION_TELEMETRY_CLOUD_ENABLED:-true}"
 export SCION_TELEMETRY_CLOUD_PROVIDER="${SCION_TELEMETRY_CLOUD_PROVIDER:-gcp}"
 export SCION_GCP_PROJECT_ID="${SCION_GCP_PROJECT_ID:-'"$HUB_PROJECT_ID"'}"
 export SCION_OTEL_GCP_CREDENTIALS="${SCION_OTEL_GCP_CREDENTIALS:-/home/scion/.scion/telemetry-gcp-credentials.json}"
-export SCION_USAGE_SOURCE="${SCION_USAGE_SOURCE:-native}"
+if [ -z "${SCION_HARNESS:-}" ]; then
+  for arg in "$@"; do
+    case "$arg" in
+      --dialect=*) export SCION_HARNESS="${arg#--dialect=}" ;;
+    esac
+  done
+fi
+case "${SCION_HARNESS:-}" in
+  claude)
+    export SCION_USAGE_SOURCE="native"
+    export SCION_MODEL="${SCION_MODEL:-opus}"
+    ;;
+  codex|copilot)
+    export SCION_USAGE_SOURCE="native"
+    ;;
+  opencode)
+    export SCION_USAGE_SOURCE="hooks"
+    export SCION_MODEL="${SCION_MODEL:-google-vertex/gemini-4-argon}"
+    ;;
+  antigravity)
+    export SCION_USAGE_SOURCE="hooks"
+    export SCION_MODEL="${SCION_MODEL:-Gemini 4 Argon (High)}"
+    ;;
+  hermes)
+    export SCION_USAGE_SOURCE="hooks"
+    export SCION_MODEL="${SCION_MODEL:-google/gemini-4-argon}"
+    ;;
+  *)
+    export SCION_USAGE_SOURCE="${SCION_USAGE_SOURCE:-hooks}"
+    ;;
+esac
 exec /usr/local/bin/sciontool.real "$@"
 EOF
 chmod 755 /tmp/sciontool-wrapper
@@ -158,17 +227,21 @@ for img in '"${BASE_IMAGES[*]}"'; do
   echo "  Patching base image: $img:latest"
   cid=$(docker create "$img:latest")
 
-  # Extract binary to back it up as sciontool.real if needed
-  docker cp "$cid:/usr/local/bin/sciontool.real" /tmp/test-real 2>/dev/null || true
-  if [ ! -s /tmp/test-real ]; then
-    docker cp "$cid:/usr/local/bin/sciontool" /tmp/sciontool-bin 2>/dev/null || true
-    if [ -s /tmp/sciontool-bin ]; then
-      chmod 755 /tmp/sciontool-bin
-      docker cp /tmp/sciontool-bin "$cid:/usr/local/bin/sciontool.real"
-      rm -f /tmp/sciontool-bin
+  # Extract binary to back it up as sciontool.real if needed, or install staged sciontool.real from host
+  if [ -s "/home/'"${HUB_OS_USER}"'/.scion/sciontool.real" ]; then
+    docker cp "/home/'"${HUB_OS_USER}"'/.scion/sciontool.real" "$cid:/usr/local/bin/sciontool.real"
+  else
+    docker cp "$cid:/usr/local/bin/sciontool.real" /tmp/test-real 2>/dev/null || true
+    if [ ! -s /tmp/test-real ]; then
+      docker cp "$cid:/usr/local/bin/sciontool" /tmp/sciontool-bin 2>/dev/null || true
+      if [ -s /tmp/sciontool-bin ]; then
+        chmod 755 /tmp/sciontool-bin
+        docker cp /tmp/sciontool-bin "$cid:/usr/local/bin/sciontool.real"
+        rm -f /tmp/sciontool-bin
+      fi
     fi
+    rm -f /tmp/test-real
   fi
-  rm -f /tmp/test-real
 
   # Copy wrapper
   docker cp /tmp/sciontool-wrapper "$cid:/usr/local/bin/sciontool"

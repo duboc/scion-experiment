@@ -25,7 +25,7 @@ set -a
 set +a
 
 HUB_PROJECT_ID="${HUB_PROJECT_ID:-${HUB_PROJECT:-}}"
-HUB_VM="${HUB_VM:-scion-hub-dev}"
+HUB_VM="${HUB_VM:-}"
 HUB_ZONE="${HUB_ZONE:-us-central1-a}"
 HUB_OS_USER="${HUB_OS_USER:-scion}"
 TELEMETRY_SA_NAME="${TELEMETRY_SA_NAME:-scion-telemetry-writer}"

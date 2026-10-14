@@ -191,21 +191,25 @@ def cmd_experiments(args):
 
 
 def cmd_metrics(args):
-    path = "/api/v1/metrics/dashboard"
+    base_path = "/api/v1/metrics/dashboard"
     if args.project:
         pid = project_id(args.project)
-        path = f"/api/v1/projects/{pid}/metrics/dashboard"
-    status, body = api("GET", path)
+        base_path = f"/api/v1/projects/{pid}/metrics/dashboard"
+    views = ["summary", "sessions", "model-calls", "tokens"] if args.view == "all" else [args.view]
+    results = {}
+    for v in views:
+        q = [f"view={v}"]
+        if args.period:
+            q.append(f"period={args.period}")
+        path = f"{base_path}?{'&'.join(q)}"
+        status, body = api("GET", path)
+        results[v] = body
+    out = results[views[0]] if len(views) == 1 else results
     if args.json:
-        print(json.dumps(body, indent=2))
+        print(json.dumps(out, indent=2))
     else:
-        print(f"Metrics Dashboard (HTTP {status})")
-        overview = body.get("overview", {})
-        print("Overview:", json.dumps(overview, indent=2))
-        charts = body.get("charts", [])
-        print(f"Charts count: {len(charts)}")
-        for c in charts:
-            print(f"  - {c.get('id')}: {c.get('title')} ({len(c.get('series', []))} series)")
+        print(f"Metrics Dashboard ({base_path}, view={args.view}, period={args.period or 7}d):")
+        print(json.dumps(out, indent=2))
 
 
 def main():
@@ -243,6 +247,9 @@ def main():
 
     met = sub.add_parser("metrics", help="query Hub metrics dashboard")
     met.add_argument("--project", help="project slug (optional)")
+    met.add_argument("--view", default="summary", choices=["summary", "sessions", "model-calls", "tokens", "all"],
+                     help="metrics dashboard view (default: summary)")
+    met.add_argument("--period", type=int, help="period in days (1-90, default: 7)")
     met.add_argument("--json", action="store_true", help="output full raw JSON")
     met.set_defaults(func=cmd_metrics)
 

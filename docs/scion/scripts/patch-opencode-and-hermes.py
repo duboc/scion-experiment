@@ -129,6 +129,7 @@ mv "$HOME/.hermes/.env.tmp" "$HOME/.hermes/.env"
 
 export VERTEX_REGION=global
 export GOOGLE_CLOUD_LOCATION=global
+export HERMES_INFERENCE_MODEL=google/gemini-4-argon
 
 PROJECT="${GOOGLE_CLOUD_PROJECT:-${HUB_PROJECT:-}}"
 
