@@ -122,7 +122,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
   </header>
   <main>
     <div class="search-bar">
-      <input type="text" id="q" list="q-suggestions" value="running shoes" placeholder="Search products (e.g. running shoes, tenis corrida, laptop, geladeira)..." autocomplete="off" onkeydown="if(event.key==='Enter') runSearch()" />
+      <input type="text" id="q" list="q-suggestions" value="" placeholder="Search products (e.g. running shoes, tenis corrida, laptop, geladeira) — empty shows the full catalog" autocomplete="off" onkeydown="if(event.key==='Enter') runSearch()" />
       <datalist id="q-suggestions"></datalist>
       <div class="slider-wrap">
         <span>FTS (0.0)</span>
@@ -168,6 +168,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         <input type="checkbox" id="parse_intent" checked /> Smart query
       </label>
       <button onclick="runSearch()">Search</button>
+      <button id="show-all-btn" onclick="showAllCatalog()" title="Show every product across locales">Show All Catalog</button>
     </div>
     <div style="display:flex;gap:24px;margin-top:20px;align-items:flex-start;">
       <aside id="facet-sidebar" style="width:230px;flex-shrink:0;background:var(--card);padding:16px;border-radius:12px;border:1px solid #334155;">
@@ -202,7 +203,8 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     </div>
   </main>
   <script>
-    async function runSearch() {
+    async function runSearch(opts) {
+      opts = opts || {};
       const q = document.getElementById('q').value;
       const alpha = document.getElementById('alpha').value;
       const channel = document.getElementById('channel').value;
@@ -217,6 +219,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const sortBy = document.getElementById('sort_by') ? document.getElementById('sort_by').value : '';
       const sessionId = document.getElementById('session_id') ? document.getElementById('session_id').value.trim() : '';
       let url = '/api/search?q=' + encodeURIComponent(q) + '&alpha=' + encodeURIComponent(alpha);
+      if (opts.browseAll || q.trim() === '' || q.trim() === '*') {
+        url += '&limit=100'; // catalog browse: show every product (#30)
+      }
       if (sessionId) {
         url += '&session_id=' + encodeURIComponent(sessionId);
       }
@@ -607,6 +612,14 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           }
         }, 150);
       });
+    }
+    function showAllCatalog() {
+      // Browse the whole catalog across locales (empty query = catalog browse, #30).
+      document.getElementById('q').value = '';
+      const loc = document.getElementById('locale');
+      if (loc) loc.value = '';
+      runSearch({ browseAll: true });
+    }
     const sidEl = document.getElementById('session_id');
     if (sidEl && !sidEl.value) {
       let storedSid = sessionStorage.getItem('psearch_storefront_session_id');

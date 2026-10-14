@@ -296,7 +296,7 @@ intentDone:
 	// ADR-008 (Issue #21): zero-results recovery when the lexical leg found nothing.
 	var didYouMean string
 	var autoCorrected, relaxed bool
-	if err == nil && strings.TrimSpace(searchQuery) != "" && services.LexicalHits(outcome.Results) == 0 {
+	if err == nil && !services.IsBrowseQuery(searchQuery) && services.LexicalHits(outcome.Results) == 0 {
 		if corrected, changed := c.spell.Correct(ctx.Request.Context(), filters.TenantID, searchQuery); changed {
 			didYouMean = corrected
 			// The corrected token may be an entity that is only indexed as a structured

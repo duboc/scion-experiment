@@ -141,6 +141,15 @@ func main() {
 	} else {
 		log.Printf("OK   product vectors: %d", len(v))
 	}
+	// Catalog browse (Issue #30): empty / "*" query lists the catalog with filters.
+	for _, f := range []models.SearchFilters{{}, {Locale: "pt-BR"}, {PriceTable: "b2b-gold", SortBy: "price_asc"}} {
+		if n, err := svc.CheckSpannerBrowse(ctx, f); err != nil {
+			failed = true
+			log.Printf("FAIL catalog browse %+v: %v", f, err)
+		} else {
+			log.Printf("OK   catalog browse %+v rows=%d", f, n)
+		}
+	}
 	// Facet queries (Issue #5) over the full catalog.
 	if f, err := svc.Facets(ctx, []string{"prod-001", "prod-002", "prod-004", "prod-012"}, "b2b-gold", "default"); err != nil {
 		failed = true
