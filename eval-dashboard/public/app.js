@@ -350,6 +350,47 @@
     }).join('');
   }
 
+  function renderWorkbenchRows(items, isCatalogMode) {
+    const tbody = document.getElementById('tbody-workbench');
+    if (!tbody) return;
+    if (!Array.isArray(items) || items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:1rem;">No matching catalog results for current query &amp; filter parameters.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = items.map((item, idx) => {
+      const isAvail = item.is_available === true || item.availability === 'IN_STOCK' || (item.availableQuantity !== undefined && item.availableQuantity > 0);
+      const stockQty = item.availableQuantity ?? item.stock ?? (isAvail ? 'In Stock' : 0);
+      const availBadge = isAvail
+        ? '<span class="badge badge--pass"><span class="badge-dot"></span>IN_STOCK (' + stockQty + ')</span>'
+        : '<span class="badge badge--pending">OUT_OF_STOCK (0)</span>';
+      const brandStr = item.brand || (Array.isArray(item.brands) ? item.brands.join(', ') : '');
+      const catStr = item.category || (Array.isArray(item.categories) ? item.categories.join(', ') : '');
+      const finalScore = (item.score && item.score.final_score !== undefined) ? item.score.final_score : item.final_score;
+      const baseP = item.base_price ?? (item.priceInfo && item.priceInfo.basePrice);
+      const b2bP = item.b2b_price ?? (item.priceInfo && item.priceInfo.numericPrice);
+
+      let rightCol = finalScore !== undefined && finalScore !== null ? Number(finalScore).toFixed(4) : '--';
+      if (isCatalogMode && b2bP !== undefined && b2bP !== null) {
+        rightCol = 'B2B $' + Number(b2bP).toFixed(2) + (baseP !== undefined && baseP !== null ? (' <span style="color:var(--text-muted);">(Base $' + Number(baseP).toFixed(2) + ')</span>') : '');
+      } else if (b2bP !== undefined && b2bP !== null) {
+        rightCol += ' <span style="color:var(--text-muted);">· $' + Number(b2bP).toFixed(2) + '</span>';
+      }
+
+      return '<tr>' +
+        '<td class="mono num">#' + (idx + 1) + '</td>' +
+        '<td class="mono">' + escapeHTML(item.id) + '</td>' +
+        '<td><strong>' + escapeHTML(item.title) + '</strong>' +
+          (brandStr ? (' <span style="color:var(--text-muted);">· ' + escapeHTML(brandStr) + '</span>') : '') +
+          (catStr ? (' <span class="mono" style="color:var(--text-muted);font-size:0.75rem;">[' + escapeHTML(catStr) + ']</span>') : '') +
+        '</td>' +
+        '<td class="mono">' + escapeHTML(item.locale || 'en-US') + '</td>' +
+        '<td>' + availBadge + '</td>' +
+        '<td class="mono num">' + rightCol + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
   async function runWorkbenchQuery(ev) {
     if (ev && typeof ev.preventDefault === 'function') {
       ev.preventDefault();
@@ -358,7 +399,6 @@
     const alphaEl = document.getElementById('wb-alpha');
     const localeEl = document.getElementById('wb-locale');
     const metaEl = document.getElementById('wb-meta');
-    const tbody = document.getElementById('tbody-workbench');
 
     const q = (qEl && qEl.value.trim()) ? qEl.value.trim() : 'running shoes';
     const alpha = (alphaEl && alphaEl.value) ? alphaEl.value : '0.65';
@@ -376,31 +416,60 @@
           ' · ' + items.length + ' results';
       }
 
-      if (tbody) {
-        if (items.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:1rem;">No matching catalog results for current query &amp; filter parameters.</td></tr>';
-        } else {
-          tbody.innerHTML = items.map((item, idx) => {
-            const isAvail = item.is_available === true || item.availability === 'IN_STOCK' || (item.availableQuantity !== undefined && item.availableQuantity > 0);
-            const stockQty = item.availableQuantity ?? item.stock ?? (isAvail ? 'In Stock' : 0);
-            const availBadge = isAvail
-              ? '<span class="badge badge--pass"><span class="badge-dot"></span>IN_STOCK (' + stockQty + ')</span>'
-              : '<span class="badge badge--pending">OUT_OF_STOCK (0)</span>';
-            const brandStr = item.brand || (Array.isArray(item.brands) ? item.brands.join(', ') : '');
-            const finalScore = (item.score && item.score.final_score !== undefined) ? item.score.final_score : item.final_score;
-            return '<tr>' +
-              '<td class="mono num">#' + (idx + 1) + '</td>' +
-              '<td class="mono">' + escapeHTML(item.id) + '</td>' +
-              '<td><strong>' + escapeHTML(item.title) + '</strong>' + (brandStr ? (' <span style="color:var(--text-muted);">· ' + escapeHTML(brandStr) + '</span>') : '') + '</td>' +
-              '<td class="mono">' + escapeHTML(item.locale || 'en-US') + '</td>' +
-              '<td>' + availBadge + '</td>' +
-              '<td class="mono num">' + (finalScore !== undefined ? Number(finalScore).toFixed(4) : '--') + '</td>' +
-            '</tr>';
-          }).join('');
-        }
-      }
+      renderWorkbenchRows(items, false);
     } catch (err) {
       if (metaEl) metaEl.textContent = 'Query probe failed: ' + err.message;
+    }
+  }
+
+  async function loadFullCatalog() {
+    const metaEl = document.getElementById('wb-meta');
+    const btnEl = document.getElementById('btn-load-catalog');
+    if (metaEl) metaEl.textContent = 'Loading full 15-SKU catalog (en-US & pt-BR + B2B corporate pricing)...';
+    if (btnEl) btnEl.disabled = true;
+
+    try {
+      const res = await fetch('/api/catalog').then(r => r.ok ? r.json() : {});
+      const items = res.results || res.items || [];
+      if (metaEl) {
+        metaEl.textContent =
+          'Full Catalog (' + items.length + ' SKUs · en-US & pt-BR · b2b-corporate pricing) · ' +
+          (res.probe_latency_ms ? Number(res.probe_latency_ms).toFixed(1) : '--') + ' ms';
+      }
+      renderWorkbenchRows(items, true);
+    } catch (err) {
+      if (metaEl) metaEl.textContent = 'Failed to load catalog: ' + err.message;
+    } finally {
+      if (btnEl) btnEl.disabled = false;
+    }
+  }
+
+  async function triggerLiveEvaluation() {
+    const btn = document.getElementById('btn-run-eval');
+    const label = document.getElementById('btn-run-eval-label');
+    if (btn) btn.disabled = true;
+    if (label) label.textContent = 'Running Live Sweep...';
+
+    try {
+      const resp = await fetch('/api/eval/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await resp.json();
+      await refreshAll();
+      if (label) {
+        label.textContent = data && data.run_id ? ('Recorded ' + data.run_id.slice(0, 16)) : 'Sweep Complete';
+        setTimeout(() => {
+          if (label) label.textContent = 'Run Live Evaluation';
+        }, 3000);
+      }
+    } catch (err) {
+      console.error('Live evaluation trigger failed:', err);
+      if (label) {
+        label.textContent = 'Run Live Evaluation';
+      }
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 
@@ -467,7 +536,7 @@
       if (passEl) {
         const pCnt = (evalRes.pass_count !== undefined && evalRes.pass_count !== null) ? evalRes.pass_count : '--';
         const partCnt = (evalRes.partial_count !== undefined && evalRes.partial_count !== null) ? evalRes.partial_count : '--';
-        passEl.textContent = pCnt + ' PASS · ' + partCnt + ' PARTIAL';
+        passEl.textContent = pCnt + ' / 14 PASS · ' + partCnt + ' PARTIAL';
       }
 
       const linkStorefront = document.getElementById('link-storefront');
@@ -519,6 +588,8 @@
   root.renderAgentsTable = renderAgentsTable;
   root.renderRequirementsTable = renderRequirementsTable;
   root.runWorkbenchQuery = runWorkbenchQuery;
+  root.loadFullCatalog = loadFullCatalog;
+  root.triggerLiveEvaluation = triggerLiveEvaluation;
   root.refreshAll = refreshAll;
 
   // Initialize on load

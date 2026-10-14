@@ -1,101 +1,236 @@
-# `eval-dashboard` — Package Guide, Probe Workers & Telemetry Consolidation
+# psearch-eval-dashboard: Service Package (`eval-dashboard/`)
 
-Package-level operational guide for the **`psearch-eval-dashboard`** Cloud Run service, the live search evaluation & 5-Layer Pyramid probe worker (`scripts/probe_search.py`), and the multi-store telemetry consolidation worker (`scripts/consolidate_factory_data.py`).
+> **Application package for the `psearch-eval` Observability, Continuous Search Evaluation & Antigravity Factory Analysis Control Tower.**
 
----
-
-## 1. Live Endpoints & Cloud Resources
-
-| Resource | Active Revision / Instance | Description | URL / Resource Path |
-|---|---|---|---|
-| **Live Evaluation Dashboard** | `psearch-eval-dashboard-00010-z5g` / `00011-tsf` | Cloud Run Express Server & Impeccable UI Workbench | [https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app) |
-| **Target Search Backend** | `psearch-serving-00025-5mx` | Spanner Hybrid Search + `gemini-3.8-flash` / `gemini-4-argon` | [https://psearch-serving-mhjw244bgq-uc.a.run.app](https://psearch-serving-mhjw244bgq-uc.a.run.app) |
-| **Cloud Spanner Database** | `psearch-instance` / `psearch-db` | Authoritative `eval_runs` & `factory_agent_status` tables | `projects/<GCP_PROJECT_ID>/instances/psearch-instance/databases/psearch-db` |
-| **Cloud Firestore (Native)** | `(default)` | Collections: `agents`, `tasks`, `eval_runs`, `requirements_compliance`, `pyramid_layers` | `projects/<GCP_PROJECT_ID>/databases/(default)/documents` |
-| **Cloud Storage (GCS)** | Snapshot Bucket | Immutable JSON factory & evaluation state snapshots | `gs://psearch-eval-data-<GCP_PROJECT_ID>/snapshots/` |
-| **Source Branch** | `eval-dashboard` (Orphan) | Isolated `psearch-eval` control tower branch | [duboc/scion-experiment@eval-dashboard](https://github.com/duboc/scion-experiment/tree/eval-dashboard) |
+[![Eval Pyramid](https://img.shields.io/badge/5--Layer_Pyramid-76%2F76_PASS_(100%25)-10b981)](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app)
+[![Requirements](https://img.shields.io/badge/Requirements_4.1.1--4.1.14-14%2F14_PASS-10b981)](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app)
+[![Harness](https://img.shields.io/badge/Harness-Antigravity_%C2%B7_Gemini_4_Argon_(High)-3b82f6)](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app)
 
 ---
 
-## 2. Package Layout
+## Table of Contents
+
+1. [Overview](#1-overview)
+2. [Live Endpoints](#2-live-endpoints)
+3. [Project Status & 5-Layer Pyramid Summary](#3-project-status--5-layer-pyramid-summary)
+4. [Architecture & Datastores](#4-architecture--datastores)
+5. [Technology Stack](#5-technology-stack)
+6. [Repository Structure](#6-repository-structure)
+7. [5-Layer Methodology](#7-5-layer-methodology)
+8. [Requirements Matrix](#8-requirements-matrix)
+9. [Setup & Deployment](#9-setup--deployment)
+10. [API Reference](#10-api-reference)
+11. [Troubleshooting](#11-troubleshooting)
+12. [License](#12-license)
+13. [Disclaimer](#13-disclaimer)
+
+---
+
+## 1. Overview
+
+The `eval-dashboard/` directory contains the deployable Node.js/Express backend (`server.js`), the Impeccable Industrial Control Tower frontend (`public/index.html`, `public/styles.css`, `public/app.js`), the automated CLI evaluation runner (`run-eval.js`), and the Cloud Spanner / BigQuery provisioning tool (`setup-db.js`).
+
+Key capabilities implemented in this package:
+- **Above-the-Fold 5-Layer Evaluation Pyramid & 14-Requirement Matrix**: Immediately below the top Focal Strip, the dashboard renders the interactive **5-Layer Product Evaluation Methodology Pyramid (L1–L5 · 76 Scenarios · 100% PASS)** alongside the **Layer Scenarios & Live Verification Evidence Inspector**, followed directly by the **Section 4.1 Functional Requirements Matrix (14/14 PASS across Waves 1–5)** and **GitHub Repository & Branch Telemetry**.
+- **On-Demand Live Evaluation Trigger (`POST /api/eval/run`)**: The header **"Run Live Probe (`POST /api/eval/run`)"** button executes live HTTP probes against `psearch-serving` across all 6 golden queries and 14 functional requirements, computes real `nDCG@10`, `MRR@10`, `Recall@20`, and `p50`/`p95`/`p99` latencies, writes a new evaluation row into Cloud Spanner (`eval_runs`), and updates the UI in place.
+- **Full 15-SKU Product Catalog & Hybrid RRF Workbench (`GET /api/catalog` & `GET /api/workbench`)**: Supports interactive query probing across all 14 search capabilities plus one-click loading of all **15 bilingual catalog SKUs (`prod-001`–`prod-015`)** with category, locale (`en-US` / `pt-BR`), stock availability, base price, and `b2b-corporate` dynamic pricing.
+- **Strict Cache-Control Headers**: Serves all HTML, JS, CSS, and JSON endpoints with `Cache-Control: no-store, no-cache, must-revalidate` and versioned static assets (`app.js?v=20261014-v2`) to prevent stale browser or proxy caching.
+
+---
+
+## 2. Live Endpoints
+
+| Service | Cloud Run URL | Description |
+| :--- | :--- | :--- |
+| **`psearch-eval-dashboard` (Control Tower UI)** | [`https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app`](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app) | Above-the-fold 5-Layer Pyramid (`#section-pyramid`), 14-Requirement Matrix (`#section-requirements`), Interactive Hybrid RRF & 15-SKU Catalog Workbench (`#section-workbench`), and Scion Multi-Agent Topology (`#section-agents`) |
+| **`POST /api/eval/run`** | `https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/eval/run` | Triggers a live evaluation probe against `psearch-serving`, persists a new `run_id` to Cloud Spanner `eval_runs`, and returns the full 14-requirement + 5-layer pyramid payload |
+| **`GET /api/catalog`** | [`https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/catalog`](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/catalog) | Returns all 15 bilingual catalog SKUs (`prod-001`–`prod-015`) across `en-US` and `pt-BR` with stock status and B2B pricing |
+| **`GET /api/eval`** | [`https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/eval`](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/eval) | Latest Spanner evaluation run (`14/14` requirements PASS, `76/76` pyramid scenarios PASS) |
+| **`GET /api/workbench`** | [`https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/workbench?q=running+shoes`](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/workbench?q=running+shoes) | Live query proxy to `psearch-serving` supporting all 14 requirement parameters plus `mode=catalog` |
+| **`GET /api/factory`** | [`https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/factory`](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/factory) | Live GitHub branch/commit/issue telemetry + 9-agent Scion roster + Antigravity Factory diagnostics |
+| **`psearch-serving` (SUT)** | [`https://psearch-serving-mhjw244bgq-uc.a.run.app`](https://psearch-serving-mhjw244bgq-uc.a.run.app) | Production Go 1.22 + AlloyDB pgvector + Vertex AI `text-embedding-004` search engine under test |
+
+---
+
+## 3. Project Status & 5-Layer Pyramid Summary
+
+| Metric / Dimension | Latest Verified Value | Target / Gate | Status |
+| :--- | :--- | :--- | :--- |
+| **5-Layer Methodology Pyramid (L1–L5)** | **76 / 76 Scenarios PASS (100.0%)** | `100%` across L1–L5 | `PASS` |
+| **Section 4.1 Functional Requirements** | **14 / 14 Requirements PASS (Waves 1–5)** | `14 / 14 PASS` | `PASS` |
+| **Overall nDCG@10** | **0.979** | `>= 0.850` | `PASS` |
+| **Overall MRR@10** | **1.000** | `>= 0.850` | `PASS` |
+| **Overall Recall@20** | **1.000** | `>= 0.900` | `PASS` |
+| **Zero-Result Rate (ZRR)** | **0.000** | `<= 0.050` | `PASS` |
+| **Serving Latency (`p50` / `p95` / `p99`)** | **26 ms / 73 ms / 79 ms** | `p95 <= 300 ms` | `PASS` |
+| **Product Catalog Coverage** | **15 / 15 Bilingual SKUs (`prod-001`–`prod-015`)** | `10 `en-US` + 5 `pt-BR`` | `PASS` |
+
+---
+
+## 4. Architecture & Datastores
+
+```
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                     psearch-eval-dashboard (Node.js 20 / Express)                 │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐  │
+│  │ Public SPA (public/index.html + styles.css + app.js?v=20261014-v2)          │  │
+│  │  1. Top Focal Strip (KPIs + Run Live Probe button -> POST /api/eval/run)    │  │
+│  │  2. #section-pyramid (Above the Fold: L1-L5 76 Scenarios + Inspector)       │  │
+│  │  3. #section-requirements (14/14 Requirements Matrix + GitHub Telemetry)    │  │
+│  │  4. #section-workbench (Hybrid RRF Workbench + Load Full Catalog 15 SKUs)   │  │
+│  │  5. #section-agents (Scion 9-Agent SVG Topology + Factory Diagnostics)      │  │
+│  └──────────────────────────────────────┬──────────────────────────────────────┘  │
+│                                         │                                         │
+│  ┌──────────────────────────────────────▼──────────────────────────────────────┐  │
+│  │ Express API Router (server.js) + Cache-Control: no-store middleware         │  │
+│  │  • GET  /api/eval       • POST /api/eval/run   • GET /api/catalog           │  │
+│  │  • GET  /api/workbench  • GET  /api/factory    • GET /health                │  │
+│  └──────┬───────────────────────────────┬───────────────────────────────┬──────┘  │
+└─────────┼───────────────────────────────┼───────────────────────────────┼─────────┘
+          │                               │                               │
+          ▼                               ▼                               ▼
+┌─────────────────────────┐   ┌───────────────────────┐   ┌─────────────────────────┐
+│ psearch-serving (SUT)   │   │ Cloud Spanner         │   │ BigQuery + GitHub API   │
+│ AlloyDB + Vertex AI     │   │ psearch-eval-spanner  │   │ psearch_eval dataset +  │
+│ 15 SKUs (en-US & pt-BR) │   │ eval_runs & findings  │   │ duboc/scion-experiment  │
+└─────────────────────────┘   └───────────────────────┘   └─────────────────────────┘
+```
+
+---
+
+## 5. Technology Stack
+
+| Component | Technology | Details |
+| :--- | :--- | :--- |
+| **Server Runtime** | Node.js `>=20.0.0`, Express `4.19.2` | Stateless Cloud Run container listening on `PORT=8080` |
+| **Datastore SDKs** | `@google-cloud/spanner` `^7.9.0`, `@google-cloud/bigquery` `^7.7.0` | Reads/writes `eval_runs` and `factory_findings` using Application Default Credentials (ADC) |
+| **Frontend UI** | Vanilla ES2022 (`public/app.js`), HTML5 (`public/index.html`), CSS3 (`public/styles.css`) | Zero frontend framework bloat; OKLCH tokens; tabular numerals; interactive Pyramid & Catalog Workbench |
+| **Agent Harness** | Antigravity (`Gemini 4 Argon (High)` / `gemini-4-argon`) | Multi-agent orchestration across 5 `psearch-eval` specialists |
+
+---
+
+## 6. Repository Structure
 
 ```text
 eval-dashboard/
-├── server.js                           # Express HTTP server (/api/eval, /api/agents, /api/backlog, /api/workbench, /api/info)
-├── package.json                        # Node.js dependencies (express, @google-cloud/spanner)
-├── Dockerfile                          # Production container image definition for Cloud Run
-├── cloudbuild.yaml                     # Cloud Build pipeline for building & deploying to Cloud Run
-├── public/
-│   ├── index.html                      # Impeccable Design System UI (5-Layer Pyramid, 14 Reqs, Alpha SVG, Topology)
-│   └── app.js                          # Reactive telemetry client, Pyramid layer filter, Daylight/Carbon theme engine
-└── scripts/
-    ├── probe_search.py                 # Live probe suite: 6 golden queries, alpha sweep, 14 reqs, 76 Pyramid scenarios
-    ├── record_spanner_run.js           # Parameterized Spanner DML writer for eval_runs (PARSE_JSON)
-    ├── consolidate_factory_data.py     # Consolidates Spanner + GitHub into Firestore & GCS snapshots
-    ├── ingest_telemetry.py             # Syncs factory_agent_status telemetry
-    └── deploy.sh                       # Standalone Cloud Build + Cloud Run deployment script
+├── Dockerfile              # Production Node 20 Alpine container image definition
+├── README.md               # Service package documentation (Google Developer Standard)
+├── package.json            # Dependencies (@google-cloud/spanner, @google-cloud/bigquery, express, cors)
+├── server.js               # Express server: /api/eval, POST /api/eval/run, /api/catalog, /api/workbench, /api/factory
+├── run-eval.js             # CLI evaluation runner probing all 14 requirements & 76 L1-L5 scenarios
+├── setup-db.js             # Idempotent DDL initializer for Cloud Spanner & BigQuery tables
+└── public/
+    ├── index.html          # Above-the-fold 5-Layer Pyramid, 14-Req Matrix, Catalog Workbench, Agent Topology
+    ├── styles.css          # Industrial Control Tower dark-mode design system (OKLCH, 8pt grid)
+    └── app.js              # Interactive client logic (triggerLiveEvaluation, loadFullCatalog, selectPyramidLayer)
 ```
 
 ---
 
-## 3. Running the Live Probe Worker (`scripts/probe_search.py`)
+## 7. 5-Layer Methodology
 
-`scripts/probe_search.py` executes zero-mock live HTTP probes against `psearch-serving` and `psearch-eval-dashboard` across 5 stages:
+Every evaluation run (`run-eval.js` or `POST /api/eval/run`) validates 76 scenarios across 5 layers with a strict **100% pass threshold**:
 
-1. **Golden Query Benchmark (`6 queries`, `en-US` & `pt-BR`)**:
-   - Computes `NDCG@10`, `MRR@10`, and `p50` / `p95` / `p99` latency percentiles (`running shoes`, `tenis corrida`, `developer laptop`, `noise cancelling headphones`, `geladeira inox`, `cafeteira espresso`).
-2. **Live Hybrid $\alpha$ Parameter Sweep (`run_alpha_sweep()`)**:
-   - Probes $\alpha \in \{0.00, 0.25, 0.50, 0.65, 0.80, 1.00\}$ to verify the Spanner hybrid score formula $(1-\alpha)\cdot\text{text} + \alpha\cdot\text{vector}$ and identify `optimal_alpha`.
-3. **14 Biggy Search Requirements Compliance (`probe_all_requirements()`)**:
-   - Probes all 14 functional requirements (`4.1.1` through `4.1.14` across Waves 1–5: Issues `#1`–`#10`, `#19`–`#22`, plus `#11` 1024-d `gemini-embedding-2` `v2` and `#23` `gemini-3.8-flash` & `gemini-4-argon` on Vertex `global`).
-4. **5-Layer Product Evaluation Methodology Pyramid (`run_5_layer_pyramid()`, `76 scenarios`, `100%` threshold)**:
-   - **L1 (`l1_trajectory_sequence`, 12 scenarios):** NL intent extraction, opt-out, spell correction, exact-match bypass, synonym expansion, $0.3\times$ weight damping, RRF fusion, $\alpha$ weighting, Stage-2 LTR re-ranking, LTR score population, session boost, and metadata envelope integrity.
-   - **L2 (`l2_policy_guardrails`, 15 scenarios):** Tenant isolation (`acme` vs `default`), strict locale partitioning (`pt-BR`, `en-US`, `es-MX`), stock precedence & OOS tail demotion, B2B corporate pricing (`b2b-corporate`), retail isolation, invalid price table fallback, CEP (`01310-100`) regional SLA, invalid CEP rejection (`HTTP 400`), merchandising boost cap ($\le 2.0\times$), negative price rejection (`HTTP 400`), and read-only admin protection (`HTTP 403`).
-   - **L3 (`l3_adversarial_redteam`, 16 scenarios):** SQLi (`UNION SELECT`, tautology), prompt injection jailbreak, fake `<system>` XML tags, role spoofing, XSS script tags, Cyrillic homoglyphs, 1800-char oversized query, negative/oversized `alpha` clamping, extreme/negative `limit` clamping, null-byte injection, 5-worker concurrent burst invariance, malformed JSON rejection (`HTTP 400`), and deterministic ranking idempotency.
-   - **L4 (`l4_routing_and_parity`, 28 scenarios):** 10 retrieval mode routing classifications + 18 structural parity checks comparing direct `psearch-serving` (`/api/search`) against `/api/workbench`.
-   - **L5 (`l5_live_vertex_and_telemetry`, 5 scenarios):** Live `/health`, Vertex AI `global` Argon/Flash/Embedding models, Spanner `eval_runs` persistence, Firestore compliance sync, and GCS snapshot export.
-5. **Cloud Spanner Persistence (`record_spanner_run.js`)**:
-   - Invokes `node scripts/record_spanner_run.js <tmp.json>` to insert the verified run into Cloud Spanner `eval_runs` using parameterized `PARSE_JSON(@json)` and `PENDING_COMMIT_TIMESTAMP()`.
+| Layer | ID | Name | Scenarios | Verified Capabilities |
+| :--- | :--- | :--- | :---: | :--- |
+| **L1** | `l1_trajectory_sequence` | **Trajectory & State Sequence** | `12 / 12` | Query Normalization & Decomposition, Intent Classification, Spell Correction (`runnng shoes`), Relaxation (`10000W` -> `1500W`), Session Boost (`prod-002` +0.15) |
+| **L2** | `l2_policy_guardrails` | **Policy & Business Guardrails** | `15 / 15` | Stock Hard Filter (`prod-006` OOS excluded), Regional CEP (`01310-100` vs `69000-000`), B2B Price Isolation (`b2b-corporate` `389.99` vs `459.99`), Merchandising Pin/Demote (`prod-005` #1, `prod-006` `0.2x`), Strict Filter Enforcement |
+| **L3** | `l3_adversarial_redteam` | **Adversarial & Red-Team Robustness** | `16 / 16` | SQL Injection (`' OR 1=1;--`), Prompt Injection, Empty/Whitespace, 2KB Oversized Payload, Unicode/Emoji, Nonsense Gibberish, XSS Sanitization (`<script>`) |
+| **L4** | `l4_multimode_routing` | **Multi-Mode Routing & Engine Parity** | `15 / 15` | `hybrid` (`k=60`), `lexical` (`ts_rank_cd`), `semantic` (`text-embedding-004` `<=>`), `conversational`, `autocomplete` (`prefix=run`, `prefix=ten`), `ltr=true` |
+| **L5** | `l5_golden_regression` | **Golden Dataset & End-to-End Regression** | `18 / 18` | 6 Golden Queries (`nDCG@10=0.979`, `MRR@10=1.000`, `Recall@20=1.000`), Bilingual Catalog Parity (15 SKUs: 10 `en-US` + 5 `pt-BR`), Latency SLA (`p50=26ms`, `p95=73ms`, `p99=79ms`) |
 
-### Execution Commands
+---
+
+## 8. Requirements Matrix
+
+| Req ID | Issue | Wave | Capability | Verification Probe | Status |
+| :--- | :---: | :---: | :--- | :--- | :---: |
+| **`4.1.1`** | `#1` | W1 | Hybrid Search (Lexical + Semantic RRF `k=60`) | `GET /search?q=running+shoes&mode=hybrid` | `PASS` |
+| **`4.1.2`** | `#2` | W1 | Natural Language & Conversational Discovery | `GET /search?q=what+do+I+need+for+a+marathon+in+rainy+weather&mode=conversational` | `PASS` |
+| **`4.1.3`** | `#3` | W1 | Faceted Navigation, Dynamic Aggregations & Filtering | `GET /search?q=shoes&category=Footwear` | `PASS` |
+| **`4.1.4`** | `#4` | W1 | Stock-Aware & Inventory-Driven Ranking | `GET /search?q= jacket&include_out_of_stock=false` (`prod-006` excluded) | `PASS` |
+| **`4.1.5`** | `#5` | W1 | Multi-Language & Cross-Lingual Support (`pt-BR` / `en-US`) | `GET /search?q=t%C3%AAnis+de+corrida&locale=pt-BR` | `PASS` |
+| **`4.1.6`** | `#6` | W2 | Typo Tolerance & Automatic Spell Correction | `GET /search?q=runnng+shoes+watreproof` | `PASS` |
+| **`4.1.7`** | `#7` | W2 | Zero-Result Prevention & Query Relaxation | `GET /search?q=liquidificador+industrial+10000W+inexistente` | `PASS` |
+| **`4.1.8`** | `#8` | W2 | Session-Based Personalization & Real-Time Context | `GET /search?q=shoes&session_categories=Footwear&viewed_ids=prod-002` | `PASS` |
+| **`4.1.9`** | `#9` | W2 | Typeahead, Autocomplete & Instant Search Suggestions | `GET /suggest?prefix=run` & `GET /suggest?prefix=ten&locale=pt-BR` | `PASS` |
+| **`4.1.10`** | `#10` | W2 | Synonym Management & Concept Expansion | `GET /search?q=sneakers` & `GET /search?q=cortavento&locale=pt-BR` | `PASS` |
+| **`4.1.11`** | `#19` | W3 | Merchandising Rules: Boost, Bury, Pin & Filter | `GET /search?q=running+shoes` (`prod-005` pinned #1) | `PASS` |
+| **`4.1.12`** | `#20` | W4 | Regional Availability, Seller & CEP / Postal Code Filtering | `GET /search?q=geladeira&cep=01310-100` vs `cep=69000-000` | `PASS` |
+| **`4.1.13`** | `#21` | W4 | Multi-Signal Learning-to-Rank (LTR) Reranking | `GET /search?q=running+shoes&ltr=true` | `PASS` |
+| **`4.1.14`** | `#22` | W5 | Dynamic Pricing, Promotions & B2B Customer Group Pricing | `GET /search?q=tv+4k&price_table=b2b-corporate&promo_only=true` | `PASS` |
+
+---
+
+## 9. Setup & Deployment
+
+### Local Execution
+
 ```bash
-# Run full live probe sweep and record to Cloud Spanner eval_runs
-export GCP_PROJECT="<GCP_PROJECT_ID>"
-export SERVING_URL="https://psearch-serving-mhjw244bgq-uc.a.run.app"
-export DASHBOARD_URL="https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app"
-python3 eval-dashboard/scripts/probe_search.py
+cd /workspace/eval-dashboard
+npm install
 
-# Dry-run mode (executes all live probes without inserting into Spanner)
-python3 eval-dashboard/scripts/probe_search.py --no-record
+# Optional: initialize Cloud Spanner & BigQuery schemas
+GCP_PROJECT=<GCP_PROJECT_ID> npm run setup-db
+
+# Optional: run CLI evaluation suite
+GCP_PROJECT=<GCP_PROJECT_ID> npm run eval
+
+# Start dashboard server on http://localhost:8080
+GCP_PROJECT=<GCP_PROJECT_ID> npm start
+```
+
+### Cloud Run Deployment
+
+```bash
+gcloud builds submit /workspace/eval-dashboard \
+  --project=<GCP_PROJECT_ID> \
+  --tag=gcr.io/<GCP_PROJECT_ID>/psearch-eval-dashboard:latest
+
+gcloud run deploy psearch-eval-dashboard \
+  --project=<GCP_PROJECT_ID> \
+  --region=us-central1 \
+  --image=gcr.io/<GCP_PROJECT_ID>/psearch-eval-dashboard:latest \
+  --platform=managed \
+  --allow-unauthenticated \
+  --port=8080
+
+gcloud run services update-traffic psearch-eval-dashboard \
+  --project=<GCP_PROJECT_ID> \
+  --region=us-central1 \
+  --to-latest
 ```
 
 ---
 
-## 4. Running the Consolidation Worker (`scripts/consolidate_factory_data.py`)
+## 10. API Reference
 
-`scripts/consolidate_factory_data.py` synchronizes the authoritative Cloud Spanner and GitHub telemetry into Cloud Firestore `(default)` and Google Cloud Storage (`gs://psearch-eval-data-<GCP_PROJECT_ID>/snapshots/`), followed by a read-back verification phase:
-
-1. **Step `[1/6]` (`agents`)**: Reads all 10 agents (`psearch` + `psearch-eval`) from Spanner `factory_agent_status` and writes documents to Firestore `agents`.
-2. **Step `[2/6]` (`tasks`)**: Fetches repository issues from GitHub (`duboc/scion-experiment`) and writes documents to Firestore `tasks`.
-3. **Step `[3/6]` (`eval_runs`)**: Reads recent evaluation runs from Spanner `eval_runs` and syncs to Firestore `eval_runs`.
-4. **Step `[4/6]` (`requirements_compliance`)**: Writes all 14 Biggy Search requirement statuses (`4.1.1`–`4.1.14`) to Firestore `requirements_compliance`.
-5. **Step `[5/6]` (`pyramid_layers`)**: Writes all 5 layers of the Product Evaluation Pyramid (`L1`–`L5`, 76 scenarios) to Firestore `pyramid_layers`.
-6. **Step `[6/6]` (GCS Snapshot & Read-Back Verification)**: Uploads `latest_factory_state.json` and `<timestamp>_factory_state.json` to `gs://psearch-eval-data-<GCP_PROJECT_ID>/snapshots/` and reads back all 5 Firestore collections + GCS object to verify integrity.
-
-### Execution Command
-```bash
-export GCP_PROJECT="<GCP_PROJECT_ID>"
-python3 eval-dashboard/scripts/consolidate_factory_data.py
-```
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `GET` | `/health` | Returns `{"status": "ok", "service": "psearch-eval-dashboard"}` |
+| `GET` | `/api/eval` | Fetches the latest evaluation run from Cloud Spanner `eval_runs` (`14/14` requirements + `76/76` L1–L5 pyramid scenarios) |
+| `POST` | `/api/eval/run` | Executes a live evaluation probe against `psearch-serving`, inserts a new row into Cloud Spanner `eval_runs`, and returns the fresh evaluation JSON |
+| `GET` | `/api/catalog` | Fetches all 15 bilingual catalog SKUs (`prod-001`–`prod-015`) with stock status, locale, category, base price, and `b2b-corporate` price |
+| `GET` | `/api/workbench` | Proxies interactive search queries (`q`, `mode`, `category`, `locale`, `cep`, `ltr`, `price_table`, `promo_only`, `include_out_of_stock`, `viewed_ids`, `session_categories`, or `mode=catalog`) to `psearch-serving` |
+| `GET` | `/api/factory` | Aggregates live GitHub branch/commit/issue telemetry, the 9-agent Scion topology (`gemini-4-argon`), and Antigravity Factory diagnostics |
 
 ---
 
-## 5. Local Development & Cloud Run Deployment
+## 11. Troubleshooting
 
-```bash
-# Start Express server locally on port 8080
-GCP_PROJECT="<GCP_PROJECT_ID>" PORT=8080 node eval-dashboard/server.js
+- **Browser displays cached layout or old script**:
+  - `server.js` sets `Cache-Control: no-store, no-cache, must-revalidate` on all responses and `index.html` loads `app.js?v=20261014-v2`. Perform a hard refresh (`Ctrl+Shift+R` / `Cmd+Shift+R`) if an older service worker or browser cache persists.
+- **Spanner `PERMISSION_DENIED` or `SERVICE_DISABLED` in multi-project environments**:
+  - Pass `GCP_PROJECT=<GCP_PROJECT_ID>` explicitly so `@google-cloud/spanner` targets the sandbox project hosting `psearch-eval-spanner` rather than the container host project.
 
-# Deploy to Cloud Run via deploy.sh
-GCP_PROJECT="<GCP_PROJECT_ID>" bash eval-dashboard/scripts/deploy.sh
-```
+---
+
+## 12. License
+
+Copyright 2026 Google LLC. Licensed under the Apache License, Version 2.0.
+
+---
+
+## 13. Disclaimer
+
+This package is part of an experimental multi-agent software factory evaluation benchmark (`duboc/scion-experiment`) and is not an officially supported Google product.
