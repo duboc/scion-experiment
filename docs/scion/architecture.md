@@ -119,7 +119,7 @@ The PO escalation path is narrow on purpose: IAM grants, cost, scope. Everything
 | Hub hosting | One VM: hub, web and broker together, SQLite | Cheap and simple; a single point of failure, and upgrades restart everything. |
 | Workspaces | Shared `/workspace` per project, commit slot | Works with Hub-managed projects; git-backed shared projects (or clone-per-agent in v2) avoid manual git init and serialize commits safely (L8). |
 | Coordination | GitHub issues plus `scion message`; schedules for heartbeats | No extra infrastructure; relies on agents following the protocol, so the protocol is short and repeated in every template. |
-| Harnesses | Mixed (Claude Code, Antigravity, OpenCode, Hermes) | Lets you compare them; each had its own failure mode (L3, L4, L6). |
+| Harnesses | Mixed (Claude Code, Antigravity, OpenCode, Hermes) | Lets you compare them; each had its own failure mode (L3, L4, L6, L26). Antigravity, OpenCode, and Hermes were upgraded to Gemini 4 Argon on Vertex AI. |
 | Credentials | PAT for GitHub, VM identity for models, assigned SA for deploys | Few secrets to manage; coarse identities (L14). |
 | Sandbox | Separate project for everything agents create | Agents can't damage the Hub; costs one more project. |
 

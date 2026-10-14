@@ -1,6 +1,7 @@
 schema_version: "1"
 description: "Search quality and latency evaluator of the ${EVAL_PROJECT} factory (Antigravity). Reports to eval-lead."
 default_harness_config: antigravity
+model: "Gemini 4 Argon (High)"
 agent_instructions: agents.md
 system_prompt: system-prompt.md
 env:

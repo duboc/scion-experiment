@@ -21,7 +21,7 @@ it. The scripts and templates are parameterized, so you can build another factor
 | [setup-runbook.md](setup-runbook.md) | you are building a new factory (step by step, with a check after each step) |
 | [operations-runbook.md](operations-runbook.md) | a factory is running and something looks wrong, or you need a routine task |
 | [agent-protocol.md](agent-protocol.md) | you want to understand or change the rules the agents follow |
-| [lessons-learned.md](lessons-learned.md) | before you change anything: 25 failures, their causes and fixes |
+| [lessons-learned.md](lessons-learned.md) | before you change anything: 26 failures, their causes and fixes |
 | [templates/](templates/README.md) | role prompts and settings for the ten agents, plus the shared protocol |
 | [scripts/](scripts/README.md) | the tooling: status, admin actions, sandbox setup, sync, patches |
 | [config/](config/) | `factory.env.example`, the heartbeat text, the Hub settings excerpt, the Spanner DDL |

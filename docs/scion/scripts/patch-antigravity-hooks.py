@@ -36,6 +36,7 @@ import os
 import py_compile
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import time
@@ -59,11 +60,35 @@ OLD = '"| sciontool hook --dialect=antigravity"'
 NEW = '"| SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity"'
 FIXED = "SCION_TELEMETRY_ENABLED=false sciontool hook"
 
+ARGON_MODEL = "Gemini 4 Argon (High)"
+OLD_FLASH = 'FLASH_MODEL = "Gemini 3.8 Flash (Medium)"'
+NEW_FLASH = f'FLASH_MODEL = "{ARGON_MODEL}"'
+OLD_PRO = 'PRO_MODEL = "Gemini 3.1 Pro (Low)"'
+NEW_PRO = f'PRO_MODEL = "{ARGON_MODEL}"'
+
 CUSTOM_HOOK_SCRIPT = """#!/bin/sh
 f=/workspace/.agents/hooks.json
 if [ -f "$f" ]; then
   sed -i 's/| sciontool hook --dialect=antigravity/| SCION_TELEMETRY_ENABLED=false sciontool hook --dialect=antigravity/g' "$f"
 fi
+
+# Ensure settings.json has Gemini 4 Argon (High) and location: global
+for s in "$HOME/.gemini/antigravity-cli/settings.json" "/home/scion/.gemini/antigravity-cli/settings.json"; do
+  if [ -f "$s" ]; then
+    python3 -c "
+import json
+try:
+    with open('$s') as fp: d = json.load(fp)
+    d['model'] = 'Gemini 4 Argon (High)'
+    if 'gcp' in d and isinstance(d['gcp'], dict):
+        d['gcp']['location'] = 'global'
+    with open('$s', 'w') as fp: json.dump(d, fp, indent=2); fp.write('\\n')
+except Exception: pass
+"
+  fi
+done
+
+export GOOGLE_CLOUD_LOCATION=global
 exit 0
 """
 
@@ -90,17 +115,57 @@ def check_or_patch_provisioner(path, apply):
         return f"{path}: not found"
     with open(path, "r", encoding="utf-8") as f:
         src = f.read()
-    if NEW in src:
+
+    new_src = src
+    needs_patch = False
+
+    if OLD in new_src:
+        new_src = new_src.replace(OLD, NEW)
+        needs_patch = True
+
+    is_antigravity = "antigravity" in path or "FLASH_MODEL" in new_src or "agy" in new_src
+    if is_antigravity:
+        if OLD_FLASH in new_src:
+            new_src = new_src.replace(OLD_FLASH, NEW_FLASH)
+            needs_patch = True
+        if OLD_PRO in new_src:
+            new_src = new_src.replace(OLD_PRO, NEW_PRO)
+            needs_patch = True
+
+        old_loc_secret = 'ctx.read_secret("GOOGLE_CLOUD_LOCATION", env_fallback=True)\n            or ctx.read_secret("GOOGLE_CLOUD_REGION", env_fallback=True)'
+        new_loc_secret = 'ctx.read_secret("GOOGLE_CLOUD_LOCATION", env_fallback=True)\n            or "global"'
+        if old_loc_secret in new_src:
+            new_src = new_src.replace(old_loc_secret, new_loc_secret)
+            needs_patch = True
+
+        old_gcp_loc = '_gcp_location="${GOOGLE_CLOUD_LOCATION:-${GOOGLE_CLOUD_REGION:-global}}"'
+        new_gcp_loc = '_gcp_location="${GOOGLE_CLOUD_LOCATION:-global}"'
+        if old_gcp_loc in new_src:
+            new_src = new_src.replace(old_gcp_loc, new_gcp_loc)
+            needs_patch = True
+
+        if 'export GOOGLE_CLOUD_LOCATION=' not in new_src and 'exec agy' in new_src:
+            new_src = new_src.replace(
+                'exec agy',
+                'export GOOGLE_CLOUD_LOCATION="${_gcp_location:-global}"\nexec agy'
+            )
+            needs_patch = True
+
+        target_telemetry = "d['enableTelemetry'] = False"
+        addition_model = f"d['enableTelemetry'] = False\nd['model'] = '{ARGON_MODEL}'"
+        if target_telemetry in new_src and f"d['model'] = '{ARGON_MODEL}'" not in new_src:
+            new_src = new_src.replace(target_telemetry, addition_model)
+            needs_patch = True
+
+    if not needs_patch:
         return f"{path}: patched"
-    if OLD in src:
-        if not apply:
-            return f"{path}: NOT patched"
-        bak = backup(path)
-        atomic_write(path, src.replace(OLD, NEW), check=lambda p: py_compile.compile(p, doraise=True))
-        return f"{path}: patched now (backup {bak})"
-    if "antigravity" in path:
-        return f"{path}: UNEXPECTED, antigravity provisioner missing {OLD}"
-    return f"{path}: skipped (non-antigravity)"
+
+    if not apply:
+        return f"{path}: NOT patched"
+
+    bak = backup(path)
+    atomic_write(path, new_src, check=lambda p: py_compile.compile(p, doraise=True))
+    return f"{path}: patched now (backup {bak})"
 
 
 def hook_commands(data):
@@ -128,6 +193,54 @@ def check_or_patch_hooks_file(path, apply):
 
 
 def check_or_stage_pre_start_hook(home_path, apply):
+    res = []
+    # 1. settings.json
+    s_path = os.path.join(home_path, ".gemini", "antigravity-cli", "settings.json")
+    if os.path.exists(s_path):
+        try:
+            with open(s_path, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            loc = d.get("gcp", {}).get("location") if isinstance(d.get("gcp"), dict) else None
+            if d.get("model") != ARGON_MODEL or loc != "global":
+                if apply:
+                    d["model"] = ARGON_MODEL
+                    if "gcp" in d and isinstance(d["gcp"], dict):
+                        d["gcp"]["location"] = "global"
+                    atomic_write(s_path, json.dumps(d, indent=2) + "\n")
+                    res.append(f"{s_path}: patched settings.json")
+                else:
+                    res.append(f"{s_path}: NOT patched")
+        except Exception as e:
+            res.append(f"{s_path}: error {e}")
+
+    # 2. agy-wrapper.sh
+    w_path = os.path.join(home_path, ".scion", "harness", "agy-wrapper.sh")
+    if os.path.exists(w_path):
+        try:
+            with open(w_path, "r", encoding="utf-8") as f:
+                w_src = f.read()
+            target_telemetry = "d['enableTelemetry'] = False"
+            addition_model = f"d['enableTelemetry'] = False\nd['model'] = '{ARGON_MODEL}'"
+            loc_target = '_gcp_location="${GOOGLE_CLOUD_LOCATION:-${GOOGLE_CLOUD_REGION:-global}}"'
+            loc_replace = '_gcp_location="${GOOGLE_CLOUD_LOCATION:-global}"'
+            w_needs = False
+            new_w_src = w_src
+            if target_telemetry in new_w_src and f"d['model'] = '{ARGON_MODEL}'" not in new_w_src:
+                new_w_src = new_w_src.replace(target_telemetry, addition_model)
+                w_needs = True
+            if loc_target in new_w_src:
+                new_w_src = new_w_src.replace(loc_target, loc_replace)
+                w_needs = True
+            if w_needs:
+                if apply:
+                    atomic_write(w_path, new_w_src)
+                    res.append(f"{w_path}: patched agy-wrapper.sh")
+                else:
+                    res.append(f"{w_path}: NOT patched")
+        except Exception as e:
+            res.append(f"{w_path}: error {e}")
+
+    # 3. 30-project-custom
     hook_dir = os.path.join(home_path, ".scion", "hooks", "pre-start.d")
     hook_path = os.path.join(hook_dir, "30-project-custom")
     if os.path.exists(hook_path):
@@ -135,16 +248,19 @@ def check_or_stage_pre_start_hook(home_path, apply):
             content = open(hook_path, "r", encoding="utf-8").read()
             is_exec = (os.stat(hook_path).st_mode & 0o700) == 0o700
             if "SCION_TELEMETRY_ENABLED=false" in content and is_exec:
-                return f"{hook_path}: patched"
+                res.append(f"{hook_path}: patched")
+                return "\n".join(res)
         except Exception:
             pass
     if not apply:
-        return f"{hook_path}: NOT patched (missing or invalid)"
+        res.append(f"{hook_path}: NOT patched (missing or invalid)")
+        return "\n".join(res)
     os.makedirs(hook_dir, exist_ok=True)
     with open(hook_path, "w", encoding="utf-8") as f:
         f.write(CUSTOM_HOOK_SCRIPT)
     os.chmod(hook_path, 0o700)
-    return f"{hook_path}: patched now"
+    res.append(f"{hook_path}: patched now")
+    return "\n".join(res)
 
 
 _TOKEN = None
@@ -296,6 +412,27 @@ def main():
 
     # 4. Project pre-start hooks via Hub API / DB
     lines.extend(ensure_project_pre_start_hooks(args.apply))
+
+    # 5. Patch running docker containers
+    containers = [
+        "psearch--frontend",
+        "psearch-eval--eval-lead",
+        "psearch-eval--eval-deployer",
+        "psearch-eval--factory-analyst",
+        "psearch-eval--search-evaluator",
+        "psearch-eval--ui-craftsman",
+    ]
+    for c in containers:
+        check_cmd = ["docker", "inspect", c]
+        if subprocess.run(check_cmd, capture_output=True).returncode != 0:
+            continue
+        if args.apply:
+            script = f'import json; p = "/home/scion/.gemini/antigravity-cli/settings.json"; d = json.load(open(p)); d["model"] = "{ARGON_MODEL}"; (d.get("gcp") or {{}})["location"] = "global"; json.dump(d, open(p, "w"), indent=2)'
+            res = subprocess.run(["docker", "exec", "-u", "scion", c, "python3", "-c", script], capture_output=True, text=True)
+            if res.returncode == 0:
+                lines.append(f"container {c}: patched settings.json")
+            else:
+                lines.append(f"container {c}: failed to patch: {res.stderr.strip()}")
 
     print("\n".join(lines))
 

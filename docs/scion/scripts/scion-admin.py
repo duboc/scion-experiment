@@ -168,6 +168,12 @@ def cmd_schedule(args):
         print(f"HTTP {status} status={out.get('status')} next={out.get('nextRunAt')}")
 
 
+def cmd_agent_start(args):
+    pid = project_id(args.project)
+    status, out = api("POST", f"/api/v1/projects/{pid}/agents/{args.agent}/start", {"forceResume": args.resume})
+    print(f"HTTP {status}: {out}")
+
+
 def cmd_experiments(args):
     _, current = api("GET", "/api/v1/admin/experiments")
     if not args.set:
@@ -197,6 +203,12 @@ def main():
     msg.add_argument("--interrupt", action="store_true", help="interrupt the harness first")
     msg.add_argument("--wake", action="store_true", help="resume a stopped/suspended agent first")
     msg.set_defaults(func=cmd_message)
+
+    start = sub.add_parser("agent-start", help="start an agent via Hub API")
+    start.add_argument("--project", required=True)
+    start.add_argument("--agent", required=True)
+    start.add_argument("--resume", action="store_true", help="force resume if in error phase")
+    start.set_defaults(func=cmd_agent_start)
 
     sch = sub.add_parser("schedule", help="manage recurring message schedules (heartbeats)")
     sch.add_argument("action", choices=["list", "create", "update", "pause", "resume"])

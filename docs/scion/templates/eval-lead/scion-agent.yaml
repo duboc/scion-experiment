@@ -3,6 +3,7 @@ description: "Evaluation and observability lead of the ${EVAL_PROJECT} factory (
 # To run the eval lead on Claude Code instead, set `default_harness_config: claude` (see operations-runbook.md,
 # "Switch an agent's harness").
 default_harness_config: antigravity
+model: "Gemini 4 Argon (High)"
 agent_instructions: agents.md
 system_prompt: system-prompt.md
 env:
