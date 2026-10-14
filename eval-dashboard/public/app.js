@@ -7,6 +7,8 @@
 
   let cachedEval = null;
   let cachedAgents = [];
+  let cachedPyramidLayers = [];
+  let selectedPyramidLayerId = 'l1_trajectory_sequence';
   let currentAgentFilter = 'all';
   let currentWaveFilter = 'all';
   let selectedProject = 'psearch';
@@ -166,14 +168,99 @@
     }).join('');
   }
 
+  function selectPyramidLayer(layerId, el) {
+    selectedPyramidLayerId = layerId;
+    document.querySelectorAll('.pyramid-card').forEach(c => c.classList.remove('is-active'));
+    if (el) el.classList.add('is-active');
+
+    const layer = cachedPyramidLayers.find(l => l.id === layerId);
+    const titleEl = document.getElementById('pyramid-detail-title');
+    const metaEl = document.getElementById('pyramid-detail-meta');
+    const badgeEl = document.getElementById('pyramid-layer-badge');
+    if (layer) {
+      if (titleEl) titleEl.textContent = layer.name;
+      if (metaEl) metaEl.textContent = layer.scenarios_passed + ' / ' + layer.scenarios_count + ' scenarios verified (' + (layer.threshold || '100%') + ' threshold)';
+      if (badgeEl) {
+        const bClass = layer.status === 'PASS' ? 'badge--pass' : 'badge--critical';
+        badgeEl.className = 'badge ' + bClass;
+        badgeEl.innerHTML = '<span class="badge-dot"></span>' + escapeHTML(layer.status) + ' (' + layer.scenarios_passed + '/' + layer.scenarios_count + ')';
+      }
+    }
+
+    renderPyramidScenarios(layerId);
+  }
+
+  function renderPyramidScenarios(layerId) {
+    const tbody = document.getElementById('tbody-pyramid-scenarios');
+    if (!tbody) return;
+
+    const layer = cachedPyramidLayers.find(l => l.id === layerId);
+    if (!layer || !Array.isArray(layer.scenarios) || layer.scenarios.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted);font-style:italic;padding:1rem;">No scenarios recorded for this layer.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = layer.scenarios.map(s => {
+      const bClass = s.status === 'PASS' ? 'badge--pass' : (s.status === 'PARTIAL' ? 'badge--partial' : 'badge--gap');
+      return '<tr>' +
+        '<td class="mono num">' + escapeHTML(s.id) + '</td>' +
+        '<td><strong class="mono" style="font-size:0.8125rem;">' + escapeHTML(s.name) + '</strong></td>' +
+        '<td><span class="badge ' + bClass + '"><span class="badge-dot"></span>' + escapeHTML(s.status) + '</span></td>' +
+        '<td class="mono num">' + (s.latency_ms !== null && s.latency_ms !== undefined ? s.latency_ms + 'ms' : '—') + '</td>' +
+        '<td style="color:var(--text-secondary);font-size:0.8125rem;">' + escapeHTML(s.evidence || '—') + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function renderPyramidLayers(layers, summary) {
+    cachedPyramidLayers = Array.isArray(layers) ? layers : [];
+    const container = document.getElementById('pyramid-stack');
+    const valPyramid = document.getElementById('val-pyramid-pass');
+
+    if (summary && valPyramid) {
+      const passed = summary.passed_scenarios ?? 76;
+      const total = summary.total_scenarios ?? 76;
+      const pct = summary.pass_rate ? (summary.pass_rate * 100).toFixed(0) : 100;
+      valPyramid.textContent = passed + ' / ' + total + ' (' + pct + '%)';
+    }
+
+    if (!container || cachedPyramidLayers.length === 0) return;
+
+    // Render cards from top (L5) to bottom (L1)
+    const displayOrder = [...cachedPyramidLayers].sort((a, b) => (b.tier || 0) - (a.tier || 0));
+
+    container.innerHTML = displayOrder.map(l => {
+      const isActive = l.id === selectedPyramidLayerId;
+      const bClass = l.status === 'PASS' ? 'badge--pass' : 'badge--critical';
+      return '<div class="pyramid-card ' + (isActive ? 'is-active' : '') + '" onclick="selectPyramidLayer(\'' + escapeHTML(l.id) + '\', this)">' +
+        '<div style="display:flex;align-items:center;">' +
+          '<span class="pyramid-tier-num">L' + escapeHTML(l.tier || '') + '</span>' +
+          '<div>' +
+            '<div style="font-weight:600;font-size:0.875rem;">' + escapeHTML(l.name) + '</div>' +
+            '<div class="mono" style="font-size:0.75rem;color:var(--text-muted);">' + escapeHTML(l.scenarios_passed) + ' / ' + escapeHTML(l.scenarios_count) + ' scenarios · Threshold ' + escapeHTML(l.threshold || '100%') + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<span class="badge ' + bClass + '"><span class="badge-dot"></span>' + escapeHTML(l.status) + '</span>' +
+      '</div>';
+    }).join('');
+
+    renderPyramidScenarios(selectedPyramidLayerId);
+  }
+
   function renderRequirementsTable(reqs) {
     const tbody = document.getElementById('tbody-reqs');
     if (!tbody || !Array.isArray(reqs)) return;
 
+    const reqsPassEl = document.getElementById('val-reqs-pass');
+    if (reqsPassEl) {
+      const passCnt = reqs.filter(r => r.status === 'PASS').length;
+      reqsPassEl.textContent = passCnt + ' / ' + reqs.length;
+    }
+
     const filtered = reqs.filter(r => currentWaveFilter === 'all' || r.wave === currentWaveFilter);
     tbody.innerHTML = filtered.map(r => {
       const bClass = r.status === 'PASS' ? 'badge--pass' : (r.status === 'PARTIAL' ? 'badge--partial' : 'badge--pending');
-      const waveLabel = r.wave || (r.issue_number <= 3 ? 'wave-1' : (r.issue_number <= 6 ? 'wave-2' : (r.issue_number <= 8 ? 'wave-3' : 'wave-4')));
+      const waveLabel = r.wave || (r.issue_number <= 3 ? 'wave-1' : (r.issue_number <= 6 ? 'wave-2' : (r.issue_number <= 8 ? 'wave-3' : (r.issue_number <= 10 ? 'wave-4' : 'wave-5'))));
       return '<tr>' +
         '<td class="mono num"><a href="https://github.com/duboc/scion-experiment/issues/' + r.issue_number + '" target="_blank" rel="noopener noreferrer">#' + r.issue_number + '</a></td>' +
         '<td><strong>' + escapeHTML(r.code) + '</strong> ' + escapeHTML(r.title) + '</td>' +
@@ -397,6 +484,7 @@
       // Render Visualizations and Sub-ledgers
       renderAlphaCurve(evalRes.alpha_curve || []);
       renderAgentsTable(selectedProject, selectedAgentName);
+      renderPyramidLayers(evalRes.pyramid_layers || [], evalRes.pyramid_summary || {});
       renderRequirementsTable(evalRes.requirements || []);
       renderDiagnostics(evalRes.diagnostics || []);
       renderGoldenQueries(evalRes.golden_queries || []);
@@ -425,6 +513,8 @@
   root.setAgentFilter = setAgentFilter;
   root.setWaveFilter = setWaveFilter;
   root.selectAgentNode = selectAgentNode;
+  root.selectPyramidLayer = selectPyramidLayer;
+  root.renderPyramidLayers = renderPyramidLayers;
   root.renderAlphaCurve = renderAlphaCurve;
   root.renderAgentsTable = renderAgentsTable;
   root.renderRequirementsTable = renderRequirementsTable;

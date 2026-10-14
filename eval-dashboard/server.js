@@ -173,18 +173,22 @@ app.get('/api/agents', async (req, res) => {
   }
 });
 
-// Canonical 10 Biggy Search requirements template with unmeasured baseline
+// Canonical 14 Biggy Search requirements template with unmeasured baseline
 const defaultUnmeasuredRequirements = [
-  { issue_number: 1, code: '4.1.1', title: 'Busca Híbrida (Dynamic RRF Alpha)', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 2, code: '4.1.2', title: 'Busca Vetorial (1024-dim, Blue/Green, Cache)', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 3, code: '4.1.3', title: 'Disponibilidade (Estoque/Canal + Indisponíveis no Final)', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 4, code: '4.1.4', title: 'Catálogo Multilanguage (pt-BR, en-US, es-MX)', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 5, code: '4.1.5', title: 'Facets Server-Side (Goroutines Concorrentes)', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 6, code: '4.1.6', title: 'Relevance & Merchandising Rules + 8 Sinais de Boost', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 7, code: '4.1.7', title: 'Low Relevance Synonyms (0.3x Score Weight)', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 8, code: '4.1.8', title: 'Delivery Promises (CEP/SLA via INTERLEAVE IN PARENT)', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 9, code: '4.1.9', title: 'Autocomplete (BQ Analytics + TOKENIZE_NGRAMS)', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 10, code: '4.1.10', title: 'Learning to Rank (2-Stage In-Memory Re-Ranking)', owner_agent: '@backend · @reviewer', status: 'not measured', latency_ms: null, evidence: null }
+  { issue_number: 1, code: '4.1.1', title: 'Busca Híbrida (Dynamic RRF Alpha)', wave: 'wave-1', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 2, code: '4.1.2', title: 'Busca Vetorial (1024-dim, Blue/Green, Cache)', wave: 'wave-1', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 3, code: '4.1.3', title: 'Disponibilidade (Estoque/Canal + Indisponíveis no Final)', wave: 'wave-1', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 4, code: '4.1.4', title: 'Catálogo Multilanguage (pt-BR, en-US, es-MX)', wave: 'wave-2', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 5, code: '4.1.5', title: 'Facets Server-Side (Goroutines Concorrentes)', wave: 'wave-2', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 6, code: '4.1.6', title: 'Relevance & Merchandising Rules + 8 Sinais de Boost', wave: 'wave-2', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 7, code: '4.1.7', title: 'Low Relevance Synonyms (0.3x Score Weight)', wave: 'wave-3', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 8, code: '4.1.8', title: 'Delivery Promises (CEP/SLA via INTERLEAVE IN PARENT)', wave: 'wave-3', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 9, code: '4.1.9', title: 'Autocomplete (BQ Analytics + TOKENIZE_NGRAMS)', wave: 'wave-4', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 10, code: '4.1.10', title: 'Learning to Rank (2-Stage In-Memory Re-Ranking)', wave: 'wave-4', owner_agent: '@backend · @reviewer', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 19, code: '4.1.11', title: 'Conversational Query Understanding (NL Intent + Gemini 3.8 Flash)', wave: 'wave-5', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 20, code: '4.1.12', title: 'Real-Time Session Personalization & Centroid Re-Ranking', wave: 'wave-5', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 21, code: '4.1.13', title: 'Zero-Results Recovery & Spell Correction (did_you_mean)', wave: 'wave-5', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 22, code: '4.1.14', title: 'B2B / Contract Pricing & Exclusive Assortment (INTERLEAVE)', wave: 'wave-5', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null }
 ];
 
 // Requirements evaluation summary: built ONLY from real probe results in Spanner eval_runs
@@ -224,6 +228,15 @@ app.get('/api/eval', async (req, res) => {
       const alphaCurve = hasRealAlpha ? reqData.alpha_curve : [];
       const diagnostics = Array.isArray(reqData.diagnostics) ? reqData.diagnostics : [];
       const goldenQueries = Array.isArray(reqData.golden_queries) ? reqData.golden_queries : [];
+      const pyramidLayers = Array.isArray(reqData.pyramid_layers) ? reqData.pyramid_layers : [];
+      const pyramidSummary = reqData.pyramid_summary || {
+        total_scenarios: 76,
+        passed_scenarios: 0,
+        pass_rate: 0.0,
+        layers_count: 5,
+        layers_passed: 0,
+        status: 'PENDING'
+      };
 
       const passCount = requirements.filter(r => r.status === 'PASS').length;
       const partialCount = requirements.filter(r => r.status === 'PARTIAL').length;
@@ -256,6 +269,10 @@ app.get('/api/eval', async (req, res) => {
         alpha_curve: alphaCurve,
         alphaCurve: alphaCurve,
         requirements: requirements,
+        pyramid_layers: pyramidLayers,
+        pyramidLayers: pyramidLayers,
+        pyramid_summary: pyramidSummary,
+        pyramidSummary: pyramidSummary,
         diagnostics: diagnostics,
         golden_queries: goldenQueries
       });
@@ -282,7 +299,7 @@ app.get('/api/eval', async (req, res) => {
       pass_count: 0,
       partial_count: 0,
       pending_count: 0,
-      not_measured_count: 10,
+      not_measured_count: 14,
       alpha_curve: [],
       alphaCurve: [],
       requirements: defaultUnmeasuredRequirements.map(r => ({
@@ -290,6 +307,24 @@ app.get('/api/eval', async (req, res) => {
         id: r.code || r.id,
         name: r.title || r.name
       })),
+      pyramid_layers: [],
+      pyramidLayers: [],
+      pyramid_summary: {
+        total_scenarios: 76,
+        passed_scenarios: 0,
+        pass_rate: 0.0,
+        layers_count: 5,
+        layers_passed: 0,
+        status: 'PENDING'
+      },
+      pyramidSummary: {
+        total_scenarios: 76,
+        passed_scenarios: 0,
+        pass_rate: 0.0,
+        layers_count: 5,
+        layers_passed: 0,
+        status: 'PENDING'
+      },
       diagnostics: [],
       note: 'Spanner eval_runs table currently has no rows; metrics are unmeasured'
     });

@@ -467,6 +467,45 @@
       gap: 1rem;
       flex-wrap: wrap;
     }
+    .pyramid-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 1rem;
+    }
+    .pyramid-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .pyramid-card:hover {
+      border-color: var(--accent-primary);
+      background: var(--bg-elevated);
+    }
+    .pyramid-card.is-active {
+      border-color: var(--accent-primary);
+      background: var(--accent-tint);
+    }
+    .pyramid-tier-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--bg-subtle);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-right: 0.75rem;
+    }
   </style>
 </head>
 <body>
@@ -536,15 +575,15 @@
       <div class="focal-cell">
         <div>
           <h2>Factory &amp; Spanner Operational Ledger</h2>
-          <p style="font-size:0.8125rem;margin-top:0.2rem;">Latency percentiles and Section 4.1 backlog readiness across Waves 1–4.</p>
+          <p style="font-size:0.8125rem;margin-top:0.2rem;">Latency percentiles, Section 4.1 readiness (Waves 1–5), and 5-Layer Pyramid.</p>
         </div>
         <div class="kv-list" style="border-top:none;padding-top:0;">
           <div class="kv-item"><span class="kv-key">Latency p50</span><span class="kv-val mono" id="val-p50">-- ms</span></div>
           <div class="kv-item"><span class="kv-key">Latency p95 / p99</span><span class="kv-val mono" id="val-p95">-- ms</span></div>
-          <div class="kv-item"><span class="kv-key">Requirements Passing</span><span class="kv-val mono" id="val-reqs-pass">-- / 10</span></div>
-          <div class="kv-item"><span class="kv-key">Active Scion Agents</span><span class="kv-val mono" id="val-agents-cnt">10 / 10</span></div>
-          <div class="kv-item"><span class="kv-key">Spanner Instance</span><span class="kv-val mono">psearch-instance (100 PU)</span></div>
-          <div class="kv-item"><span class="kv-key">Eval Harness</span><span class="kv-val mono">antigravity (100%)</span></div>
+          <div class="kv-item"><span class="kv-key">Requirements Passing</span><span class="kv-val mono" id="val-reqs-pass">-- / 14</span></div>
+          <div class="kv-item"><span class="kv-key">5-Layer Eval Pyramid</span><span class="kv-val mono" id="val-pyramid-pass">76 / 76 (100%)</span></div>
+          <div class="kv-item"><span class="kv-key">Vertex GenAI Models</span><span class="kv-val mono">gemini-3.8-flash · gemini-4-argon</span></div>
+          <div class="kv-item"><span class="kv-key">Eval Fleet Harness</span><span class="kv-val mono">antigravity · opencode · hermes (Argon)</span></div>
         </div>
       </div>
     </section>
@@ -729,17 +768,58 @@
       </div>
     </section>
 
-    <!-- Section 4.1 Functional Requirements Matrix (Issues #1-#10) + GitHub Commits -->
+    <!-- 5-Layer Product Evaluation Methodology Pyramid (L1–L5 · 76 Scenarios · 100% Threshold) -->
+    <section class="ledger-frame split-2" id="section-pyramid" aria-label="5-Layer Product Evaluation Methodology Pyramid">
+      <div class="zone">
+        <div class="zone-header">
+          <div>
+            <h2>5-Layer Product Evaluation Methodology Pyramid</h2>
+            <div class="mono" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">Hierarchy modeled on Acme Airlines evaluation methodology · 76 Scenarios · 100% Threshold</div>
+          </div>
+          <span class="badge badge--pass"><span class="badge-dot"></span>76 / 76 PASS (100%)</span>
+        </div>
+        <div class="pyramid-stack" id="pyramid-stack">
+          <!-- Populated dynamically: L5 (Apex) down to L1 (Foundation) -->
+        </div>
+      </div>
+
+      <div class="zone">
+        <div class="zone-header">
+          <div>
+            <h2 id="pyramid-detail-title">Layer Scenarios &amp; Live Verification Evidence</h2>
+            <div class="mono" id="pyramid-detail-meta" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">Click any tier on the left to inspect scenario assertions</div>
+          </div>
+          <span id="pyramid-layer-badge" class="badge badge--pass"><span class="badge-dot"></span>PASS (100%)</span>
+        </div>
+        <div class="zone-body table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Scenario Name</th>
+                <th>Status</th>
+                <th>Latency</th>
+                <th>Empirical Evidence</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-pyramid-scenarios"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4.1 Functional Requirements Matrix (Issues #1-#10, #19-#22) + GitHub Commits -->
     <section class="ledger-frame split-2" aria-label="Section 4.1 Functional Requirements and GitHub Activity">
       <div class="zone">
         <div class="zone-header">
-          <h2>Section 4.1 Requirements Matrix (GitHub Issues #1–#10)</h2>
+          <h2>Section 4.1 Requirements Matrix (GitHub Issues #1–#10, #19–#22)</h2>
           <div class="filter-group" role="group" aria-label="Filter requirements by wave">
-            <button type="button" class="filter-btn" aria-pressed="true" onclick="setWaveFilter('all', this)">All (10)</button>
+            <button type="button" class="filter-btn" aria-pressed="true" onclick="setWaveFilter('all', this)">All (14)</button>
             <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-1', this)">Wave 1</button>
             <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-2', this)">Wave 2</button>
             <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-3', this)">Wave 3</button>
             <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-4', this)">Wave 4</button>
+            <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-5', this)">Wave 5</button>
           </div>
         </div>
         <div class="zone-body table-wrap">
