@@ -11,7 +11,7 @@
 
 | Service Name | Description | Live URL | Active Revisions | Traffic | Configuration |
 |---|---|---|---|---|---|
-| **`psearch-eval-dashboard`** | Control Tower, 5-Layer Pyramid & Impeccable UI Workbench | [https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app) | `psearch-eval-dashboard-00010-z5g` / `psearch-eval-dashboard-00011-tsf` | **100% LATEST** | 1 CPU, 512MB RAM, `min-instances=1`, Secret: `github-token` |
+| **`psearch-eval-dashboard`** | Control Tower, 5-Layer Pyramid & Impeccable UI Workbench | [https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app) | `psearch-eval-dashboard-00010-z5g` / `psearch-eval-dashboard-00012-k9v` | **100% LATEST** | 1 CPU, 512MB RAM, `min-instances=1`, Secret: `github-token` |
 | **`psearch-serving`** | Target Hybrid Search Engine Backend (Spanner + Gemini 4 Argon) | [https://psearch-serving-mhjw244bgq-uc.a.run.app](https://psearch-serving-mhjw244bgq-uc.a.run.app) | `psearch-serving-00025-5mx` | **100% LATEST** | 2 CPU, 2GB RAM, `min-instances=1`, `gemini-3.8-flash` + `gemini-4-argon` (`global`) |
 
 ---
@@ -53,7 +53,7 @@
 
 | Revision | Commit (`eval-dashboard`) | Cloud Build ID | Key Capabilities Delivered | Verification Status |
 |---|---|---|---|---|
-| **`psearch-eval-dashboard-00011-tsf`** | `b10120a` | `343a6466-dc2d-4e5b-af80-024233a27773` | 5-Layer Product Evaluation Pyramid (`L1–L5`, 76/76 scenarios PASS), 14/14 Biggy Search Requirements (`Waves 1–5`), interactive scenario drilldown UI | **LIVE (100% Traffic)** |
+| **`psearch-eval-dashboard-00012-k9v`** | `b10120a` | `343a6466-dc2d-4e5b-af80-024233a27773` | 5-Layer Product Evaluation Pyramid (`L1–L5`, 76/76 scenarios PASS), 14/14 Biggy Search Requirements (`Waves 1–5`), interactive scenario drilldown UI | **LIVE (100% Traffic)** |
 | **`psearch-eval-dashboard-00010-z5g`** | `b10120a` | `00010-z5g` rollout | 5-Layer Product Evaluation Pyramid (`L1–L5`, 76 scenarios, 100% threshold), 14 Requirements matrix (`4.1.1`–`4.1.14`), Gemini 4 Argon model telemetry | **VERIFIED** |
 | **`psearch-eval-dashboard-00009-d42`** | `ba2371a` | `7704fe52-2438-47a3-9d5b-69bd1e368e13` | Integrated `@factory-analyst` diagnostics, `CRITICAL` / `WARNING` / `HEALTHY` semantic badge tokens, initial PRD/DESIGN/DEPLOYMENT docs | Superseded |
 | **`psearch-eval-dashboard-00008-w7p`** | `df87336` | `00008-w7p` rollout | Storefront live URL linkage, camelCase API aliases, 10/10 Wave 1–4 requirement verification | Superseded |
