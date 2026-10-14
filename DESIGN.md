@@ -1,6 +1,6 @@
 ---
 name: psearch-eval
-description: Factory Intelligence & Search Quality Workbench for the Scion psearch software factory
+description: Factory Intelligence, 5-Layer Product Evaluation Pyramid & Search Quality Workbench for the Scion psearch software factory
 mode: Operate
 world: Precision Telemetry Ledger
 colors:
@@ -98,140 +98,117 @@ components:
 
 # Impeccable Design System Specification — `psearch-eval`
 
-**System Role:** Precision Telemetry & Quality Evaluation Workbench  
+**System Role:** Precision Telemetry, 5-Layer Product Evaluation Pyramid & Quality Workbench  
 **Mode:** Operate  
 **World:** Precision Telemetry Ledger (*Kinpaku & Warm Stone* / *Carbon Ink*)  
-**Lead Engineer:** `@ui-craftsman` (Antigravity Harness) reporting to `@eval-lead`  
+**Lead Engineer:** `@ui-craftsman` (Antigravity Harness · `agy v1.3.4` · `gemini-4-argon`) reporting to `@eval-lead`  
 **Compliance Target:** WCAG AA (Contrast $\ge 4.5:1$, Visible Focus Rings, Tabular Alignment)  
 
 ---
 
-## 1. Overview
+## 1. Overview & Architectural Philosophy
 
-The `psearch-eval` user interface is engineered according to the **Impeccable Design System** under the **Operate** interaction mode. In Operate mode, the user arrives to accomplish precise technical tasks: verifying search relevance, analyzing multi-agent progress, diagnosing query rank degradation, and validating SLA percentiles.
+The `psearch-eval` user interface (`eval-dashboard/public/index.html` and `eval-dashboard/public/app.js`) is engineered according to the **Impeccable Design System** (`impeccable.style`) under the **Operate** interaction mode. Operators arrive to verify search relevance (`NDCG@10`, `MRR@10`), inspect the **5-Layer Product Evaluation Methodology Pyramid (`L1–L5`, 76 scenarios, 100% threshold)**, audit **14 Biggy Search Requirements (`4.1.1`–`4.1.14` across Waves 1–5)**, and monitor the 10-agent software factory topology.
 
 The visual world is the **Precision Telemetry Ledger**:
-- **Utilitarian Elegance**: An interface that feels like a precision high-density laboratory ledger or aerospace flight console rather than a generic SaaS template.
-- **No Card Nesting**: Structural separation is achieved via hairline boundary rules (`1px solid var(--border-hairline)`) and subtle background shifts (`var(--bg-subtle)`), eliminating nested "cards inside cards" anti-patterns.
-- **Dual-Mode Chromatic Harmony**: Seamless switching between high-clarity **Daylight** (warm stone canvas with deep slate ink) and zero-glare **Carbon** (deep obsidian canvas with high-legibility phosphor ink).
+- **Utilitarian Elegance**: High-density laboratory ledger geometry with zero decorative fluff or marketing banners.
+- **No Card Nesting**: Structural separation is achieved strictly via `1px solid var(--border-hairline)` boundaries and subtle surface shifts (`var(--bg-subtle)`), avoiding nested cards.
+- **Dual-Mode Chromatic Harmony**: Seamless toggle (`toggleTheme()`) between **Daylight** (*Kinpaku & Warm Stone*) and **Carbon** (*Carbon Ink & Deep Slate*), persisted in `localStorage` (`psearch-theme`).
 
 ---
 
-## 2. Colors
+## 2. OKLCH Color System & Semantic Badges
 
-All colors are formulated in the perceptual **OKLCH** color space to guarantee linear perceptual lightness steps, consistent chroma saturation, and accessibility contrast across both themes.
+All colors are defined in the perceptual **OKLCH** color space to ensure linear lightness steps and WCAG AA contrast ratios across both themes:
 
-### Daylight Palette (Kinpaku & Warm Stone)
+### Daylight Palette (`[data-theme="daylight"]`)
 - `--bg-canvas`: `oklch(97.0% 0.008 245)` — Warm mineral ground, glare-free under ambient light.
-- `--bg-surface`: `oklch(99.4% 0.003 245)` — Crisp paper-like elevated surface.
-- `--bg-subtle`: `oklch(94.5% 0.010 245)` — Structural dividers and table alternate banding.
+- `--bg-surface`: `oklch(99.4% 0.003 245)` — Crisp ledger surface.
+- `--bg-subtle`: `oklch(94.5% 0.010 245)` — Structural dividers, table headers, and alternate banding.
 - `--border-hairline`: `oklch(87.0% 0.012 245)` — Fine 1px architectural containment.
-- `--border-strong`: `oklch(74.0% 0.018 245)` — Active borders, focus, and input boundaries.
-- `--text-primary`: `oklch(19.5% 0.016 255)` — Deep charcoal ink ($12.5:1$ contrast against surface).
+- `--text-primary`: `oklch(19.5% 0.016 255)` — Deep charcoal ink ($12.5:1$ contrast).
 - `--text-secondary`: `oklch(40.0% 0.018 255)` — Secondary labels ($6.8:1$ contrast).
 - `--text-muted`: `oklch(50.0% 0.016 255)` — Metadata and units ($4.6:1$ contrast, strictly AA-safe).
 
-### Carbon Palette (Carbon Ink & Deep Slate)
-- `--bg-canvas`: `oklch(14.5% 0.012 250)` — Deep charcoal slate.
-- `--bg-surface`: `oklch(17.5% 0.014 250)` — Base module surface.
-- `--bg-subtle`: `oklch(20.5% 0.016 250)` — Subtle contrast framing.
+### Carbon Palette (`[data-theme="carbon"]`)
+- `--bg-canvas`: `oklch(14.5% 0.012 250)` — Deep obsidian slate.
+- `--bg-surface`: `oklch(17.5% 0.014 250)` — Base ledger surface.
+- `--bg-subtle`: `oklch(20.5% 0.016 250)` — Subtle framing surface.
 - `--border-hairline`: `oklch(27.5% 0.016 250)` — Restrained hairline boundary.
 - `--text-primary`: `oklch(95.5% 0.008 80)` — Near-white illumination ($13.1:1$ contrast).
 - `--text-secondary`: `oklch(76.0% 0.012 80)` — Legible telemetry readouts ($7.2:1$ contrast).
 
-### Semantic Status Tokens
-- **PASS**: `--status-pass: oklch(52% 0.145 155)` / BG: `oklch(94.5% 0.035 155)` (Verified compliance).
-- **WARN / PARTIAL**: `--status-warn: oklch(58% 0.155 68)` / BG: `oklch(95% 0.040 75)` (Degraded latency / partial feature).
-- **GAP / FAIL**: `--status-gap: oklch(53% 0.185 28)` / BG: `oklch(95% 0.035 28)` (Unimplemented / SLA breach).
+### Semantic Status Badges
+- **`.badge--pass` / `.badge--HEALTHY`**: `--status-pass: oklch(52% 0.145 155)` (Verified `PASS` / `100%` threshold met).
+- **`.badge--partial` / `.badge--WARNING`**: `--status-warn: oklch(58% 0.155 68)` (Partial compliance or latency warning).
+- **`.badge--pending` / `.badge--CRITICAL`**: `--status-gap: oklch(53% 0.185 28)` (Unmeasured, failed check, or critical diagnostic).
 
 ---
 
-## 3. Typography
+## 3. Typography & Tabular Discipline
 
-The typographic hierarchy establishes clear informational density without crowding:
-
-1. **Primary Interface Font**: **`Albert Sans`** (`wght@400;500;600;700`)
-   - Geometric clarity with open apertures for high legibility at micro-scales.
-   - Text balancing (`text-wrap: balance`) enabled on titles to prevent orphan words.
-2. **Telemetry & Code Font**: **`JetBrains Mono`** (`wght@400;500;600`)
-   - Mandatory for all numbers, latencies, percentiles, git SHAs, UUIDs, and SQL expressions.
-   - Enforced `font-variant-numeric: tabular-nums` to ensure perfectly aligned columns in data tables.
-
-### Type Scale
-| Role | Font Family | Size | Weight | Tracking |
-|---|---|---|---|---|
-| Page Header (`h1`) | Albert Sans | `1.25rem` (20px) | 600 | `-0.025em` |
-| Zone Header (`h2`) | Albert Sans | `1.0625rem` (17px) | 600 | `-0.015em` |
-| Sub-Header (`h3`) | Albert Sans | `0.9375rem` (15px) | 600 | `-0.010em` |
-| Body Text (`p`) | Albert Sans | `0.875rem` (14px) | 400 | `normal` |
-| Monospace / Code | JetBrains Mono | `0.8125rem` (13px) | 500 | `normal` |
-| Micro Telemetry | JetBrains Mono | `0.75rem` (12px) | 500 | `+0.02em` |
+1. **Primary Interface Font**: **`Albert Sans`** (`wght@400;500;600;700`) with `text-wrap: balance` on section headers.
+2. **Telemetry & Code Font**: **`JetBrains Mono`** (`wght@400;500;600`) with mandatory `font-variant-numeric: tabular-nums` (`.mono`, `.num`) on all scores, latencies, scenario counts (`76 / 76`), git SHAs, and agent turn counters.
 
 ---
 
-## 4. Layout
+## 4. Layout & Component Architecture
 
-The layout uses an unyielding, high-density structured framework:
+### 4.1 Sticky Operational Topbar & Asymmetric Focal Strip
+- **Topbar**: Displays service identity (`psearch-eval`), live status dot, storefront link (`#link-storefront`), manual refresh trigger (`refreshAll()`), and Daylight/Carbon theme toggle (`#theme-toggle`).
+- **Asymmetric Focal Strip**:
+  - **Primary Metric Readout**: `NDCG@10` (`#val-ndcg`), `MRR@10` (`#val-mrr`), optimal hybrid weight (`#val-opt-alpha`), backend mode (`#lbl-backend-mode`), and UTC probe timestamp (`#val-timestamp`).
+  - **Secondary Telemetry Strip**:
+    - `p50 Latency` (`#val-p50`) & `p95 / p99 Latency` (`#val-p95`)
+    - `Requirements Status` (`#val-reqs-pass` $\to$ `14 / 14 PASS · 0 PARTIAL`)
+    - `5-Layer Pyramid Status` (`#val-pyramid-pass` $\to$ `76 / 76 PASS (100%)`)
+    - `Active Agents` (`#val-agents-cnt` $\to$ `10 / 10 running`)
+  - **Inline SVG Alpha Parameter Sweep (`#svg-alpha-curve`)**: Plots live `NDCG@10` across $\alpha \in \{0.00, 0.25, 0.50, 0.65, 0.80, 1.00\}$ with peak annotation.
 
-- **Sticky Operational Bar**: Fixed top viewport header containing service identifiers, branch metadata, live sync indicators, theme toggle, and manual sweep trigger.
-- **Asymmetric Focal Strip**: A primary 3-column asymmetric summary container:
-  1. *Relevance Readout*: Large tabular metrics (NDCG@10 and MRR@10) with historical delta indicators.
-  2. *Interactive SVG Alpha Curve*: Dynamic visualization of NDCG@10 vs. Hybrid $\alpha$ parameter sweep with the peak highlighted.
-  3. *Latency Percentile Matrix*: p50, p95, and p99 millisecond benchmarks against target thresholds.
-- **Two-Column Primary Split**:
-  - *Left Column (60% width)*: 10 Biggy Search Requirements Ledger with wave filtering tabs.
-  - *Right Column (40% width)*: Interactive Hybrid Query Workbench and Multi-Agent Topology Ledger.
-- **Responsive Fluidity**: Collapses gracefully to a stacked single-column layout on viewports $< 1080\text{px}$.
+### 4.2 5-Layer Product Evaluation Methodology Pyramid (`#section-pyramid`)
+- **Pyramid Stack (`#pyramid-stack` & `.pyramid-layer-card`)**:
+  - Renders 5 horizontal tier rows (`L1` through `L5`), each displaying:
+    - Tier badge (`L1`–`L5`) and layer title (`L1. Trajectory & State Sequence`, `L2. Policy & Business Guardrails`, `L3. Adversarial & Red-Team Robustness`, `L4. Multi-Mode Routing & Engine Parity`, `L5. Live Vertex AI & Factory Telemetry`).
+    - Progress bar track (`.pyramid-bar-track` / `.pyramid-bar-fill`) proportional to `scenarios_passed / scenarios_count` (`100%` fill in `--status-pass`).
+    - Tabular scenario counter (`12/12`, `15/15`, `16/16`, `28/28`, `5/5`) and `PASS` status badge.
+- **Interactive Scenario Drilldown Ledger (`#tbody-pyramid-scenarios`)**:
+  - Filterable via layer buttons (`All Layers (76)`, `L1 (12)`, `L2 (15)`, `L3 (16)`, `L4 (28)`, `L5 (5)`) bound to `setPyramidLayerFilter(layerId, btn)`.
+  - Columns: `Layer`, `Scenario ID`, `Scenario Name`, `Status Badge`, `Latency (ms)`, and `Empirical Evidence`.
 
----
+### 4.3 14 Biggy Search Requirements Compliance Ledger (`#section-requirements`)
+- **Wave Filter Bar**: Interactive filter buttons (`All`, `Wave 1`, `Wave 2`, `Wave 3`, `Wave 4`, `Wave 5`) bound to `setWaveFilter(wave, btn)`.
+- **Ledger Table (`#tbody-reqs`)**: Renders all 14 requirements (`4.1.1`–`4.1.14`, Issues `#1`–`#10` and `#19`–`#22`) with clickable GitHub issue links, wave tags, owner agents, `PASS` badges, and live probe evidence.
 
-## 5. Elevation & Depth
-
-In keeping with the Precision Telemetry Ledger aesthetic:
-- **No Heavy Drop Shadows**: Traditional diffuse drop shadows are eliminated. Depth is communicated strictly via tonal surface shifts and crisp border hairlines.
-- **Elevated Interactive States**: Modals, tooltips, and flyouts use high-precision micro-shadows:
-  - Daylight: `0 6px 20px -4px oklch(20% 0.02 255 / 0.08)`
-  - Carbon: `0 8px 24px -4px oklch(8% 0.01 250 / 0.45)`
-- **Hover Transitions**: Restrained $160\text{ms}$ cubic-bezier transitions (`cubic-bezier(0.22, 1, 0.36, 1)`) with zero bouncy cartoon physics.
-
----
-
-## 6. Shapes
-
-- **Geometric Rectilinearity**: Sharp, precise edges dominate (`border-radius: 0px` on containers, table cells, and major panels) to evoke ledger engineering sheets.
-- **Subtle Micro-Radii**: Controlled `2px` or `4px` radius applied exclusively to interactive inputs, pills, buttons, and status indicator dots to maintain tactile ergonomics.
-- **Status Dots**: Distinctive $6\text{px} \times 6\text{px}$ indicator pills with solid semantic fills.
-
----
-
-## 7. Components
-
-### 7.1 Interactive Hybrid RRF Query Workbench
-- Input grid combining query string, dynamic $\alpha$ weight selector ($0.00$ to $1.00$), and locale selector (`pt-BR`, `en-US`, `es-MX`).
-- Instantaneous asynchronous execution updating live result cards with rank numbers, stock availability badges, and decomposed scoring vectors.
-
-### 7.2 Requirements Compliance Ledger
-- Data table with categorical wave filters (All, Wave 1: Core Hybrid, Wave 2: Inventory & Facets, Wave 3: Merchandising & LTR).
-- Status badges accompanied by mandatory text labels: `PASS`, `PARTIAL`, `GAP`, or `not measured`.
-- Columnar latency alignment and expandable technical evidence drawers.
-
-### 7.3 Multi-Agent Topology Graph & Inspector
-- Direct SVG/DOM node graph depicting agent relationships (`orchestrator` $\to$ `lead` $\to$ `backend` / `frontend` / `reviewer` / `deployer`).
-- Interactive node selection binding to a dedicated agent inspector panel displaying turn counts, model invocations, and current task focus.
+### 4.4 Interactive Hybrid RRF Query Workbench & Multi-Agent Topology
+- **Query Workbench (`runWorkbenchQuery()`)**: Live query input (`#wb-query`), hybrid $\alpha$ selector (`#wb-alpha`), and locale selector (`#wb-locale`) executing real-time proxy probes via `/api/workbench` and displaying stock badges and hybrid scores in `#tbody-workbench`.
+- **Multi-Agent Factory Topology & Diagnostics**:
+  - Interactive topology node pills for both `psearch` (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) and `psearch-eval` (`eval-lead`, `search-evaluator`, `factory-analyst`, `ui-craftsman`, `eval-deployer`), bound to `#tbody-agents`.
+  - Factory Diagnostics Ledger (`#diag-container`) and Git Commit Ledger (`#tbody-commits`).
 
 ---
 
-## 8. Do's and Don'ts
+## 5. Express Server Routes (`eval-dashboard/server.js`)
+
+| HTTP Route | Method | Data Source | Response Contract |
+|---|---|---|---|
+| **`GET /api/eval`** | `GET` | Cloud Spanner `eval_runs` (`ORDER BY created_at DESC LIMIT 1`) | Returns `run_id`, `overall_ndcg_at_10`, `overall_mrr_at_10`, `p50_latency_ms`, `p95_latency_ms`, `p99_latency_ms`, `optimal_alpha`, `pass_count` (`14`), `requirements` (`14` items), `pyramid_layers` (`5` layers), `pyramid_summary` (`76/76 PASS`), `alpha_curve`, `golden_queries`, and `diagnostics`. |
+| **`GET /api/agents`** | `GET` | Cloud Spanner `factory_agent_status` | Returns `source: "spanner"` and `agents` array (`10` agents across `psearch` and `psearch-eval`) with `phase`, `activity`, `current_turns`, `model_calls`, and `last_summary`. |
+| **`GET /api/backlog`** | `GET` | GitHub REST API (`duboc/scion-experiment`) | Returns `issues`, `main_commits`, and `eval_commits` authenticated via Secret Manager `github-token`. |
+| **`GET /api/workbench`** | `GET` | Live HTTP proxy to `psearch-serving` (`/api/search`) | Proxies `q`, `alpha`, and `locale` to `psearch-serving`, returning `results`, `facets`, `effective_alpha`, and `probe_latency_ms`. |
+| **`GET /api/info`** | `GET` | Service runtime configuration | Returns `service: "psearch-eval-dashboard"`, `spanner_instance: "psearch-instance"`, `spanner_database: "psearch-db"`, and `serving_url`. |
+| **`GET /health`** | `GET` | Container health probe | Returns `200 OK` with `{"status": "ok"}`. |
+
+---
+
+## 6. Do's and Don'ts
 
 ### Do's
-- **DO** use `font-variant-numeric: tabular-nums` on all numbers, latencies, scores, and dates.
-- **DO** maintain strict WCAG AA contrast ratios ($\ge 4.5:1$) for all text and data labels in both themes.
-- **DO** ensure status is never conveyed by color alone (always include unambiguous text labels and status dots).
-- **DO** query real Spanner / Cloud Run probe endpoints; report real data or unmeasured states.
-- **DO** provide visible, high-contrast focus rings (`outline: 2px solid var(--accent-primary); outline-offset: 2px`) for keyboard accessibility.
+- **DO** use `font-variant-numeric: tabular-nums` on all numbers, latencies, scores, scenario tallies, and timestamps.
+- **DO** maintain strict WCAG AA contrast ratios ($\ge 4.5:1$) for all text and data labels in both Daylight and Carbon themes.
+- **DO** ensure status is never conveyed by color alone (always pair semantic colors with explicit text badges: `PASS`, `PARTIAL`, `FAIL`, `HEALTHY`, `WARNING`, `CRITICAL`).
+- **DO** query real Cloud Spanner `eval_runs` and live `psearch-serving` endpoints; never invent synthetic fallback metrics.
 
 ### Don'ts
-- **DON'T** nest cards inside cards or use floating amorphous gradient bubbles.
-- **DON'T** use synthetic or invented fallback metrics (e.g. "98.5% uptime" or "0.89 NDCG" without an underlying Spanner `eval_runs` record).
-- **DON'T** hardcode dark mode or light mode values directly in component CSS; always reference CSS custom properties.
-- **DON'T** allow text truncation without accessible tooltip inspection for long technical error messages or SQL evidence strings.
+- **DON'T** nest cards inside cards or use decorative gradient blobs.
+- **DON'T** hardcode theme colors outside CSS custom properties.
+- **DON'T** commit real GCP project IDs, personal emails, or secret tokens into documentation or client assets.
