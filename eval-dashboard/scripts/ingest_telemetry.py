@@ -12,7 +12,7 @@ import json
 import subprocess
 from datetime import datetime, timezone
 
-PROJECT_ID = os.getenv("GCP_PROJECT", "riojucu-sandbox")
+PROJECT_ID = os.getenv("GCP_PROJECT", "<GCP_PROJECT_ID>")
 INSTANCE_ID = os.getenv("SPANNER_INSTANCE", "psearch-instance")
 DATABASE_ID = os.getenv("SPANNER_DATABASE", "psearch-db")
 OUTPUT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "telemetry.json")

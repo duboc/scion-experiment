@@ -20,12 +20,12 @@ import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-PROJECT_ID = os.getenv("GCP_PROJECT", "riojucu-sandbox")
+PROJECT_ID = os.getenv("GCP_PROJECT", "<GCP_PROJECT_ID>")
 INSTANCE_ID = os.getenv("SPANNER_INSTANCE", "psearch-instance")
 DATABASE_ID = os.getenv("SPANNER_DATABASE", "psearch-db")
 SERVING_URL = os.getenv("PSEARCH_SERVING_URL", "https://psearch-serving-mhjw244bgq-uc.a.run.app")
 DASHBOARD_URL = os.getenv("EVAL_DASHBOARD_URL", "https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app")
-BUCKET_NAME = os.getenv("GCS_BUCKET", "psearch-eval-data-riojucu-sandbox")
+BUCKET_NAME = os.getenv("GCS_BUCKET", "psearch-eval-data-<GCP_PROJECT_ID>")
 
 GOLDEN_QUERIES = [
     {"query": "running shoes", "locale": "en-US", "alpha": 0.65, "expected": ["prod-001", "prod-003"]},

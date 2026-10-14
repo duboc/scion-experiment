@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_ID="riojucu-sandbox"
+PROJECT_ID="<GCP_PROJECT_ID>"
 REGION="us-central1"
 SERVICE_NAME="psearch-eval-dashboard"
 IMAGE_TAG="gcr.io/${PROJECT_ID}/${SERVICE_NAME}:latest"

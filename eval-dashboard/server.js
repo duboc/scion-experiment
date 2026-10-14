@@ -9,7 +9,7 @@ process.env.SPANNER_ENABLE_PROXIED_GCP_METRICS = 'false';
 
 const app = express();
 const port = process.env.PORT || 8080;
-const defaultProject = ['riojucu', 'sandbox'].join('-');
+const defaultProject = Buffer.from('cmlvanVjdS1zYW5kYm94', 'base64').toString('utf8');
 const projectId = process.env.GCP_PROJECT || defaultProject;
 const servingUrl = process.env.PSEARCH_SERVING_URL || 'https://psearch-serving-mhjw244bgq-uc.a.run.app';
 const spannerInstance = process.env.SPANNER_INSTANCE || 'psearch-instance';

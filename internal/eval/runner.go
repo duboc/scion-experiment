@@ -200,7 +200,7 @@ func AnalyzeFactoryTelemetry(agents []AgentStatus, p95LatencyMs float64, referen
 			TargetIssue:    "Turn Count & Model Call Metrics",
 			Title:          "Missing SCION_GCP_PROJECT_ID Causes Telemetry Export Failure",
 			Analysis:       fmt.Sprintf("All %d agents exhibit NULL current_turns and model_calls in factory_agent_status. Log analysis confirms: 'telemetry cloud export disabled — GCP mode requires a project ID env_checked=SCION_GCP_PROJECT_ID'.", nullTelemetryCount),
-			Recommendation: "Export SCION_GCP_PROJECT_ID='riojucu-sandbox' in agent environments and scion-agent.json templates to activate OpenTelemetry cloud metrics exporter.",
+			Recommendation: "Export SCION_GCP_PROJECT_ID='<GCP_PROJECT_ID>' in agent environments and scion-agent.json templates to activate OpenTelemetry cloud metrics exporter.",
 		})
 	}
 
@@ -257,7 +257,7 @@ func AnalyzeFactoryTelemetry(agents []AgentStatus, p95LatencyMs float64, referen
 		"2. Delegate Issue #23 to @backend: Implement gemini-3.8-flash default, gemini-4-argon Pro model, and alias normalization in Go serving and Python services.",
 		"3. Fix Antigravity provision.py line 527: Escape `${{_gcp_location:-global}}` in f-string so Gemini 4 Argon (High) pre-start provisioning succeeds and updates GEMINI.md/agy-wrapper.sh.",
 		"4. Re-orient @frontend: Keep @frontend (currently stopped after 23:38Z) informed that Issue #20 UI is already live on Cloud Run revision 00024-ltv.",
-		"5. Fix Telemetry Metric Export: Configure SCION_GCP_PROJECT_ID='riojucu-sandbox' in agent environments to populate turn counts and model calls.",
+		"5. Fix Telemetry Metric Export: Configure SCION_GCP_PROJECT_ID='<GCP_PROJECT_ID>' in agent environments to populate turn counts and model calls.",
 		"6. Recover @reviewer: Re-provision Hermes container or migrate reviewer role to Antigravity/Claude harness with Vertex AI credentials.",
 		"7. Finalize Wave 5 Acceptance: Close GitHub issues #19, #20, and #21 on duboc/scion-experiment using empirical evidence in DEPLOYMENT.md.",
 	}

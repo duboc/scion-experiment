@@ -17,7 +17,7 @@ async function main() {
   }
 
   const payload = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-  const projectId = process.env.GCP_PROJECT || 'riojucu-sandbox';
+  const projectId = process.env.GCP_PROJECT || '<GCP_PROJECT_ID>';
   const spannerInstance = process.env.SPANNER_INSTANCE || 'psearch-instance';
   const spannerDatabase = process.env.SPANNER_DATABASE || 'psearch-db';
 

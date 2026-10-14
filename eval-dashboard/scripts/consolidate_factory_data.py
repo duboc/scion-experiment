@@ -2,12 +2,12 @@
 """
 Factory Data Consolidator for psearch / psearch-eval.
 Consolidates multi-agent factory data into:
-1. Cloud Firestore (default) in riojucu-sandbox:
+1. Cloud Firestore (default) in <GCP_PROJECT_ID>:
    - Collection 'agents': Live state of all 10 agents from Spanner factory_agent_status
    - Collection 'tasks': Backlog issues and PRs from GitHub API
    - Collection 'eval_runs': Search evaluation probe benchmarks from Spanner eval_runs
    - Collection 'requirements_compliance': 10 Biggy Search requirement audit statuses
-2. Cloud Storage bucket gs://psearch-eval-data-riojucu-sandbox:
+2. Cloud Storage bucket gs://psearch-eval-data-<GCP_PROJECT_ID>:
    - Snapshots in /snapshots/latest_factory_state.json and /snapshots/{timestamp}_factory_state.json
 
 Verifies every claim by reading data back from Firestore and GCS.
@@ -22,8 +22,8 @@ import urllib.request
 import urllib.parse
 from datetime import datetime, timezone
 
-PROJECT_ID = os.getenv("GCP_PROJECT", "riojucu-sandbox")
-BUCKET_NAME = os.getenv("GCS_BUCKET", "psearch-eval-data-riojucu-sandbox")
+PROJECT_ID = os.getenv("GCP_PROJECT", "<GCP_PROJECT_ID>")
+BUCKET_NAME = os.getenv("GCS_BUCKET", "psearch-eval-data-<GCP_PROJECT_ID>")
 SPANNER_INSTANCE = os.getenv("SPANNER_INSTANCE", "psearch-instance")
 SPANNER_DATABASE = os.getenv("SPANNER_DATABASE", "psearch-db")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "duboc/scion-experiment")

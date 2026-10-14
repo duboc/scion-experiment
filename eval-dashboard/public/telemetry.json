@@ -1,7 +1,7 @@
 {
   "timestamp": "2026-10-13T23:37:33.192362+00:00",
   "source": "spanner:factory_agent_status",
-  "database": "riojucu-sandbox/psearch-instance/psearch-db",
+  "database": "<GCP_PROJECT_ID>/psearch-instance/psearch-db",
   "projects": [
     "psearch",
     "psearch-eval"
