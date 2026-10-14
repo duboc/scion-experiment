@@ -285,3 +285,9 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
 
 ### #32 hotfix (2442093)
 - **Status:** PASS (reviewer, private worktree `/tmp/rev-32fix`): `go vet` / `go test -race` PASS incl. `TestVariantRowsDecodeFromSpannerArrayOfStruct`; variants decoded into `[]*variantRow` in hybrid and browse paths (Spanner client requires pointer slices for `ARRAY<STRUCT>`); nil entries skipped. Found by deployer's sqlcheck gate before production.
+
+## #33 Visual & multimodal search (dbf2dff, 0b5457e)
+- **Date:** 2026-10-14
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), private worktree `/tmp/rev-0b5457e` (removed)
+- **Status:** PASS
+- **Checks:** `go vet` / `go test -race` PASS (multimodal tests + `TestSearchImageValidation`); `DecodeQueryImage` inline base64/data URL only (no URL fetch), jpeg/png/webp allowlist with magic-byte sniff, 4 MB cap; `EmbedImage` one content / one inline part at 1024-d, no task type, dimension check; LRU keyed by `sha256(mime‖bytes)`, errors not cached; `FuseVectors` unit-normalized; vector-only SQL omits the fts leg (no dangling comma, weight 1.0, catalog filters kept in ann); existing `buildHybridSQLWith` output unchanged; image-only never treated as browse; memory mode empty for image-only; 400/413/503 handling, text-only degradation, alpha 0.7 default only when unset, image response fields only for `multimodal_v2`; sqlcheck live image + 3 multimodal SQL cases; no real IDs/URLs/tokens. Issues: none.
