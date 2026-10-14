@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00027-dmv`** (100% traffic, follows latest) — Issue #32, deployed from a clean `git archive` of `8367cb0`. Rollback target: `psearch-serving-00026-7qm`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00028-klr`** (100% traffic, follows latest) — Issue #33, deployed from a clean `git archive` of `2b9a75e`. Rollback target: `psearch-serving-00027-dmv`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -102,7 +102,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `00024-ltv` | `299f7ec` | #20 | session UI |
 | `00025-5mx` | `41af0a6` | #23 | `gemini-3.8-flash` / `gemini-4-argon`, project env fallbacks |
 | `00026-7qm` | `2915faf` | #30 | storefront script fix (unclosed autocomplete block), catalog browse (`q=` / `q=*`), "Show All Catalog" |
-| **`00027-dmv`** | `8367cb0` | #32 | variant grouping (color/size over interleaved SKUs, variant facets) + `[]*variantRow` decode fix + UI selects — **current** |
+| `00027-dmv` | `8367cb0` | #32 | variant grouping (color/size over interleaved SKUs, variant facets) + `[]*variantRow` decode fix + UI selects |
+| **`00028-klr`** | `2b9a75e` | #33 | visual & multimodal search (image → `embedding_v2`, text-fused, image cache) + photo-search UI — **current** |
 
 ---
 
@@ -539,3 +540,28 @@ Verification on `00027-dmv` (`<SERVICE_URL>`):
 - Storefront `GET /` → 200; the inline script (25.0 KB) **passes `node --check`**; HTML has `<select id="color">` and `<select id="size">`, "Show All Catalog", the LTR toggle and the session field
 - Regressions: #30 browse pt-BR → 5; tenis → prod-002 first; sansung → samsung → prod-010; cep SP → 12 promises; b2b-corporate asc → prod-015 at 107.1; session personalized; LTR baseline; acme → 0 results, `hybrid_v2`; autocomplete `gel`
 - Logs: clean (no decode errors, WARN, fallback, InvalidArgument, SCORE or ERROR)
+
+## Issue #33 Visual & Multimodal Search: LIVE 2026-10-14
+
+Source: clean `git archive` of **`2b9a75e`** (code = `0af06f1`: backend `dbf2dff`, sqlcheck cases `0b5457e`, UI `0af06f1`; ADR-010 + review records). **No DDL**: photo queries search the existing `products.embedding_v2` (gemini-embedding-2, 1024-d). Env unchanged (`ACTIVE_EMBEDDING_VERSION=v2`); runtime SA `<RUNTIME_SA>`; Vertex AI location `global` in `<PROJECT_ID>`.
+
+Pre-check (feasibility probe, read-only): `gemini-embedding-2` embeds JPEG images at `output_dimensionality=1024` in the same space as text (shoe photo → top-4 catalog matches all footwear; fridge photo → both refrigerators first). The `embedContent` API accepts **one content per call**; image + text parts in one Content give a single fused vector.
+
+`cmd/sqlcheck` with `SQLCHECK_IMAGE=<probe shoe.jpg>`: **43 OK / 0 FAIL**, including `OK image embedding dims=1024` and 3× multimodal:
+- image only → top `[prod-002, prod-003, prod-001, prod-007]` (footwear first)
+- image + "mas em verde" → top `[prod-002, prod-003, prod-001, prod-015]`
+- image + "running shoes" + `color=azul` (variants) → `[prod-001, prod-002, prod-003]`
+
+Deploy → **`psearch-serving-00028-klr`**, then `update-traffic --to-latest` (100%, follows latest). **Rollback:** `gcloud run services update-traffic psearch-serving --project=<PROJECT_ID> --region=us-central1 --to-revisions=psearch-serving-00027-dmv=100`.
+
+| Check (`POST <SERVICE_URL>/api/search`, JSON with `image_base64`) | Result |
+|---|---|
+| a) shoe photo only | ✅ `retrieval_mode=multimodal_v2`, `effective_alpha=1`, `image_query=true`, `image_weight=1`; top prod-002 / prod-003 / prod-001 (all Footwear); 976 ms (cold) |
+| b) shoe photo + `query="mas em verde"` | ✅ `multimodal_v2`, **`image_weight=0.6`**, **`effective_alpha=0.7`**; footwear top 3; 334 ms |
+| c) fridge photo only | ✅ prod-011 "Geladeira Inverse…" **#1**. prod-012 (Smart French Door Refrigerator) has the **highest vector score** (0.01639) but is OUT_OF_STOCK, so the out-of-stock-last rule places it at #14 |
+| d) repeat a) | ✅ **`image_cache_hit=true`**, 230 ms (vs 976 ms) |
+| e) `image_mime_type=image/gif` | ✅ **400** `image_mime_type must be image/jpeg, image/png or image/webp` |
+| f) `GET /api/search?q=running+shoes` / `q=` | ✅ `hybrid_v2` (no `image_query`) / `catalog_browse` (15), unchanged |
+| g) storefront `GET /` | ✅ 200, contains `id="image-btn"`; the inline script (28.1 KB) passes `node --check` |
+| Regressions | ✅ variants azul/42 → 3; sansung → samsung → prod-010; cep SP → 12; b2b-corporate asc → prod-015; session personalized; acme → 0 results, `hybrid_v2` |
+| Logs | ✅ clean (no WARN, fallback, InvalidArgument, PermissionDenied, decode or ERROR) |
