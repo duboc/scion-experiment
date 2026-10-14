@@ -1124,6 +1124,31 @@ function enrichStepWithConversationAndTools(step, meta) {
   const detail = step.detail || '';
   const rawBody = step.raw_body || '';
 
+  if (step.pre_enriched_from_spanner_turn) {
+    const conv = {
+      from_agent: step.from_agent || (proj === 'psearch' ? 'lead' : 'eval-lead'),
+      to_agent: step.to_agent || agent,
+      interaction_edge: `${step.from_agent || 'PO / GitHub'} → ${step.to_agent || agent}`,
+      prompt: step.prompt || '',
+      thinking: step.thinking || '',
+      tool_calls: Array.isArray(step.tool_calls) ? step.tool_calls : [],
+      response: step.response || step.detail || '',
+      tokens: step.tokens || {
+        input_tokens: 0,
+        cache_read_tokens: 0,
+        output_tokens: 0,
+        cost_usd: step.cost_usd || 0,
+        model: meta.model,
+        source: 'live_spanner_agent_conversation_turns'
+      }
+    };
+    return {
+      ...step,
+      interaction_edge: conv.interaction_edge,
+      conversation: conv
+    };
+  }
+
   let fromAgent = step.explicit_from || (proj === 'psearch' ? 'lead' : 'eval-lead');
   let toAgent = step.explicit_to || (proj === 'psearch' ? 'lead' : 'eval-lead');
   let prompt = '';
@@ -1587,7 +1612,22 @@ const CROSS_PROJECT_HUB_RUNTIME_TRANSITIONS = [
   { agent: 'lead', phase: 'running', activity: 'blocked', event_timestamp: '2026-10-14T19:00:56Z', wave: 'wave-6', issue_number: 33, summary: 'Standby after closing Issues #32 & #33 (all 16/16 requirements complete)' }
 ];
 
-function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], liveIssueComments = [], liveSpannerAgents = []) {
+function normalizeShortGraphAgent(rawRef, fallbackAgent = 'eval-lead') {
+  if (!rawRef) return fallbackAgent;
+  const s = String(rawRef).trim();
+  if (s === 'user/po' || s === 'system/scheduler' || s === 'PO / GitHub' || s === 'Scion Hub Scheduler') {
+    return 'PO / GitHub';
+  }
+  if (s === 'Cloud Run / Spanner') return 'Cloud Run / Spanner';
+  const short = s.includes('/') ? s.split('/').pop() : s.replace(/^@/, '');
+  const validNodes = new Set([
+    'lead', 'backend', 'frontend', 'reviewer', 'deployer',
+    'eval-lead', 'factory-analyst', 'search-evaluator', 'ui-craftsman', 'eval-deployer'
+  ]);
+  return validNodes.has(short) ? short : fallbackAgent;
+}
+
+function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], liveIssueComments = [], liveSpannerAgents = [], liveSpannerTurns = []) {
   const byAgentKey = {};
   for (const meta of AGENT_METADATA) {
     const key = `${meta.project}:${meta.name}`;
@@ -1707,6 +1747,113 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
   mergeCommits(liveEvalCommits, 'eval-dashboard');
   mergeComments(liveIssueComments);
 
+  // Merge live harness turns streamed directly from container harnesses into Cloud Spanner agent_conversation_turns
+  const spannerTurnsStatsByKey = {};
+  if (Array.isArray(liveSpannerTurns) && liveSpannerTurns.length > 0) {
+    const liveStreamByKey = {};
+    for (const row of liveSpannerTurns) {
+      const proj = row.project_slug || 'psearch-eval';
+      const ag = row.agent_name || 'eval-lead';
+      const key = `${proj}:${ag}`;
+      if (!spannerTurnsStatsByKey[key]) {
+        spannerTurnsStatsByKey[key] = {
+          total_turns: 0,
+          live_harness_turns: 0,
+          total_tokens: 0,
+          total_cost_usd: 0
+        };
+      }
+      const st = spannerTurnsStatsByKey[key];
+      st.total_turns += 1;
+      st.total_tokens += Number(row.total_tokens) || 0;
+      st.total_cost_usd = Number((st.total_cost_usd + (Number(row.cost_usd) || 0)).toFixed(4));
+      if (row.source_mode === 'live_harness_stream' || row.source_mode === 'live_hub_message_bus' || row.source_mode === 'api_ingested_turn') {
+        st.live_harness_turns += 1;
+        if (!liveStreamByKey[key]) liveStreamByKey[key] = [];
+        liveStreamByKey[key].push(row);
+      }
+    }
+
+    for (const [key, rows] of Object.entries(liveStreamByKey)) {
+      const bucket = byAgentKey[key];
+      if (!bucket) continue;
+      // Score turns so turns with rich thinking, tool calls, or inter-agent prompts are prioritized, keeping up to 16 per agent in the main timeline
+      const scored = rows.map(r => {
+        let score = 0;
+        if (r.thinking_text && r.thinking_text.length > 20) score += 4;
+        if (r.tool_calls_json && r.tool_calls_json.length > 10) score += 3;
+        if (r.turn_type === 'user_prompt_turn' || r.turn_type === 'agent_message_turn' || r.turn_type === 'agent_dispatch_turn') score += 3;
+        return { r, score };
+      });
+      scored.sort((a, b) => (b.score - a.score) || String(b.r.created_at).localeCompare(String(a.r.created_at)));
+      const selectedRows = scored.slice(0, 16).map(x => x.r).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+
+      for (const r of selectedRows) {
+        const sidShort = String(r.session_id || 'sess').slice(0, 8);
+        const turnSha = `spanner-turn-${sidShort}-${r.turn_index}`;
+        if (bucket.seenShas.has(turnSha)) continue;
+        bucket.seenShas.add(turnSha);
+
+        let rawTools = [];
+        try {
+          rawTools = typeof r.tool_calls_json === 'string' ? JSON.parse(r.tool_calls_json) : (r.tool_calls_json || []);
+        } catch (_) {
+          rawTools = [];
+        }
+        const mappedTools = (Array.isArray(rawTools) ? rawTools : []).map(tc => ({
+          tool: tc.tool || 'tool',
+          command: tc.args_preview || tc.command || tc.summary || tc.action || tc.tool || '',
+          output: tc.output_preview || tc.output || (r.tool_output_text ? String(r.tool_output_text).slice(0, 500) : 'Executed via harness'),
+          status: String(tc.status || 'OK').toUpperCase() === 'WARN' ? 'WARN' : 'OK'
+        }));
+
+        const shortFrom = normalizeShortGraphAgent(r.from_agent, bucket.meta.project === 'psearch' ? 'lead' : 'eval-lead');
+        const shortTo = normalizeShortGraphAgent(r.to_agent, bucket.meta.name);
+        const cleanPrompt = String(r.prompt_text || '').trim();
+        const cleanThinking = String(r.thinking_text || '').trim();
+        const cleanResponse = String(r.response_text || '').trim();
+        const titlePreview = (cleanPrompt || cleanResponse || `Harness turn #${r.turn_index}`).replace(/\s+/g, ' ').slice(0, 88);
+
+        const inTok = Number(r.input_tokens) || 0;
+        const cacheTok = Number(r.cache_read_tokens) || 0;
+        const outTok = Number(r.output_tokens) || 0;
+        const totTok = Number(r.total_tokens) || (inTok + cacheTok + outTok);
+        const costUsd = Number(Number(r.cost_usd || 0).toFixed(4));
+
+        bucket.steps.push({
+          wave: r.issue_number && r.issue_number <= 11 ? 'wave-1' : 'wave-6',
+          issue_number: Number(r.issue_number) || 34,
+          step_type: `HARNESS_${String(r.turn_type || 'TURN').toUpperCase().replace(/_TURN$/, '')}`,
+          commit_sha: turnSha,
+          session_id: r.session_id,
+          turn_index: Number(r.turn_index) || 1,
+          source_mode: r.source_mode || 'live_harness_stream',
+          event_timestamp: r.created_at || new Date().toISOString(),
+          status: 'PASS',
+          title: `[⚡ Spanner Turn #${r.turn_index}] ${titlePreview}`,
+          detail: cleanResponse.slice(0, 420) || cleanThinking.slice(0, 420) || titlePreview,
+          from_agent: shortFrom,
+          to_agent: shortTo,
+          prompt: cleanPrompt || titlePreview,
+          thinking: cleanThinking || `Executed turn #${r.turn_index} in ${r.harness || bucket.meta.harness} (${r.model || bucket.meta.model}).`,
+          tool_calls: mappedTools,
+          response: cleanResponse || `Completed turn #${r.turn_index} with ${mappedTools.length} tool call(s).`,
+          tokens: {
+            input_tokens: inTok,
+            cache_read_tokens: cacheTok,
+            output_tokens: outTok,
+            total_tokens: totTok,
+            cost_usd: costUsd,
+            model: r.model || bucket.meta.model,
+            source: 'live_spanner_agent_conversation_turns'
+          },
+          cost_usd: costUsd,
+          pre_enriched_from_spanner_turn: true
+        });
+      }
+    }
+  }
+
   const agentsSummary = [];
   const trajectoriesByAgent = {};
   const allStepsChronological = [];
@@ -1724,6 +1871,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
         agent_name: meta.name,
         harness: meta.harness,
         model: meta.model,
+        source_mode: s.source_mode || 'reconstructed_github_spanner',
         action_type: s.step_type || s.action_type || 'ACTION',
         timestamp: s.event_timestamp || s.timestamp,
         ...s
@@ -1733,13 +1881,19 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
       return enriched;
     });
 
+    const spannerTurnStats = spannerTurnsStatsByKey[key] || null;
     const issuesSet = new Set(stepsWithIndex.map(s => s.issue_number).filter(Boolean));
     const wavesSet = new Set(stepsWithIndex.map(s => s.wave).filter(Boolean));
     const commitsSet = new Set(stepsWithIndex.map(s => s.commit_sha).filter(Boolean));
-    const turns = stepsWithIndex.length * meta.turns_per_step;
+    const turns = spannerTurnStats && spannerTurnStats.total_turns > 0
+      ? Math.max(spannerTurnStats.total_turns, stepsWithIndex.length)
+      : stepsWithIndex.length * meta.turns_per_step;
     const modelCalls = stepsWithIndex.length * meta.calls_per_step;
     const totalToolCalls = stepsWithIndex.reduce((acc, s) => acc + ((s.tool_calls || []).length), 0);
-    const totalCostUsd = Number(stepsWithIndex.reduce((acc, s) => acc + (s.cost_usd || 0), 0).toFixed(4));
+    const stepSumCostUsd = Number(stepsWithIndex.reduce((acc, s) => acc + (s.cost_usd || 0), 0).toFixed(4));
+    const totalCostUsd = spannerTurnStats && spannerTurnStats.total_cost_usd > stepSumCostUsd
+      ? spannerTurnStats.total_cost_usd
+      : stepSumCostUsd;
     const lastStep = stepsWithIndex[stepsWithIndex.length - 1] || null;
     const sortedIssues = Array.from(issuesSet).sort((a, b) => a - b);
 
@@ -1751,6 +1905,8 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
       model: meta.model,
       parent_agent: meta.parent_agent,
       steps_count: stepsWithIndex.length,
+      live_spanner_turns_count: spannerTurnStats ? spannerTurnStats.live_harness_turns : 0,
+      spanner_persisted_turns_count: spannerTurnStats ? spannerTurnStats.total_turns : stepsWithIndex.length,
       tool_calls_count: totalToolCalls,
       total_cost_usd: totalCostUsd,
       issues_count: issuesSet.size,
@@ -1774,6 +1930,9 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
   allStepsChronological.sort((a, b) => String(a.event_timestamp).localeCompare(String(b.event_timestamp)));
   const psearchChrono = allStepsChronological.filter(s => s.project === 'psearch');
   const agentGraph = buildInterAgentGraph(allStepsChronological, agentsSummary);
+  const liveHarnessTurnsTotal = Array.isArray(liveSpannerTurns)
+    ? liveSpannerTurns.filter(r => r.source_mode === 'live_harness_stream').length
+    : 0;
 
   return {
     rebuilt_at: new Date().toISOString(),
@@ -1781,6 +1940,9 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
     total_steps: allStepsChronological.length,
     psearch_steps: psearchChrono.length,
     psearch_eval_steps: allStepsChronological.filter(s => s.project === 'psearch-eval').length,
+    spanner_turns_table: 'agent_conversation_turns',
+    spanner_turns_total: Array.isArray(liveSpannerTurns) ? liveSpannerTurns.length : 0,
+    live_harness_turns_total: liveHarnessTurnsTotal,
     agent_graph: agentGraph,
     agents: agentsSummary,
     agents_by_key: trajectoriesByAgent,

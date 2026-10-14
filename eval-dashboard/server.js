@@ -5,6 +5,7 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { AGENT_METADATA, buildTrajectoriesPayload, syncTrajectoriesToSpanner, answerTrajectoryConversationQuery } = require('./trajectories');
+const { upsertTurnsBatch, shipLocalContainerTurns, syncAllTrajectoriesAndTurnsToSpanner } = require('./ship-harness-turns');
 
 process.env.SPANNER_ENABLE_PROXIED_GCP_METRICS = 'false';
 
@@ -12,6 +13,8 @@ const app = express();
 const port = process.env.PORT || 8080;
 const defaultProject = Buffer.from('cmlvanVjdS1zYW5kYm94', 'base64').toString('utf8');
 const projectId = process.env.GCP_PROJECT || defaultProject;
+process.env.GOOGLE_CLOUD_PROJECT = projectId;
+process.env.GOOGLE_CLOUD_QUOTA_PROJECT = projectId;
 const servingUrl = process.env.PSEARCH_SERVING_URL || 'https://psearch-serving-mhjw244bgq-uc.a.run.app';
 const spannerInstance = process.env.SPANNER_INSTANCE || 'psearch-instance';
 const spannerDatabase = process.env.SPANNER_DATABASE || 'psearch-db';
@@ -153,12 +156,16 @@ app.get('/api/agents', async (req, res) => {
       json: true
     });
 
-    const liveData = await fetchLiveCommitsForTrajectories(false);
+    const [liveData, spannerTurns] = await Promise.all([
+      fetchLiveCommitsForTrajectories(false),
+      fetchSpannerConversationTurns(db, false)
+    ]);
     const trajPayload = buildTrajectoriesPayload(
       liveData.mainCommits,
       liveData.evalCommits,
       liveData.issueComments,
-      rows
+      rows,
+      spannerTurns
     );
 
     const agents = rows.map(r => {
@@ -184,6 +191,8 @@ app.get('/api/agents', async (req, res) => {
         parent_agent: r.parent_agent,
         current_turns: turns,
         model_calls: calls,
+        live_spanner_turns_count: trajAgent.live_spanner_turns_count || 0,
+        spanner_persisted_turns_count: trajAgent.spanner_persisted_turns_count || 0,
         last_summary: summary,
         active_issue: summary,
         trajectory_steps_count: trajAgent.steps_count || 0,
@@ -217,6 +226,34 @@ app.get('/api/agents', async (req, res) => {
 let trajGithubCache = null;
 let trajGithubCacheTime = 0;
 const TRAJ_GITHUB_CACHE_TTL_MS = 60 * 1000;
+
+let spannerTurnsCache = null;
+let spannerTurnsCacheTime = 0;
+const SPANNER_TURNS_CACHE_TTL_MS = 15 * 1000;
+
+async function fetchSpannerConversationTurns(db, forceRefresh = false) {
+  if (!db) return [];
+  const now = Date.now();
+  if (!forceRefresh && spannerTurnsCache && (now - spannerTurnsCacheTime < SPANNER_TURNS_CACHE_TTL_MS)) {
+    return spannerTurnsCache;
+  }
+  try {
+    const [rows] = await db.run({
+      sql: `SELECT project_slug, agent_name, session_id, turn_index, harness, model, turn_type,
+                   from_agent, to_agent, issue_number, prompt_text, thinking_text, tool_calls_json,
+                   tool_output_text, response_text, input_tokens, cache_read_tokens, output_tokens,
+                   total_tokens, cost_usd, source_mode, created_at, updated_at
+            FROM agent_conversation_turns
+            ORDER BY created_at ASC, turn_index ASC`,
+      json: true
+    });
+    spannerTurnsCache = Array.isArray(rows) ? rows : [];
+    spannerTurnsCacheTime = now;
+    return spannerTurnsCache;
+  } catch (_) {
+    return spannerTurnsCache || [];
+  }
+}
 
 // Helper to fetch live GitHub commits and issue comments for trajectory reconstruction
 async function fetchLiveCommitsForTrajectories(forceRefresh = false) {
@@ -263,12 +300,14 @@ app.get('/api/trajectories', async (req, res) => {
 
     let spannerRowCount = 0;
     let spannerAgentRows = [];
+    let spannerTurns = [];
     const db = getSpannerDatabase();
     if (db) {
       try {
-        const [[countRows], [agentRows]] = await Promise.all([
+        const [[countRows], [agentRows], turnsRows] = await Promise.all([
           db.run({ sql: 'SELECT COUNT(*) AS cnt FROM agent_trajectories', json: true }),
-          db.run({ sql: 'SELECT project_slug, agent_name, agent_id, template, harness, phase, activity, parent_agent, last_summary, last_activity_at FROM factory_agent_status', json: true })
+          db.run({ sql: 'SELECT project_slug, agent_name, agent_id, template, harness, phase, activity, parent_agent, last_summary, last_activity_at FROM factory_agent_status', json: true }),
+          fetchSpannerConversationTurns(db, forceLive)
         ]);
         if (countRows && countRows.length > 0) {
           spannerRowCount = Number(countRows[0].cnt || 0);
@@ -276,12 +315,15 @@ app.get('/api/trajectories', async (req, res) => {
         if (Array.isArray(agentRows)) {
           spannerAgentRows = agentRows;
         }
+        if (Array.isArray(turnsRows)) {
+          spannerTurns = turnsRows;
+        }
       } catch (_) {
         // non-fatal
       }
     }
 
-    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, spannerAgentRows);
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, spannerAgentRows, spannerTurns);
 
     const filterProject = req.query.project || '';
     const filterAgent = req.query.agent || '';
@@ -295,7 +337,9 @@ app.get('/api/trajectories', async (req, res) => {
     return res.json({
       ...payload,
       spanner_table: 'agent_trajectories',
+      spanner_turns_table: 'agent_conversation_turns',
       spanner_persisted_steps: spannerRowCount,
+      spanner_persisted_turns: spannerTurns.length,
       selected_agent: selectedAgent
     });
   } catch (err) {
@@ -304,23 +348,29 @@ app.get('/api/trajectories', async (req, res) => {
   }
 });
 
-// POST /api/trajectories/rebuild - Rebuilds all psearch & psearch-eval agent trajectories from Scion Hub state + git + issue comments + ADRs + reviews and persists to Cloud Spanner
+// POST /api/trajectories/rebuild - Rebuilds all psearch & psearch-eval agent trajectories and syncs local harness turns to Cloud Spanner
 app.post('/api/trajectories/rebuild', async (req, res) => {
   const start = Date.now();
   try {
     const { mainCommits, evalCommits, issueComments } = await fetchLiveCommitsForTrajectories(true);
     const db = getSpannerDatabase();
     let spannerAgentRows = [];
+    let spannerTurns = [];
     if (db) {
       try {
-        const [agentRows] = await db.run({
-          sql: 'SELECT project_slug, agent_name, agent_id, template, harness, phase, activity, parent_agent, last_summary, last_activity_at FROM factory_agent_status',
-          json: true
-        });
+        await shipLocalContainerTurns({ db }).catch(() => {});
+        const [[agentRows], turnsRows] = await Promise.all([
+          db.run({
+            sql: 'SELECT project_slug, agent_name, agent_id, template, harness, phase, activity, parent_agent, last_summary, last_activity_at FROM factory_agent_status',
+            json: true
+          }),
+          fetchSpannerConversationTurns(db, true)
+        ]);
         if (Array.isArray(agentRows)) spannerAgentRows = agentRows;
+        if (Array.isArray(turnsRows)) spannerTurns = turnsRows;
       } catch (_) {}
     }
-    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, spannerAgentRows);
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, spannerAgentRows, spannerTurns);
     let syncStats = { synced_steps: 0, synced_agents: 0, error: null };
     if (db) {
       try {
@@ -340,7 +390,9 @@ app.post('/api/trajectories/rebuild', async (req, res) => {
       rebuilt: true,
       rebuild_latency_ms: Date.now() - start,
       spanner_table: 'agent_trajectories',
+      spanner_turns_table: 'agent_conversation_turns',
       spanner_persisted_steps: syncStats.synced_steps || payload.total_steps,
+      spanner_persisted_turns: spannerTurns.length,
       spanner_sync: syncStats,
       ...payload
     });
@@ -354,6 +406,99 @@ app.post('/api/trajectories/rebuild', async (req, res) => {
   }
 });
 
+// GET /api/trajectories/turns - Direct query of Cloud Spanner agent_conversation_turns across psearch & psearch-eval
+app.get('/api/trajectories/turns', async (req, res) => {
+  try {
+    const db = getSpannerDatabase();
+    const forceLive = req.query.live === 'true';
+    const allTurns = await fetchSpannerConversationTurns(db, forceLive);
+    const filterProject = req.query.project || '';
+    const filterAgent = req.query.agent || '';
+    const filterSource = req.query.source_mode || '';
+    const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit || '500', 10)));
+
+    const filtered = allTurns.filter(t => {
+      if (filterProject && filterProject !== 'all' && t.project_slug !== filterProject) return false;
+      if (filterAgent && filterAgent !== 'all' && t.agent_name !== filterAgent) return false;
+      if (filterSource && filterSource !== 'all' && t.source_mode !== filterSource) return false;
+      return true;
+    });
+
+    const summaryByAgent = {};
+    for (const t of allTurns) {
+      const k = `${t.project_slug}/${t.agent_name}`;
+      if (!summaryByAgent[k]) {
+        summaryByAgent[k] = {
+          project_slug: t.project_slug,
+          agent_name: t.agent_name,
+          harness: t.harness,
+          model: t.model,
+          total_turns: 0,
+          live_harness_turns: 0,
+          reconstructed_turns: 0,
+          total_tokens: 0,
+          total_cost_usd: 0
+        };
+      }
+      const s = summaryByAgent[k];
+      s.total_turns += 1;
+      if (t.source_mode === 'live_harness_stream') s.live_harness_turns += 1;
+      else s.reconstructed_turns += 1;
+      s.total_tokens += Number(t.total_tokens) || 0;
+      s.total_cost_usd = Number((s.total_cost_usd + (Number(t.cost_usd) || 0)).toFixed(4));
+    }
+
+    return res.json({
+      status: 'ok',
+      spanner_table: 'agent_conversation_turns',
+      total_turns_in_spanner: allTurns.length,
+      live_harness_turns_in_spanner: allTurns.filter(t => t.source_mode === 'live_harness_stream').length,
+      filtered_count: filtered.length,
+      agents_summary: Object.values(summaryByAgent),
+      turns: filtered.slice(-limit)
+    });
+  } catch (err) {
+    console.error('GET /api/trajectories/turns error:', err.message);
+    return res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+// POST /api/trajectories/turns - Ingest live agent conversation turns from any psearch or psearch-eval harness hook into Cloud Spanner
+app.post('/api/trajectories/turns', async (req, res) => {
+  const start = Date.now();
+  try {
+    const db = getSpannerDatabase();
+    if (!db) throw new Error('Spanner database client unavailable');
+    const body = req.body || {};
+
+    if (Array.isArray(body.turns) && body.turns.length > 0) {
+      const count = await upsertTurnsBatch(db, body.turns.map(t => ({
+        ...t,
+        source_mode: t.source_mode || 'api_ingested_turn'
+      })));
+      spannerTurnsCache = null;
+      return res.json({
+        status: 'ok',
+        ingested_turns: count,
+        spanner_table: 'agent_conversation_turns',
+        latency_ms: Date.now() - start
+      });
+    }
+
+    const syncRes = await syncAllTrajectoriesAndTurnsToSpanner({ db });
+    spannerTurnsCache = null;
+    return res.json({
+      status: 'ok',
+      spanner_table: 'agent_conversation_turns',
+      latency_ms: Date.now() - start,
+      ...syncRes
+    });
+  } catch (err) {
+    console.error('POST /api/trajectories/turns error:', err.message);
+    return res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
 // POST /api/trajectories/chat - Conversational Trajectory Explorer (answers questions about prompts, thinking, tool usage, issues, and inter-agent handoffs)
 app.post('/api/trajectories/chat', async (req, res) => {
   const start = Date.now();
@@ -363,16 +508,21 @@ app.post('/api/trajectories/chat', async (req, res) => {
     const { mainCommits, evalCommits, issueComments } = await fetchLiveCommitsForTrajectories(false);
     const db = getSpannerDatabase();
     let spannerAgentRows = [];
+    let spannerTurns = [];
     if (db) {
       try {
-        const [agentRows] = await db.run({
-          sql: 'SELECT project_slug, agent_name, agent_id, template, harness, phase, activity, parent_agent, last_summary, last_activity_at FROM factory_agent_status',
-          json: true
-        });
+        const [[agentRows], turnsRows] = await Promise.all([
+          db.run({
+            sql: 'SELECT project_slug, agent_name, agent_id, template, harness, phase, activity, parent_agent, last_summary, last_activity_at FROM factory_agent_status',
+            json: true
+          }),
+          fetchSpannerConversationTurns(db, false)
+        ]);
         if (Array.isArray(agentRows)) spannerAgentRows = agentRows;
+        if (Array.isArray(turnsRows)) spannerTurns = turnsRows;
       } catch (_) {}
     }
-    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, spannerAgentRows);
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, spannerAgentRows, spannerTurns);
     const result = answerTrajectoryConversationQuery(payload, queryText, {
       project: body.project || 'all',
       agent: body.agent || 'all',
@@ -392,8 +542,12 @@ app.post('/api/trajectories/chat', async (req, res) => {
 // GET /api/trajectories/graph - Returns the directed inter-agent interaction graph & handoff matrix
 app.get('/api/trajectories/graph', async (req, res) => {
   try {
-    const { mainCommits, evalCommits, issueComments } = await fetchLiveCommitsForTrajectories(false);
-    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, []);
+    const db = getSpannerDatabase();
+    const [{ mainCommits, evalCommits, issueComments }, spannerTurns] = await Promise.all([
+      fetchLiveCommitsForTrajectories(false),
+      fetchSpannerConversationTurns(db, false)
+    ]);
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, [], spannerTurns);
     return res.json({
       status: 'ok',
       rebuilt_at: payload.rebuilt_at,

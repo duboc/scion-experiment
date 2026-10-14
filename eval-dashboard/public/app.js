@@ -751,7 +751,9 @@
     }
     if (spannerBadge) {
       const spannerCnt = cachedTrajectories.spanner_persisted_steps || cachedTrajectories.total_steps || 0;
-      spannerBadge.innerHTML = '<span class="badge-dot"></span>Spanner Synced (' + spannerCnt + ' steps in agent_trajectories)';
+      const spannerTurnsCnt = cachedTrajectories.spanner_persisted_turns || cachedTrajectories.spanner_turns_total || 0;
+      const liveHarnessCnt = cachedTrajectories.live_harness_turns_total || 0;
+      spannerBadge.innerHTML = '<span class="badge-dot"></span>Spanner Synced (' + spannerCnt + ' steps in agent_trajectories · ' + spannerTurnsCnt + ' turns / ' + liveHarnessCnt + ' live harness in agent_conversation_turns)';
     }
 
     let stepsToRender = [];
@@ -782,7 +784,7 @@
       if (summaryEl) {
         summaryEl.innerHTML =
           '<span>Viewing Trajectory: <strong class="mono">All 10 Factory Agents (psearch + psearch-eval)</strong> — Chronological Execution Ledger</span>' +
-          '<span class="mono">Total Steps: ' + stepsToRender.length + ' · Spanner Table: agent_trajectories</span>';
+          '<span class="mono">Total Steps: ' + stepsToRender.length + ' · Spanner Tables: agent_trajectories + agent_conversation_turns</span>';
       }
     } else {
       const key = selectedTrajectoryProject + ':' + selectedTrajectoryAgent;
@@ -801,9 +803,12 @@
           const issuesStr = Array.isArray(agentObj.issues_covered) && agentObj.issues_covered.length > 0
             ? agentObj.issues_covered.map(n => '#' + n).join(', ')
             : 'All Waves';
+          const liveTurnsNote = agentObj.live_spanner_turns_count > 0
+            ? ' · ⚡ Live Spanner Turns: ' + agentObj.live_spanner_turns_count
+            : '';
           summaryEl.innerHTML =
             '<span>Viewing Trajectory: <strong class="mono">@' + escapeHTML(agentObj.name) + ' (' + escapeHTML(agentObj.project) + ')</strong> — ' + escapeHTML(agentObj.role || '') + ' (' + escapeHTML(agentObj.harness || '') + ' · ' + escapeHTML(agentObj.model || 'gemini-4-argon') + ')</span>' +
-            '<span class="mono">Steps: ' + stepsToRender.length + ' · Tool Calls: ' + (agentObj.tool_calls_count || 0) + ' · Est. Cost: $' + Number(agentObj.total_cost_usd || 0).toFixed(2) + ' · Issues: ' + escapeHTML(issuesStr) + '</span>';
+            '<span class="mono">Steps: ' + stepsToRender.length + liveTurnsNote + ' · Tool Calls: ' + (agentObj.tool_calls_count || 0) + ' · Cost: $' + Number(agentObj.total_cost_usd || 0).toFixed(2) + ' · Issues: ' + escapeHTML(issuesStr) + '</span>';
         }
       }
     }
@@ -816,16 +821,19 @@
     tbody.innerHTML = stepsToRender.map((s, idx) => {
       const stepNum = s.step_index || (idx + 1);
       const edgeStr = s.interaction_edge || ((s.from_agent || s.agent_name) + ' → ' + (s.to_agent || 'lead'));
+      const isLiveHarness = s.source_mode === 'live_harness_stream' || String(s.commit_sha || '').indexOf('spanner-turn-') === 0;
       const agentBadge = '<span class="mono" style="font-weight:700;">@' + escapeHTML(s.agent_name || selectedTrajectoryAgent) + '</span>' +
         '<div class="mono" style="font-size:0.68rem;color:var(--accent-primary);margin-top:0.15rem;">' + escapeHTML(edgeStr) + '</div>' +
-        '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);">' + escapeHTML(s.harness || '') + ' · ' + escapeHTML(s.model || '') + '</div>';
+        '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);">' + escapeHTML(s.harness || '') + ' · ' + escapeHTML(s.model || '') + (isLiveHarness ? ' · <strong style="color:var(--status-pass);">⚡LIVE</strong>' : '') + '</div>';
       const issuePart = s.issue_number
         ? '<a href="https://github.com/duboc/scion-experiment/issues/' + encodeURIComponent(s.issue_number) + '" target="_blank" class="mono">#' + escapeHTML(s.issue_number) + '</a>'
         : '—';
       const waveIssueCell = '<span class="mono">' + escapeHTML(s.wave || 'wave') + '</span> · ' + issuePart;
       const shaStr = String(s.commit_sha || '');
       let commitCell = '<span class="mono" style="color:var(--text-muted);">spanner</span>';
-      if (shaStr.indexOf('hub-state-') === 0) {
+      if (shaStr.indexOf('spanner-turn-') === 0) {
+        commitCell = '<span class="mono" style="color:var(--status-pass);font-weight:700;" title="Streamed directly from container harness transcript into Spanner agent_conversation_turns">⚡ spanner-turn</span>';
+      } else if (shaStr.indexOf('hub-state-') === 0) {
         commitCell = '<span class="mono" style="color:var(--accent-primary);font-weight:600;">hub.db</span>';
       } else if (shaStr.indexOf('comment-') === 0) {
         const cid = shaStr.replace('comment-', '').replace(/-relay-\d+$/, '');
@@ -843,7 +851,7 @@
 
       const tok = s.tokens || {};
       const costBadge = tok.cost_usd !== undefined
-        ? '<div class="mono" style="font-size:0.68rem;color:var(--text-muted);margin-top:0.22rem;">in:' + (tok.input_tokens || 0) + ' · out:' + (tok.output_tokens || 0) + ' · <strong>$' + Number(tok.cost_usd).toFixed(4) + '</strong></div>'
+        ? '<div class="mono" style="font-size:0.68rem;color:var(--text-muted);margin-top:0.22rem;">in:' + (tok.input_tokens || 0) + (tok.cache_read_tokens ? ' · cache:' + tok.cache_read_tokens : '') + ' · out:' + (tok.output_tokens || 0) + ' · <strong>$' + Number(tok.cost_usd).toFixed(4) + '</strong></div>'
         : '';
 
       let convBlockHtml = '';
