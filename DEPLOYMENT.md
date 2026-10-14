@@ -394,3 +394,13 @@ Follow-up: UI commit `299f7ec` (#20 session panel) landed after `1fad8cf` and sh
 Source: clean `git archive` of **`299f7ec5ca66b9a83b16e3063757eeef26afecca`** (review `d6a2ab7`); the only image change since `1fad8cf` is `internal/api/routes.go` (React files aren't in the image). No DDL; env unchanged. sqlcheck 32 OK / 0 FAIL. Deploy → **`psearch-serving-00024-ltv`**, then `update-traffic --to-latest` (100%, follows latest). Rollback target: `00023-z7g`.
 - Storefront `/` → 200 with the session field (`session_id`), personalized badges, and click/purchase tracking to `/api/session/events`; the LTR toggle, "Você quis dizer" banner and price_table selector are still present
 - Unchanged API behavior: runner session personalized (001, 003, 002, …) vs baseline (001, 003, 008, …); b2b-corporate asc → prod-015 at 107.1; sansung → samsung → prod-010; cep SP → 12; bad session_id → 400; health 200. Logs clean
+
+## Wave 5 #23 Platform model upgrade (`gemini-3.8-flash` & `gemini-4-argon`): LIVE 2026-10-14
+
+Source: clean `git archive` of **`41af0a6`** (PR #25). No DDL; env configured via `GCP_SANDBOX_PROJECT` and `CLOUDSDK_CORE_PROJECT`. sqlcheck 32 OK / 0 FAIL. Deploy → **`psearch-serving-00025-5mx`**, then `update-traffic --to-latest` (100%, follows latest). Rollback target: `00024-ltv`.
+- `/api/info` → 200 with `text_model: "gemini-3.8-flash"`, `pro_model: "gemini-4-argon"`, `embedding_model: "gemini-embedding-2"`, `genai_location: "global"`, `active_embedding_version: "v2"`, `embedding_dimension: 1024`
+- Conversational query understanding (#19): `q=tenis de corrida ate 200 reais` → `clean_query: "tenis de corrida"`, `extracted_filters.max_price: 200`, `intent_source: "parser"`
+- Zero-results recovery & spell check (#21): `q=sansung` → `did_you_mean: "samsung"`, `auto_corrected: true`
+- B2B contract pricing (#22): `q=laptop&price_table_id=b2b-corporate&sort_by=price_asc` → prod-015 contract price `107.1` (10% discount on 119 basePrice)
+- Session personalization (#20): session boost active, personas and badges working
+- Regressions pass; logs clean (no ERROR or WARN).
