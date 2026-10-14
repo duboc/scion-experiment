@@ -23,6 +23,9 @@ type SearchRequest struct {
 	SortBy            string   `json:"sort_by,omitempty" form:"sort_by"`
 	SessionID         string   `json:"session_id,omitempty" form:"session_id"`
 	SessionProductIDs []string `json:"session_product_ids,omitempty" form:"session_product_ids"` // default true (ADR-007); false disables
+	ImageBase64       string   `json:"image_base64,omitempty" form:"-"`    // ADR-010 (#33): inline query photo (base64 or data URL); URLs are never fetched
+	ImageMimeType     string   `json:"image_mime_type,omitempty" form:"-"` // image/jpeg | image/png | image/webp
+	ImageWeight       *float64 `json:"image_weight,omitempty" form:"-"`    // image share of the fused query vector (default 0.6)
 }
 
 // SearchFilters are the catalog filters applied server-side (ADR-002, Issues #3/#4/#5).
@@ -42,6 +45,11 @@ type SearchFilters struct {
 	SortBy      string  // ADR-008 (#22): relevance | price_asc | price_desc
 	MinPrice    float64 // ADR-007/008: minimum price (0 = none)
 	MaxPrice    float64 // ADR-007/008: maximum price (0 = none)
+	// ADR-010 (#33): query image vector (gemini-embedding-2, same space as
+	// embedding_v2) and its share of the fused vector. Not a catalog filter; it
+	// rides along so recovery/relaxation re-runs keep the image.
+	ImageVector []float32
+	ImageWeight float64
 }
 
 type SearchResponse struct {
@@ -54,6 +62,9 @@ type SearchResponse struct {
 	BackendMode      string         `json:"backend_mode"`
 	EmbeddingVersion string         `json:"embedding_version,omitempty"`
 	RetrievalMode    string         `json:"retrieval_mode,omitempty"`
+	ImageQuery       bool           `json:"image_query,omitempty"`        // ADR-010 (#33): a query photo drove the vector leg
+	ImageWeight      float64        `json:"image_weight,omitempty"`       // effective image share of the fused vector
+	ImageCacheHit    bool           `json:"image_cache_hit,omitempty"`    // image vector served from the LRU
 	CacheHit         bool           `json:"cache_hit,omitempty"`
 	FacetsLatencyMs  float64        `json:"facets_latency_ms,omitempty"`
 	Candidates       int            `json:"candidates,omitempty"`     // size of the facet candidate set (top 100)

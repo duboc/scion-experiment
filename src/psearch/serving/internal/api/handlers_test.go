@@ -635,3 +635,36 @@ func TestVariantGroupingAPI(t *testing.T) {
 		t.Fatalf("oversized size = %d, want 400", w.Code)
 	}
 }
+
+// ADR-010 (#33): image search validation and availability.
+func TestSearchImageValidation(t *testing.T) {
+	r := newTestRouter() // v1 + memory: image search unavailable
+	jpeg := "/9j/4AAQSkZJRg==" // FF D8 FF E0 ...
+	cases := []struct {
+		name string
+		body string
+		want int
+	}{
+		{"bad mime", `{"image_base64":"` + jpeg + `","image_mime_type":"image/gif"}`, http.StatusBadRequest},
+		{"bad base64", `{"image_base64":"%%%","image_mime_type":"image/jpeg"}`, http.StatusBadRequest},
+		{"bad weight", `{"image_base64":"` + jpeg + `","image_mime_type":"image/jpeg","image_weight":1.5}`, http.StatusBadRequest},
+		{"v1 unavailable", `{"query":"verde","image_base64":"` + jpeg + `","image_mime_type":"image/jpeg"}`, http.StatusServiceUnavailable},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodPost, "/api/search", strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Errorf("%s: want %d, got %d (%s)", tc.name, tc.want, w.Code, w.Body.String())
+		}
+	}
+	big := `{"image_base64":"` + strings.Repeat("A", 9<<20) + `","image_mime_type":"image/jpeg"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/search", strings.NewReader(big))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("oversized body: want 413, got %d", w.Code)
+	}
+}

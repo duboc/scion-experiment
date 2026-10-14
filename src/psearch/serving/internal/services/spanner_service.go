@@ -240,7 +240,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 
 	// Catalog browse (#30): an empty or "*" query lists the catalog (filters still
 	// apply) instead of running hybrid retrieval.
-	if IsBrowseQuery(query) {
+	if IsBrowseQuery(query) && len(filters.ImageVector) == 0 {
 		if s.client != nil {
 			res, err := s.spannerBrowse(ctx, limit, filters)
 			if err == nil {
@@ -253,6 +253,22 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 	nf := normalizeFilters(filters)
 	expansion := s.synonyms.Expand(ctx, nf.TenantID, nf.Locale, query)
 	ruleSet := s.rules.Match(ctx, nf.TenantID, query)
+	if s.client != nil && len(filters.ImageVector) > 0 && s.config.UseGeminiEmbeddings() {
+		plan := s.planImageQuery(ctx, query, filters)
+		plan.expansion = expansion
+		plan.rules = ruleSet
+		res, err := s.spannerHybridSearch(ctx, query, limit, minScore, alpha, plan, filters)
+		if err == nil {
+			return SearchOutcome{Results: res, RetrievalMode: RetrievalMultimodal, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+		}
+		log.Printf("WARN: Spanner multimodal search fallback triggered: %v", err)
+	}
+	if len(filters.ImageVector) > 0 && IsBrowseQuery(query) {
+		// The in-memory engine has no product vectors in the gemini-embedding-2
+		// space, so an image-only query cannot be served from it. Return an empty,
+		// honest result rather than an unrelated catalog listing.
+		return SearchOutcome{Results: []models.SearchResult{}, RetrievalMode: RetrievalMemory}, nil
+	}
 	if s.client != nil && strings.TrimSpace(query) != "" {
 		plan := s.planVectorQuery(ctx, query)
 		plan.expansion = expansion
@@ -287,6 +303,8 @@ type vectorPlan struct {
 	embedding   interface{} // []float64 (v1 deterministic) or []float32 (v2 Gemini)
 	lexicalOnly bool        // true when no usable query embedding exists (degraded mode)
 	cacheHit    bool        // query embedding came from the embedding cache
+	vectorOnly  bool        // image-only query: no text leg (ADR-010, #33)
+	multimodal  bool        // a query image contributed to the vector (ADR-010, #33)
 	expansion   Expansion   // synonym expansion for the text leg
 	rules       RuleSet     // merchandising rules matching the query
 }
@@ -328,6 +346,26 @@ func (s *SpannerService) planVectorQuery(ctx context.Context, query string) vect
 	return vectorPlan{column: vectorColumnV2, embedding: emb, cacheHit: hit}
 }
 
+// planImageQuery builds the vector leg for a query image (ADR-010, #33). With
+// text, the image and text vectors are fused and the text also drives the fts
+// leg; if the text embedding fails the image vector is used alone (the fts leg
+// still runs). Without text only the vector leg runs.
+func (s *SpannerService) planImageQuery(ctx context.Context, query string, filters models.SearchFilters) vectorPlan {
+	w := filters.ImageWeight
+	if w <= 0 || w > 1 {
+		w = DefaultImageWeight
+	}
+	if IsBrowseQuery(query) {
+		return vectorPlan{column: vectorColumnV2, embedding: FuseVectors(filters.ImageVector, nil, 1), vectorOnly: true, multimodal: true}
+	}
+	txt := s.planVectorQuery(ctx, query)
+	var tv []float32
+	if !txt.lexicalOnly {
+		tv, _ = txt.embedding.([]float32)
+	}
+	return vectorPlan{column: vectorColumnV2, embedding: FuseVectors(filters.ImageVector, tv, w), cacheHit: txt.cacheHit, multimodal: true}
+}
+
 // catalogFilterSQL is applied inside BOTH retrieval legs (ADR-002 / Issue #3):
 // hidden products are never returned; channel and only-available filters are
 // optional (empty channel / false flag disables them). NULL columns default to
@@ -358,6 +396,12 @@ func buildHybridSQL(column string, lexicalOnly bool) string {
 // buildHybridSQLWith optionally searches the accent-folded tokenlists
 // (title_tokens_folded / description_tokens_folded, migration 014b).
 func buildHybridSQLWith(column string, lexicalOnly, folded bool) string {
+	return buildHybridSQLMode(column, lexicalOnly, false, folded)
+}
+
+// buildHybridSQLMode adds vectorOnly (ADR-010, #33): an image-only query has no
+// text, so only the ann leg runs (weight 1.0) and the fts leg is omitted.
+func buildHybridSQLMode(column string, lexicalOnly, vectorOnly, folded bool) string {
 	titleTok, descTok := "title_tokens", "description_tokens"
 	if folded {
 		titleTok, descTok = "title_tokens_folded", "description_tokens_folded"
@@ -395,6 +439,12 @@ func buildHybridSQLWith(column string, lexicalOnly, folded bool) string {
 			SELECT 'vector' AS source, @alpha AS weight, rank, product_id, title, product_data, is_available, stock FROM ann
 			UNION ALL
 			SELECT 'text' AS source, (1.0 - @alpha) AS weight, rank, product_id, title, product_data, is_available, stock FROM fts`
+	if vectorOnly && !lexicalOnly {
+		fts = ""
+		ann = strings.TrimSuffix(ann, ",")
+		union = `
+			SELECT 'vector' AS source, 1.0 AS weight, rank, product_id, title, product_data, is_available, stock FROM ann`
+	}
 	if lexicalOnly {
 		ann = ""
 		union = `
@@ -485,7 +535,7 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 	// the fts leg then requires query optimizer version >= 6, which is newer than the
 	// database default. A statement hint is the least invasive fix (verified by
 	// deployer on psearch-db: sqlcheck 27/27).
-	sql := optimizerHint + buildHybridSQLWith(plan.column, plan.lexicalOnly, s.config.TextFolding)
+	sql := optimizerHint + buildHybridSQLMode(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding)
 	queryText := query
 	if s.config.TextFolding {
 		queryText = FoldAccents(query)
@@ -586,6 +636,8 @@ func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, 
 		effAlpha := alpha
 		if plan.lexicalOnly {
 			effAlpha = 0
+		} else if plan.vectorOnly {
+			effAlpha = 1
 		}
 		item.Score = map[string]float64{
 			"hybrid":          rrfScore,

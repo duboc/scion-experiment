@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -27,7 +28,16 @@ type Controller struct {
 	intent       *services.QueryUnderstandingService
 	spell        *services.SpellCheckService
 	session      *services.SessionService
+	images       imageEmbedder // ADR-010 (#33); nil when the embedding service is unavailable
 }
+
+// imageEmbedder is satisfied by services.ImageEmbeddingCache (fakeable in tests).
+type imageEmbedder interface {
+	EmbedImageWithMeta(ctx context.Context, data []byte, mimeType string) ([]float32, bool, error)
+}
+
+// maxSearchBodyBytes bounds POST /search bodies: a 4 MB image is ~5.4 MB in base64.
+const maxSearchBodyBytes = 8 << 20
 
 func NewController(cfg *config.Config) (*Controller, error) {
 	ctx := context.Background()
@@ -100,7 +110,12 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		}
 	}
 	autocomplete := services.NewAutocompleteService(spannerSvc.Client(), services.DefaultSeedProducts(), 30*time.Second)
+	var images imageEmbedder
+	if embeddingSvc != nil {
+		images = services.NewImageEmbeddingCache(embeddingSvc, 256)
+	}
 	return &Controller{
+		images:       images,
 		config:       cfg,
 		spannerSvc:   spannerSvc,
 		embeddingSvc: embeddingSvc,
@@ -198,7 +213,13 @@ func (c *Controller) Search(ctx *gin.Context) {
 			req.OnlyInStock = true
 		}
 	} else {
+		ctx.Request.Body = http.MaxBytesReader(ctx.Writer, ctx.Request.Body, maxSearchBodyBytes)
 		if err := ctx.ShouldBindJSON(&req); err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				ctx.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large (max 8 MB; resize the image)"})
+				return
+			}
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -259,6 +280,45 @@ func (c *Controller) Search(ctx *gin.Context) {
 		Brand:       req.Brand,
 		TenantID:    req.TenantID,
 		Locale:      req.Locale,
+	}
+	// ADR-010 (Issue #33): visual search. The photo is embedded with
+	// gemini-embedding-2 into the embedding_v2 space; the optional text refines it.
+	var imageQuery, imageHit bool
+	var imageWeight float64
+	if strings.TrimSpace(req.ImageBase64) != "" {
+		data, mime, ierr := services.DecodeQueryImage(req.ImageBase64, req.ImageMimeType)
+		if ierr != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": ierr.Error()})
+			return
+		}
+		imageWeight = services.DefaultImageWeight
+		if req.ImageWeight != nil {
+			if *req.ImageWeight <= 0 || *req.ImageWeight > 1 {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "image_weight must be in (0, 1]"})
+				return
+			}
+			imageWeight = *req.ImageWeight
+		}
+		if c.images == nil || !c.config.UseGeminiEmbeddings() {
+			ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "image search requires gemini-embedding-2 (ACTIVE_EMBEDDING_VERSION=v2)"})
+			return
+		}
+		vec, hit, eerr := c.images.EmbedImageWithMeta(ctx.Request.Context(), data, mime)
+		switch {
+		case eerr != nil && strings.TrimSpace(req.Query) == "":
+			log.Printf("WARN: image embedding failed: %v", eerr)
+			ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "image search temporarily unavailable"})
+			return
+		case eerr != nil:
+			// Degrade to the text refinement alone rather than failing the request.
+			log.Printf("WARN: image embedding failed (%v); text-only search", eerr)
+		default:
+			imageQuery, imageHit = true, hit
+			filters.ImageVector, filters.ImageWeight = vec, imageWeight
+			if req.Alpha == nil {
+				alpha = services.DefaultMultimodalAlpha
+			}
+		}
 	}
 	// ADR-007 (Issue #19): decompose natural-language queries into a clean query
 	// plus structured filters; explicit request filters win.
@@ -338,6 +398,11 @@ intentDone:
 	}
 	if outcome.RetrievalMode == services.RetrievalLexicalOnly {
 		alpha = 0 // vector leg was not executed
+	}
+	if outcome.RetrievalMode != services.RetrievalMultimodal {
+		imageQuery, imageHit, imageWeight = false, false, 0
+	} else if services.IsBrowseQuery(searchQuery) {
+		alpha, imageWeight = 1, 1 // image-only: vector leg alone
 	}
 	ids := make([]string, 0, len(results))
 	for _, r := range results {
@@ -439,6 +504,9 @@ intentDone:
 		SessionID:        req.SessionID,
 		Personalized:     personalized,
 		RetrievalMode:    outcome.RetrievalMode,
+		ImageQuery:       imageQuery,
+		ImageWeight:      imageWeight,
+		ImageCacheHit:    imageHit,
 	})
 }
 
