@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00029-7ss`** (100% traffic, follows latest) — Issue #34, deployed from a clean `git archive` of `4e8951b`. Rollback target: `psearch-serving-00028-klr`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00030-pqq`** (100% traffic, follows latest) — Issue #35, deployed from a clean `git archive` of `5e6bf63`. Rollback target: `psearch-serving-00029-7ss`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -61,6 +61,7 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `019_b2b_product_prices.sql` / `019b_seed_product_prices.dml.sql` | DDL / DML | #22 | `product_prices` (interleaved in `products`); 45 contract prices |
 | `020_query_intent_cache.sql` | DDL | #19 | `query_intent_cache` |
 | `021_user_session_events.sql` | DDL | #20 | `user_session_events` |
+| `023_ad_campaigns.sql` / `023b_seed_ad_campaigns.dml.sql` | DDL / DML | #35 | `ad_campaigns` + `ad_campaigns_by_tenant_product` (STORING) + `ad_clicks` (interleaved in `ad_campaigns`, ON DELETE CASCADE), applied as 3 separate statements; 5 seed campaigns (tenant `default`) |
 
 ## 4. Release procedure
 
@@ -104,7 +105,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `00026-7qm` | `2915faf` | #30 | storefront script fix (unclosed autocomplete block), catalog browse (`q=` / `q=*`), "Show All Catalog" |
 | `00027-dmv` | `8367cb0` | #32 | variant grouping (color/size over interleaved SKUs, variant facets) + `[]*variantRow` decode fix + UI selects |
 | `00028-klr` | `2b9a75e` | #33 | visual & multimodal search (image → `embedding_v2`, text-fused, image cache) + photo-search UI |
-| **`00029-7ss`** | `4e8951b` | #34 | clickable facets (storefront only: facet clicks re-run the search, active-filter chips) — **current** |
+| `00029-7ss` | `4e8951b` | #34 | clickable facets (storefront only: facet clicks re-run the search, active-filter chips) |
+| **`00030-pqq`** | `5e6bf63` | #35 | sponsored products (ADR-011): `sponsored_matches` CTE, fixed ad slots, idempotent CPC click billing with real-time budget burn, campaign CRUD, Sponsored badge + campaign manager UI — **current** |
 
 ---
 
@@ -580,3 +582,29 @@ Source: clean `git archive` of **`4e8951b`** (code = `21cfaa9`; image change = `
 | c) `…&min_price=100&max_price=500` | ✅ 3 results (189.9, 149.5, 169.9), all in range |
 | Regressions | ✅ `q=running shoes` → `hybrid_v2`; `q=` → `catalog_browse` (15); photo POST → `multimodal_v2` (footwear top 3); sansung → prod-010; cep SP → 12; azul/42 → 3 |
 | Logs | ✅ clean |
+
+## Issue #35 Sponsored Products (ADR-011): LIVE 2026-10-14
+
+Source: clean `git archive` of **`5e6bf63`** in `/tmp/deploy-5e6bf63` (code = backend `0644c6f` + UI `a7e1054`; `5e6bf63` adds REVIEW.md only). Runtime SA `<RUNTIME_SA>`. **Env unchanged** (13 vars, same as `00029-7ss`). `AD_SLOTS` / `AD_MAX` / `AD_MIN_SIMILARITY` are not set, so the code defaults apply: `1,4,8` / `3` / `0.55`.
+
+| Step | Result |
+|---|---|
+| DDL `023_ad_campaigns.sql` (online, 3 statements: `ad_campaigns` → `ad_campaigns_by_tenant_product` → `ad_clicks` INTERLEAVE IN PARENT `ad_campaigns` ON DELETE CASCADE) | ✅ each statement `done`; checked with `ddl describe` |
+| DML `023b_seed_ad_campaigns.dml.sql` | ✅ 5 rows modified (nike-pegasus/prod-003, asics-nimbus/prod-002, apple-macbook/prod-007, acer-predator/prod-006, bose-qc/prod-008), all `active`, `spent_micros=0` |
+| `cmd/sqlcheck` (archive, prod env) | ✅ **44 OK / 0 FAIL**, exit 0. Includes `OK ad_campaigns rows=5` (`SpannerAdStore.List`); all hybrid cases (`hybrid_v2`) run the `sponsored_matches` CTE; multimodal + facets OK |
+| Deploy → **`psearch-serving-00030-pqq`**, then `update-traffic --to-latest` | ✅ 100%, follows latest |
+
+**Rollback:** `gcloud run services update-traffic psearch-serving --project=<PROJECT_ID> --region=us-central1 --to-revisions=psearch-serving-00029-7ss=100`. The new tables are additive, so `00029-7ss` ignores them.
+
+| Check (`<SERVICE_URL>`) | Result |
+|---|---|
+| `GET /api/health` / `GET /api/info` | ✅ 200 `healthy`, `spanner`; info: v2, `gemini-embedding-2`, 1024-d, 20535 products |
+| `GET /api/search?q=running+shoes&alpha=0.5` | ✅ `hybrid_v2`, 20 results, **`sponsored_count=2`**: slot 1 `prod-003` (`camp-nike-pegasus`) and slot 4 `prod-002` (`camp-asics-nimbus`), each with `sponsored=true` and an `ad_click_id` (`clk-…`) |
+| `…&ads=false` | ✅ `sponsored_count=0`, 0 flagged results, 20 total |
+| `POST /api/ads/click` `{camp-nike-pegasus, clk-6c0725ddebdec5d8}` | ✅ 200 `charged=true`, `cost_micros=400000`, `spent_micros=400000`, `remaining_micros=4600000` |
+| Replay of the same `click_id` | ✅ 200 `charged=false`, `cost_micros=0`, `reason=duplicate_click`, spend unchanged |
+| `GET /api/ads/campaigns` | ✅ `camp-nike-pegasus` `spent_micros` 0 → **400000**; other 4 still 0. `ad_clicks` has exactly 1 row (400000) |
+| `GET /` storefront | ✅ 200. jsdom render against the live API (`q=running shoes`): 20 cards, **2 `.sponsored-badge` "Sponsored · Patrocinado"**. Clicking a sponsored card fires the `/api/ads/click` beacon with `{campaign_id, click_id}` (stubbed in the test, so no extra charge) |
+| Logs (`00030-pqq`, severity ≥ ERROR) | ✅ none |
+
+Note: the smoke test left 1 billed click on `camp-nike-pegasus` (400000 micros, about 0.40 in currency units). This is intentional evidence and was not reverted.
