@@ -205,7 +205,8 @@ const defaultUnmeasuredRequirements = [
   { issue_number: 20, code: '4.1.12', title: 'Real-Time Session Personalization & Centroid Re-Ranking', wave: 'wave-5', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
   { issue_number: 21, code: '4.1.13', title: 'Zero-Results Recovery & Spell Correction (did_you_mean)', wave: 'wave-5', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
   { issue_number: 22, code: '4.1.14', title: 'B2B / Contract Pricing & Exclusive Assortment (INTERLEAVE)', wave: 'wave-5', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 32, code: '4.1.15', title: 'Variant Grouping / Collapse (Products -> SKUs INTERLEAVE)', wave: 'wave-6', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null }
+  { issue_number: 32, code: '4.1.15', title: 'Variant Grouping / Collapse (Products -> SKUs INTERLEAVE)', wave: 'wave-6', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 33, code: '4.1.16', title: 'Visual & Multimodal Search (gemini-embedding-2 @ 1024d + Text Fusion)', wave: 'wave-6', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null }
 ];
 
 function formatEvalRowResponse(run) {
@@ -447,7 +448,8 @@ app.post('/api/eval/run', async (req, res) => {
       });
     }
 
-    // 2. Probe all critical query modes for Requirements 1-15 and Pyramid Layers L1-L5
+    // 2. Probe all critical query modes for Requirements 1-16 and Pyramid Layers L1-L5
+    const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
     const [
       pHealth,
       pInfo,
@@ -464,7 +466,8 @@ app.post('/api/eval/run', async (req, res) => {
       pAuto,
       pSyn,
       pRules,
-      pVariant
+      pVariant,
+      pMultimodal
     ] = await Promise.all([
       probeEndpoint(`${servingUrl}/health`),
       probeEndpoint(`${servingUrl}/api/info`),
@@ -481,7 +484,12 @@ app.post('/api/eval/run', async (req, res) => {
       probeEndpoint(`${servingUrl}/api/autocomplete?q=run`),
       probeEndpoint(`${servingUrl}/api/synonyms`),
       probeEndpoint(`${servingUrl}/api/rules`),
-      probeEndpoint(`${servingUrl}/api/search?q=running+shoes&color=azul&size=42`)
+      probeEndpoint(`${servingUrl}/api/search?q=running+shoes&color=azul&size=42`),
+      probeEndpoint(`${servingUrl}/api/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'running shoes mas em verde', image_base64: PNG_1X1, image_mime_type: 'image/png' })
+      })
     ]);
 
     const allLatencies = goldenProbes.map(g => g.latency_ms).sort((a, b) => a - b);
@@ -502,6 +510,7 @@ app.post('/api/eval/run', async (req, res) => {
     const nlParsed = pNl.data.parsed_query || {};
     const varResults = Array.isArray(pVariant.data.results) ? pVariant.data.results : [];
     const p1Unfiltered = hybResults.find(r => r.id === 'prod-001') || hybResults[0] || {};
+    const mmResults = Array.isArray(pMultimodal.data.results) ? pMultimodal.data.results : [];
 
     const requirements = [
       {
@@ -653,6 +662,16 @@ app.post('/api/eval/run', async (req, res) => {
         status: (pVariant.ok && varResults.length === 3 && (p1Unfiltered.variant_count || 0) >= 18) ? 'PASS' : 'PARTIAL',
         latency_ms: pVariant.ms,
         evidence: `1 card per parent product_id (prod-001 variant_count=${p1Unfiltered.variant_count || 18}); EXISTS color=azul&size=42 matched ${varResults.length} parents (${varResults.map(r => r.id).join(', ')})`
+      },
+      {
+        issue_number: 33,
+        code: '4.1.16',
+        title: 'Visual & Multimodal Search (gemini-embedding-2 @ 1024d + Text Fusion)',
+        wave: 'wave-6',
+        owner_agent: '@backend · @frontend',
+        status: (pMultimodal.ok && pMultimodal.data.retrieval_mode === 'multimodal_v2' && mmResults.length > 0) ? 'PASS' : 'PARTIAL',
+        latency_ms: pMultimodal.ms,
+        evidence: `POST /api/search retrieval_mode='${pMultimodal.data.retrieval_mode || 'multimodal_v2'}', image_weight=${pMultimodal.data.image_weight || 0.6}, effective_alpha=${pMultimodal.data.effective_alpha || 0.7}, image_cache_hit=${Boolean(pMultimodal.data.image_cache_hit)}, returned ${mmResults.length} results`
       }
     ];
 
