@@ -502,6 +502,232 @@
     renderAgentTrajectory();
   }
 
+  let selectedInteractionEdge = 'all';
+  let showTrajectoryConversationTraces = true;
+  let trajChatInitialized = false;
+
+  function toggleAllTrajectoryTraces() {
+    showTrajectoryConversationTraces = !showTrajectoryConversationTraces;
+    const lbl = document.getElementById('btn-toggle-conv-trace-label');
+    if (lbl) {
+      lbl.textContent = showTrajectoryConversationTraces
+        ? 'Collapse Prompts / Thinking / Tools'
+        : 'Expand Prompts / Thinking / Tools';
+    }
+    renderAgentTrajectory();
+  }
+
+  function filterByInteractionEdge(edgeId) {
+    selectedInteractionEdge = edgeId || 'all';
+    if (edgeId && edgeId !== 'all') {
+      // Switch to All 10 Agents or All psearch so all steps on that edge are visible
+      selectedTrajectoryProject = 'all';
+      selectedTrajectoryAgent = 'all';
+      const allBtns = document.querySelectorAll('#traj-agent-pills-psearch .filter-btn, #traj-agent-pills-eval .filter-btn');
+      allBtns.forEach(b => b.setAttribute('aria-pressed', b.getAttribute('data-traj-key') === 'all:all' ? 'true' : 'false'));
+    }
+    renderInterAgentGraph();
+    renderAgentTrajectory();
+  }
+
+  function selectGraphNode(project, agentName) {
+    selectedInteractionEdge = 'all';
+    if (project === 'external') {
+      selectTrajectoryView('all', 'all', null);
+    } else {
+      selectTrajectoryView(project, agentName, null);
+    }
+    renderInterAgentGraph();
+  }
+
+  function renderInterAgentGraph() {
+    const svg = document.getElementById('traj-agent-graph-svg');
+    const pillsEl = document.getElementById('traj-edge-pills');
+    const statsBadge = document.getElementById('traj-graph-stats-badge');
+    if (!svg || !cachedTrajectories || !cachedTrajectories.agent_graph) return;
+
+    const graph = cachedTrajectories.agent_graph;
+    const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+    const edges = Array.isArray(graph.edges) ? graph.edges : [];
+    const summary = graph.summary || {};
+
+    if (statsBadge) {
+      statsBadge.textContent =
+        (summary.total_nodes || nodes.length) + ' Nodes · ' +
+        (summary.total_edges || edges.length) + ' Directed Edges · ' +
+        (summary.total_handoffs || 0) + ' Handoffs · ' +
+        (summary.total_tool_calls || 0) + ' Tool Calls';
+    }
+
+    const nodeById = {};
+    nodes.forEach(n => { nodeById[n.id] = n; });
+
+    let svgHtml = '<defs>' +
+      '<marker id="arrow-default" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">' +
+        '<path d="M 0 1 L 10 5 L 0 9 z" fill="var(--text-muted)" />' +
+      '</marker>' +
+      '<marker id="arrow-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">' +
+        '<path d="M 0 1 L 10 5 L 0 9 z" fill="var(--accent-primary)" />' +
+      '</marker>' +
+    '</defs>';
+
+    // Zone titles
+    svgHtml += '<text x="340" y="22" text-anchor="middle" fill="var(--text-secondary)" font-size="12" font-weight="600">psearch Build Factory (GitHub → @lead ↔ @backend / @frontend / @reviewer / @deployer)</text>';
+    svgHtml += '<line x1="890" y1="12" x2="890" y2="388" stroke="var(--border-hairline)" stroke-dasharray="4 4" />';
+    svgHtml += '<text x="1105" y="22" text-anchor="middle" fill="var(--text-secondary)" font-size="12" font-weight="600">psearch-eval Observability Factory (@eval-lead ↔ Specialists)</text>';
+
+    // Draw directed edges
+    edges.forEach(e => {
+      const src = nodeById[e.from];
+      const dst = nodeById[e.to];
+      if (!src || !dst) return;
+
+      const isSelectedEdge = selectedInteractionEdge === e.id;
+      const isAgentFocused = selectedInteractionEdge === 'all' && selectedTrajectoryAgent !== 'all' &&
+        (e.from === selectedTrajectoryAgent || e.to === selectedTrajectoryAgent);
+      const isHighlighted = isSelectedEdge || isAgentFocused;
+
+      const x1 = src.x + 58;
+      const y1 = src.y + 20;
+      const x2 = dst.x - 58;
+      const y2 = dst.y + 20;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const cx = (x1 + x2) / 2;
+      const cy = (y1 + y2) / 2 - (Math.abs(dy) < 30 ? 22 : (dx < 0 ? -28 : 16));
+
+      const strokeW = Math.min(4.2, Math.max(1.3, 1.1 + Math.log2(e.count + 1) * 0.55));
+      const strokeColor = isHighlighted ? 'var(--accent-primary)' : 'var(--border-strong)';
+      const opacity = (selectedInteractionEdge !== 'all' && !isSelectedEdge) ? '0.28' : (isHighlighted ? '0.95' : '0.68');
+      const marker = isHighlighted ? 'url(#arrow-active)' : 'url(#arrow-default)';
+      const safeEdgeId = escapeHTML(e.id).replace(/'/g, "\\'");
+
+      svgHtml += '<g style="cursor:pointer;" onclick="filterByInteractionEdge(\'' + safeEdgeId + '\')">' +
+        '<path d="M' + x1 + ',' + y1 + ' Q' + cx + ',' + cy + ' ' + x2 + ',' + y2 + '" fill="none" stroke="' + strokeColor + '" stroke-width="' + strokeW.toFixed(1) + '" opacity="' + opacity + '" marker-end="' + marker + '" />' +
+        '<rect x="' + (cx - 16) + '" y="' + (cy - 9) + '" width="32" height="16" rx="4" fill="var(--bg-surface)" stroke="' + strokeColor + '" stroke-width="1" opacity="' + opacity + '" />' +
+        '<text x="' + cx + '" y="' + (cy + 2) + '" text-anchor="middle" fill="var(--text-primary)" font-family="JetBrains Mono, monospace" font-size="10" font-weight="600">' + e.count + '</text>' +
+      '</g>';
+    });
+
+    // Draw agent nodes
+    nodes.forEach(n => {
+      const isSelectedNode = (selectedTrajectoryAgent === n.id) ||
+        (selectedInteractionEdge !== 'all' && selectedInteractionEdge.indexOf(n.id) !== -1);
+      const borderCol = isSelectedNode ? 'var(--accent-primary)' : 'var(--border-strong)';
+      const bgFill = isSelectedNode ? 'var(--bg-elevated)' : 'var(--bg-surface)';
+      const safeProj = escapeHTML(n.project).replace(/'/g, "\\'");
+      const safeId = escapeHTML(n.id).replace(/'/g, "\\'");
+      const subText = n.steps_count > 0
+        ? (n.steps_count + ' steps · ' + n.tool_calls_count + ' tools')
+        : (n.harness + ' · ' + n.model.slice(0, 14));
+
+      svgHtml += '<g class="topo-node' + (isSelectedNode ? ' is-active' : '') + '" transform="translate(' + (n.x - 58) + ',' + n.y + ')" style="cursor:pointer;" onclick="selectGraphNode(\'' + safeProj + '\',\'' + safeId + '\')">' +
+        '<rect width="116" height="42" rx="4" fill="' + bgFill + '" stroke="' + borderCol + '" stroke-width="' + (isSelectedNode ? '2' : '1.2') + '" />' +
+        '<text x="58" y="16" text-anchor="middle" fill="var(--text-primary)" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">' + escapeHTML(n.label) + '</text>' +
+        '<text x="58" y="31" text-anchor="middle" fill="var(--text-muted)" font-family="JetBrains Mono, monospace" font-size="9.5">' + escapeHTML(subText) + '</text>' +
+      '</g>';
+    });
+
+    svg.innerHTML = svgHtml;
+
+    if (pillsEl) {
+      let pillsHtml = '<button type="button" class="btn" style="padding:0.18rem 0.5rem;font-size:0.7rem;' +
+        (selectedInteractionEdge === 'all' ? 'background:var(--accent-primary);color:var(--bg-surface);' : '') +
+        '" onclick="filterByInteractionEdge(\'all\')">All Handoffs (' + (summary.total_handoffs || 0) + ')</button>';
+
+      edges.slice(0, 10).forEach(e => {
+        const active = selectedInteractionEdge === e.id;
+        const safeEdgeId = escapeHTML(e.id).replace(/'/g, "\\'");
+        pillsHtml += '<button type="button" class="btn mono" style="padding:0.18rem 0.5rem;font-size:0.7rem;' +
+          (active ? 'background:var(--accent-primary);color:var(--bg-surface);' : '') +
+          '" onclick="filterByInteractionEdge(\'' + safeEdgeId + '\')">' +
+          escapeHTML(e.id) + ' (' + e.count + ')' +
+        '</button>';
+      });
+      pillsEl.innerHTML = pillsHtml;
+    }
+  }
+
+  async function askTrajectoryPreset(presetQuery) {
+    const input = document.getElementById('traj-chat-input');
+    if (input) input.value = presetQuery;
+    await runTrajectoryChatQuery(presetQuery);
+  }
+
+  async function submitTrajectoryChat(event) {
+    if (event) event.preventDefault();
+    const input = document.getElementById('traj-chat-input');
+    const q = input ? input.value.trim() : '';
+    if (!q) return;
+    await runTrajectoryChatQuery(q);
+  }
+
+  async function runTrajectoryChatQuery(queryText) {
+    const outEl = document.getElementById('traj-chat-output');
+    const btn = document.getElementById('btn-traj-chat');
+    if (!outEl) return;
+    if (btn) btn.disabled = true;
+    outEl.innerHTML = '<div class="mono" style="color:var(--text-muted);">Querying trajectory prompts, thinking traces, tool invocations &amp; inter-agent handoffs...</div>';
+
+    try {
+      const resp = await fetch('/api/trajectories/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: queryText,
+          project: selectedTrajectoryProject,
+          agent: selectedTrajectoryAgent
+        })
+      });
+      const data = await resp.json();
+      const matchedSteps = Array.isArray(data.matched_steps) ? data.matched_steps : [];
+      const matchedEdges = Array.isArray(data.matched_edges) ? data.matched_edges : [];
+
+      let html = '<div style="margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.4rem;">' +
+        '<span class="mono" style="font-weight:700;color:var(--text-primary);">Query: "' + escapeHTML(queryText) + '"</span>' +
+        '<span class="mono" style="font-size:0.7rem;color:var(--text-muted);">Matched ' + matchedSteps.length + ' Conversation Turns · ' + (data.latency_ms || 0) + 'ms</span>' +
+      '</div>';
+
+      if (matchedEdges.length > 0) {
+        html += '<div style="margin-bottom:0.55rem;display:flex;flex-wrap:wrap;gap:0.3rem;align-items:center;">' +
+          '<span class="mono" style="font-size:0.7rem;color:var(--text-secondary);">Active Handoff Edges:</span>' +
+          matchedEdges.map(e => {
+            const safeEdgeId = escapeHTML(e.id).replace(/'/g, "\\'");
+            return '<button type="button" class="btn mono" style="padding:0.12rem 0.45rem;font-size:0.68rem;" onclick="filterByInteractionEdge(\'' + safeEdgeId + '\')">' +
+              escapeHTML(e.from + ' → ' + e.to) + ' (' + e.count + ' handoffs · ' + e.tool_calls_count + ' tools)' +
+            '</button>';
+          }).join('') +
+        '</div>';
+      }
+
+      html += matchedSteps.map(s => {
+        const toolsHtml = (s.tool_calls || []).map(tc =>
+          '<div class="mono" style="font-size:0.7rem;background:var(--bg-subtle);padding:0.22rem 0.45rem;border-left:2px solid var(--accent-primary);margin-top:0.2rem;">' +
+            '<strong>[' + escapeHTML(tc.tool) + ']</strong> $ ' + escapeHTML(tc.command) +
+            '<div style="color:var(--text-muted);margin-top:0.1rem;">→ ' + escapeHTML(tc.output) + '</div>' +
+          '</div>'
+        ).join('');
+
+        return '<div style="border:1px solid var(--border-hairline);background:var(--bg-surface);padding:0.55rem 0.75rem;margin-bottom:0.5rem;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.35rem;">' +
+            '<span class="mono" style="font-weight:700;color:var(--accent-primary);">Step #' + escapeHTML(s.step_index) + ' · @' + escapeHTML(s.agent) + ' (' + escapeHTML(s.interaction_edge || '') + ') · Issue #' + escapeHTML(s.issue_number || 'n/a') + '</span>' +
+            '<span class="mono" style="font-size:0.7rem;color:var(--text-muted);">' + escapeHTML(String(s.commit_sha || '').slice(0, 14)) + ' · ' + escapeHTML(String(s.event_timestamp || '').slice(0, 19)) + '</span>' +
+          '</div>' +
+          '<div style="margin-top:0.3rem;font-size:0.76rem;"><strong>📥 Prompt:</strong> ' + escapeHTML(s.prompt || '') + '</div>' +
+          '<div style="margin-top:0.22rem;font-size:0.76rem;color:var(--text-secondary);"><strong>🧠 Thinking:</strong> ' + escapeHTML(s.thinking || '') + '</div>' +
+          '<div style="margin-top:0.25rem;">' + toolsHtml + '</div>' +
+          '<div style="margin-top:0.28rem;font-size:0.76rem;"><strong>📤 Outcome (' + escapeHTML(s.status) + '):</strong> ' + escapeHTML(s.title) + ' — ' + escapeHTML((s.response || s.detail || '').slice(0, 260)) + '</div>' +
+        '</div>';
+      }).join('');
+
+      outEl.innerHTML = html;
+    } catch (err) {
+      outEl.innerHTML = '<div class="mono" style="color:var(--status-critical);">Chat query failed: ' + escapeHTML(err.message) + '</div>';
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   function renderAgentTrajectory() {
     const tbody = document.getElementById('tbody-agent-trajectory');
     const summaryEl = document.getElementById('trajectory-agent-summary');
@@ -514,6 +740,12 @@
       return;
     }
 
+    renderInterAgentGraph();
+    if (!trajChatInitialized) {
+      trajChatInitialized = true;
+      runTrajectoryChatQuery('Show @lead, @reviewer, and @deployer prompts, thinking and tool calls on #34 clickable facets');
+    }
+
     if (kpiTrajEl) {
       kpiTrajEl.textContent = (cachedTrajectories.total_agents || 10) + ' Agents · ' + (cachedTrajectories.total_steps || 0) + ' Steps';
     }
@@ -523,7 +755,19 @@
     }
 
     let stepsToRender = [];
-    if (selectedTrajectoryProject === 'psearch' && selectedTrajectoryAgent === 'all') {
+    if (selectedInteractionEdge !== 'all') {
+      const allChrono = Array.isArray(cachedTrajectories.chronological_timeline) ? cachedTrajectories.chronological_timeline : [];
+      stepsToRender = allChrono.filter(st => {
+        const normFrom = (st.from_agent === 'Scion Hub Scheduler') ? 'PO / GitHub' : (st.from_agent || st.agent);
+        const edgeId = normFrom + ' → ' + (st.to_agent || 'lead');
+        return edgeId === selectedInteractionEdge || st.interaction_edge === selectedInteractionEdge;
+      });
+      if (summaryEl) {
+        summaryEl.innerHTML =
+          '<span>Viewing Handoff Edge: <strong class="mono">' + escapeHTML(selectedInteractionEdge) + '</strong> · <button type="button" class="btn" style="padding:0.1rem 0.45rem;font-size:0.7rem;" onclick="filterByInteractionEdge(\'all\')">Clear Edge Filter ×</button></span>' +
+          '<span class="mono">Matching Conversation Turns: ' + stepsToRender.length + '</span>';
+      }
+    } else if (selectedTrajectoryProject === 'psearch' && selectedTrajectoryAgent === 'all') {
       stepsToRender = Array.isArray(cachedTrajectories.psearch_chronological) ? cachedTrajectories.psearch_chronological : [];
       if (summaryEl) {
         const psearchAgents = cachedTrajectories.agents.filter(a => a.project === 'psearch');
@@ -531,7 +775,7 @@
         const totCalls = psearchAgents.reduce((s, a) => s + (Number(a.reconstructed_model_calls) || 0), 0);
         summaryEl.innerHTML =
           '<span>Viewing Trajectory: <strong class="mono">All psearch Agents (Chronological)</strong> — @lead · @backend · @frontend · @reviewer · @deployer</span>' +
-          '<span class="mono">Total Steps: ' + stepsToRender.length + ' · Waves 0–6 (Issues #1–#33) · Reconstructed Turns / Calls: ' + totTurns + ' / ' + totCalls + '</span>';
+          '<span class="mono">Total Steps: ' + stepsToRender.length + ' · Waves 0–6 (Issues #1–#34) · Reconstructed Turns / Calls: ' + totTurns + ' / ' + totCalls + '</span>';
       }
     } else if (selectedTrajectoryProject === 'all' && selectedTrajectoryAgent === 'all') {
       stepsToRender = Array.isArray(cachedTrajectories.chronological_timeline) ? cachedTrajectories.chronological_timeline : [];
@@ -559,7 +803,7 @@
             : 'All Waves';
           summaryEl.innerHTML =
             '<span>Viewing Trajectory: <strong class="mono">@' + escapeHTML(agentObj.name) + ' (' + escapeHTML(agentObj.project) + ')</strong> — ' + escapeHTML(agentObj.role || '') + ' (' + escapeHTML(agentObj.harness || '') + ' · ' + escapeHTML(agentObj.model || 'gemini-4-argon') + ')</span>' +
-            '<span class="mono">Steps: ' + stepsToRender.length + ' · Commits: ' + (agentObj.commits_count || 0) + ' · Turns/Calls: ' + (agentObj.reconstructed_turns || '--') + '/' + (agentObj.reconstructed_model_calls || '--') + ' · Issues: ' + escapeHTML(issuesStr) + '</span>';
+            '<span class="mono">Steps: ' + stepsToRender.length + ' · Tool Calls: ' + (agentObj.tool_calls_count || 0) + ' · Est. Cost: $' + Number(agentObj.total_cost_usd || 0).toFixed(2) + ' · Issues: ' + escapeHTML(issuesStr) + '</span>';
         }
       }
     }
@@ -571,8 +815,10 @@
 
     tbody.innerHTML = stepsToRender.map((s, idx) => {
       const stepNum = s.step_index || (idx + 1);
-      const agentBadge = '<span class="mono" style="font-weight:600;">@' + escapeHTML(s.agent_name || selectedTrajectoryAgent) + '</span>' +
-        '<div class="mono" style="font-size:0.7rem;color:var(--text-muted);">' + escapeHTML(s.project || selectedTrajectoryProject) + '</div>';
+      const edgeStr = s.interaction_edge || ((s.from_agent || s.agent_name) + ' → ' + (s.to_agent || 'lead'));
+      const agentBadge = '<span class="mono" style="font-weight:700;">@' + escapeHTML(s.agent_name || selectedTrajectoryAgent) + '</span>' +
+        '<div class="mono" style="font-size:0.68rem;color:var(--accent-primary);margin-top:0.15rem;">' + escapeHTML(edgeStr) + '</div>' +
+        '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);">' + escapeHTML(s.harness || '') + ' · ' + escapeHTML(s.model || '') + '</div>';
       const issuePart = s.issue_number
         ? '<a href="https://github.com/duboc/scion-experiment/issues/' + encodeURIComponent(s.issue_number) + '" target="_blank" class="mono">#' + escapeHTML(s.issue_number) + '</a>'
         : '—';
@@ -582,33 +828,55 @@
       if (shaStr.indexOf('hub-state-') === 0) {
         commitCell = '<span class="mono" style="color:var(--accent-primary);font-weight:600;">hub.db</span>';
       } else if (shaStr.indexOf('comment-') === 0) {
-        const cid = shaStr.replace('comment-', '');
+        const cid = shaStr.replace('comment-', '').replace(/-relay-\d+$/, '');
         const cUrl = s.comment_url || ('https://github.com/duboc/scion-experiment/issues/' + encodeURIComponent(s.issue_number || 1) + '#issuecomment-' + encodeURIComponent(cid));
-        commitCell = '<a href="' + escapeHTML(cUrl) + '" target="_blank" class="mono">#' + escapeHTML(cid.slice(-6)) + '</a>';
+        commitCell = '<a href="' + escapeHTML(cUrl) + '" target="_blank" class="mono">#' + escapeHTML(shaStr.replace('comment-', '').slice(-10)) + '</a>';
       } else if (shaStr) {
         commitCell = '<a href="https://github.com/duboc/scion-experiment/commit/' + encodeURIComponent(shaStr) + '" target="_blank" class="mono">' + escapeHTML(shaStr.slice(0, 7)) + '</a>';
       }
       const tsFormatted = s.timestamp ? escapeHTML(String(s.timestamp).replace('T', ' ').slice(0, 19)) : '—';
-      const artifactsHtml = Array.isArray(s.artifacts) && s.artifacts.length > 0
-        ? '<div class="mono" style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">Artifacts: ' + s.artifacts.map(a => escapeHTML(a)).join(' · ') + '</div>'
-        : '';
       const stVal = s.status || 'PASS';
       const stClass = (stVal === 'ROLLED_BACK' || stVal === 'REJECTED' || stVal === 'ERROR')
         ? 'badge--critical'
         : (stVal === 'BLOCKED_RESOLVED' ? 'badge--partial' : 'badge--pass');
       const statusBadge = '<span class="badge ' + stClass + '"><span class="badge-dot"></span>' + escapeHTML(stVal) + '</span>';
 
+      const tok = s.tokens || {};
+      const costBadge = tok.cost_usd !== undefined
+        ? '<div class="mono" style="font-size:0.68rem;color:var(--text-muted);margin-top:0.22rem;">in:' + (tok.input_tokens || 0) + ' · out:' + (tok.output_tokens || 0) + ' · <strong>$' + Number(tok.cost_usd).toFixed(4) + '</strong></div>'
+        : '';
+
+      let convBlockHtml = '';
+      if (showTrajectoryConversationTraces) {
+        const toolListHtml = Array.isArray(s.tool_calls) && s.tool_calls.length > 0
+          ? s.tool_calls.map(tc =>
+              '<div class="mono" style="font-size:0.72rem;background:var(--bg-canvas);padding:0.3rem 0.55rem;border-left:2px solid var(--accent-primary);margin-top:0.22rem;">' +
+                '<span style="font-weight:700;color:var(--accent-primary);">[' + escapeHTML(tc.tool) + ']</span> $ ' + escapeHTML(tc.command) +
+                '<div style="color:var(--text-secondary);margin-top:0.12rem;">→ ' + escapeHTML(tc.output) + '</div>' +
+              '</div>'
+            ).join('')
+          : '';
+
+        convBlockHtml =
+          '<div style="margin-top:0.45rem;padding:0.55rem 0.7rem;background:var(--bg-subtle);border:1px solid var(--border-hairline);display:flex;flex-direction:column;gap:0.3rem;">' +
+            '<div style="font-size:0.76rem;"><strong class="mono" style="color:var(--text-primary);">📥 Prompt (' + escapeHTML(s.from_agent || 'orchestrator') + ' → @' + escapeHTML(s.agent_name || s.agent) + '):</strong> ' + escapeHTML(s.prompt || '') + '</div>' +
+            '<div style="font-size:0.76rem;color:var(--text-secondary);"><strong class="mono" style="color:var(--text-primary);">🧠 Thinking:</strong> ' + escapeHTML(s.thinking || '') + '</div>' +
+            (toolListHtml ? '<div><strong class="mono" style="font-size:0.74rem;color:var(--text-primary);">🛠️ Tool Usage (' + (s.tool_calls || []).length + ' calls):</strong>' + toolListHtml + '</div>' : '') +
+            '<div style="font-size:0.76rem;"><strong class="mono" style="color:var(--text-primary);">📤 Response / Handoff (→ ' + escapeHTML(s.to_agent || 'next') + '):</strong> ' + escapeHTML((s.response || s.detail || '').slice(0, 420)) + '</div>' +
+          '</div>';
+      }
+
       return '<tr>' +
         '<td class="mono num">#' + escapeHTML(stepNum) + '</td>' +
         '<td>' + agentBadge + '</td>' +
         '<td class="mono">' + waveIssueCell + '</td>' +
-        '<td><span class="badge badge--running">' + escapeHTML(s.action_type || 'step') + '</span></td>' +
+        '<td><span class="badge badge--running">' + escapeHTML(s.action_type || 'step') + '</span>' + costBadge + '</td>' +
         '<td class="mono">' + commitCell + '</td>' +
         '<td class="mono" style="font-size:0.75rem;white-space:nowrap;">' + tsFormatted + '</td>' +
         '<td>' +
           '<div style="font-weight:600;font-size:0.8125rem;">' + escapeHTML(s.title || '') + '</div>' +
           '<div style="color:var(--text-secondary);font-size:0.78rem;margin-top:0.15rem;">' + escapeHTML(s.detail || '') + '</div>' +
-          artifactsHtml +
+          convBlockHtml +
         '</td>' +
         '<td>' + statusBadge + '</td>' +
       '</tr>';
@@ -640,12 +908,12 @@
         const syncedCnt = (data && data.spanner_sync && data.spanner_sync.synced_steps) ? data.spanner_sync.synced_steps : (data.total_steps || 0);
         label.textContent = 'Rebuilt ' + syncedCnt + ' Steps (' + (data.rebuild_latency_ms || 0) + 'ms)';
         setTimeout(() => {
-          if (label) label.textContent = 'Rebuild psearch Trajectories';
+          if (label) label.textContent = 'Rebuild & Sync Trajectories';
         }, 3500);
       }
     } catch (err) {
       console.error('Failed to rebuild agent trajectories:', err);
-      if (label) label.textContent = 'Rebuild psearch Trajectories';
+      if (label) label.textContent = 'Rebuild & Sync Trajectories';
       if (badge) badge.textContent = 'Rebuild error: ' + err.message;
     } finally {
       if (btn) btn.disabled = false;
@@ -719,7 +987,7 @@
       if (passEl) {
         const pCnt = (evalRes.pass_count !== undefined && evalRes.pass_count !== null) ? evalRes.pass_count : '--';
         const partCnt = (evalRes.partial_count !== undefined && evalRes.partial_count !== null) ? evalRes.partial_count : '--';
-        const totReqs = evalRes.total_requirements || (Array.isArray(evalRes.requirements) ? evalRes.requirements.length : 16) || 16;
+        const totReqs = evalRes.total_requirements || (Array.isArray(evalRes.requirements) ? evalRes.requirements.length : 17) || 17;
         passEl.textContent = pCnt + ' / ' + totReqs + ' PASS · ' + partCnt + ' PARTIAL';
       }
 
@@ -767,6 +1035,11 @@
   root.setAgentFilter = setAgentFilter;
   root.setWaveFilter = setWaveFilter;
   root.selectAgentNode = selectAgentNode;
+  root.selectGraphNode = selectGraphNode;
+  root.filterByInteractionEdge = filterByInteractionEdge;
+  root.toggleAllTrajectoryTraces = toggleAllTrajectoryTraces;
+  root.askTrajectoryPreset = askTrajectoryPreset;
+  root.submitTrajectoryChat = submitTrajectoryChat;
   root.selectTrajectoryView = selectTrajectoryView;
   root.renderAgentTrajectory = renderAgentTrajectory;
   root.rebuildAgentTrajectories = rebuildAgentTrajectories;

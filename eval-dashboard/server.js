@@ -4,7 +4,7 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
-const { AGENT_METADATA, buildTrajectoriesPayload, syncTrajectoriesToSpanner } = require('./trajectories');
+const { AGENT_METADATA, buildTrajectoriesPayload, syncTrajectoriesToSpanner, answerTrajectoryConversationQuery } = require('./trajectories');
 
 process.env.SPANNER_ENABLE_PROXIED_GCP_METRICS = 'false';
 
@@ -354,7 +354,58 @@ app.post('/api/trajectories/rebuild', async (req, res) => {
   }
 });
 
-// Canonical 14 Biggy Search requirements template with unmeasured baseline
+// POST /api/trajectories/chat - Conversational Trajectory Explorer (answers questions about prompts, thinking, tool usage, issues, and inter-agent handoffs)
+app.post('/api/trajectories/chat', async (req, res) => {
+  const start = Date.now();
+  try {
+    const body = req.body || {};
+    const queryText = body.message || body.query || body.q || '';
+    const { mainCommits, evalCommits, issueComments } = await fetchLiveCommitsForTrajectories(false);
+    const db = getSpannerDatabase();
+    let spannerAgentRows = [];
+    if (db) {
+      try {
+        const [agentRows] = await db.run({
+          sql: 'SELECT project_slug, agent_name, agent_id, template, harness, phase, activity, parent_agent, last_summary, last_activity_at FROM factory_agent_status',
+          json: true
+        });
+        if (Array.isArray(agentRows)) spannerAgentRows = agentRows;
+      } catch (_) {}
+    }
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, spannerAgentRows);
+    const result = answerTrajectoryConversationQuery(payload, queryText, {
+      project: body.project || 'all',
+      agent: body.agent || 'all',
+      issue: body.issue || null
+    });
+    return res.json({
+      status: 'ok',
+      latency_ms: Date.now() - start,
+      ...result
+    });
+  } catch (err) {
+    console.error('POST /api/trajectories/chat error:', err.message);
+    return res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+// GET /api/trajectories/graph - Returns the directed inter-agent interaction graph & handoff matrix
+app.get('/api/trajectories/graph', async (req, res) => {
+  try {
+    const { mainCommits, evalCommits, issueComments } = await fetchLiveCommitsForTrajectories(false);
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, []);
+    return res.json({
+      status: 'ok',
+      rebuilt_at: payload.rebuilt_at,
+      total_steps: payload.total_steps,
+      ...payload.agent_graph
+    });
+  } catch (err) {
+    return res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+// Canonical 17 Biggy Search requirements template with unmeasured baseline
 const defaultUnmeasuredRequirements = [
   { issue_number: 1, code: '4.1.1', title: 'Busca Híbrida (Dynamic RRF Alpha)', wave: 'wave-1', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
   { issue_number: 2, code: '4.1.2', title: 'Busca Vetorial (1024-dim, Blue/Green, Cache)', wave: 'wave-1', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
@@ -371,7 +422,8 @@ const defaultUnmeasuredRequirements = [
   { issue_number: 21, code: '4.1.13', title: 'Zero-Results Recovery & Spell Correction (did_you_mean)', wave: 'wave-5', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
   { issue_number: 22, code: '4.1.14', title: 'B2B / Contract Pricing & Exclusive Assortment (INTERLEAVE)', wave: 'wave-5', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
   { issue_number: 32, code: '4.1.15', title: 'Variant Grouping / Collapse (Products -> SKUs INTERLEAVE)', wave: 'wave-6', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 33, code: '4.1.16', title: 'Visual & Multimodal Search (gemini-embedding-2 @ 1024d + Text Fusion)', wave: 'wave-6', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null }
+  { issue_number: 33, code: '4.1.16', title: 'Visual & Multimodal Search (gemini-embedding-2 @ 1024d + Text Fusion)', wave: 'wave-6', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 34, code: '4.1.17', title: 'Facetas Clicáveis no Painel Lateral (Interactive Filter Toggle & Chips)', wave: 'wave-6', owner_agent: '@frontend · @lead', status: 'not measured', latency_ms: null, evidence: null }
 ];
 
 function formatEvalRowResponse(run) {
@@ -632,7 +684,9 @@ app.post('/api/eval/run', async (req, res) => {
       pSyn,
       pRules,
       pVariant,
-      pMultimodal
+      pMultimodal,
+      pFacetClick,
+      pStorefrontHtml
     ] = await Promise.all([
       probeEndpoint(`${servingUrl}/health`),
       probeEndpoint(`${servingUrl}/api/info`),
@@ -654,7 +708,9 @@ app.post('/api/eval/run', async (req, res) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: 'running shoes mas em verde', image_base64: PNG_1X1, image_mime_type: 'image/png' })
-      })
+      }),
+      probeEndpoint(`${servingUrl}/api/search?q=running+shoes&category=Footwear&brand=Adidas&min_price=100&max_price=200`),
+      fetch(`${servingUrl}/`).then(async r => ({ ok: r.ok, status: r.status, text: await r.text() })).catch(() => ({ ok: false, status: 0, text: '' }))
     ]);
 
     const allLatencies = goldenProbes.map(g => g.latency_ms).sort((a, b) => a - b);
@@ -676,6 +732,8 @@ app.post('/api/eval/run', async (req, res) => {
     const varResults = Array.isArray(pVariant.data.results) ? pVariant.data.results : [];
     const p1Unfiltered = hybResults.find(r => r.id === 'prod-001') || hybResults[0] || {};
     const mmResults = Array.isArray(pMultimodal.data.results) ? pMultimodal.data.results : [];
+    const facetClickResults = Array.isArray(pFacetClick.data.results) ? pFacetClick.data.results : [];
+    const hasClickableFacetDom = Boolean(pStorefrontHtml.ok && pStorefrontHtml.text.includes('toggleFacet(kind, val)') && pStorefrontHtml.text.includes('renderFacetGroup('));
 
     const requirements = [
       {
@@ -837,6 +895,16 @@ app.post('/api/eval/run', async (req, res) => {
         status: (pMultimodal.ok && pMultimodal.data.retrieval_mode === 'multimodal_v2' && mmResults.length > 0) ? 'PASS' : 'PARTIAL',
         latency_ms: pMultimodal.ms,
         evidence: `POST /api/search retrieval_mode='${pMultimodal.data.retrieval_mode || 'multimodal_v2'}', image_weight=${pMultimodal.data.image_weight || 0.6}, effective_alpha=${pMultimodal.data.effective_alpha || 0.7}, image_cache_hit=${Boolean(pMultimodal.data.image_cache_hit)}, returned ${mmResults.length} results`
+      },
+      {
+        issue_number: 34,
+        code: '4.1.17',
+        title: 'Facetas Clicáveis no Painel Lateral (Interactive Filter Toggle & Chips)',
+        wave: 'wave-6',
+        owner_agent: '@frontend · @lead',
+        status: (hasClickableFacetDom && pFacetClick.ok && facetClickResults.length > 0) ? 'PASS' : 'PARTIAL',
+        latency_ms: pFacetClick.ms,
+        evidence: `Storefront GET / toggleFacet() & renderFacetGroup() DOM verified; category=Footwear&brand=Adidas&min_price=100&max_price=200 returned ${facetClickResults.length} filtered item (${facetClickResults.map(r => r.id).join(', ')})`
       }
     ];
 

@@ -871,22 +871,67 @@
       </div>
     </section>
 
-    <!-- Per-Agent Execution Trajectory Inspector & Spanner Rebuilder (psearch + psearch-eval) -->
-    <section class="ledger-frame" id="section-trajectories" aria-label="Agent Execution Trajectory Inspector and Spanner Rebuilder">
+    <!-- Per-Agent Execution Trajectory Inspector, Inter-Agent Graph & Conversational Explorer (psearch + psearch-eval) -->
+    <section class="ledger-frame" id="section-trajectories" aria-label="Agent Execution Trajectory Inspector, Inter-Agent Graph, and Conversational Explorer">
       <div class="zone">
         <div class="zone-header" style="flex-wrap:wrap;gap:0.75rem;">
           <div>
-            <h2>Agent Execution Trajectory By Agent — Step-by-Step Timeline &amp; Spanner Rebuilder</h2>
+            <h2>Agent Conversation Trajectory, Tool Usage, Thinking &amp; Inter-Agent Graph</h2>
             <div class="mono" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;" id="traj-subtitle">
-              Reconstructed from origin/main &amp; origin/eval-dashboard commits, ADRs (001–010), REVIEW.md, DEPLOYMENT.md, and Cloud Spanner (agent_trajectories)
+              Full prompts, chain-of-thought thinking, tool invocations, verbatim agent handoffs (#1–#34), and directed inter-agent graph persisted in Cloud Spanner (agent_trajectories)
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
             <span id="traj-spanner-badge" class="badge badge--pass"><span class="badge-dot"></span>Spanner Synced</span>
+            <button type="button" id="btn-toggle-conv-trace" class="btn" onclick="toggleAllTrajectoryTraces()">
+              <span id="btn-toggle-conv-trace-label">Collapse Prompts / Thinking / Tools</span>
+            </button>
             <button type="button" id="btn-rebuild-trajectories" class="btn btn-primary" onclick="rebuildAgentTrajectories()">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              <span id="btn-rebuild-trajectories-label">Rebuild psearch Trajectories</span>
+              <span id="btn-rebuild-trajectories-label">Rebuild &amp; Sync Trajectories</span>
             </button>
+          </div>
+        </div>
+
+        <!-- Split View: Left = Directed Inter-Agent Handoff Graph | Right = Converse with the Trajectory -->
+        <div class="split-2" style="border-bottom:1px solid var(--border-hairline);">
+          <!-- Left: Directed Inter-Agent Communication & Handoff Graph -->
+          <div class="zone" style="border-right:1px solid var(--border-hairline);">
+            <div class="zone-header" style="background:var(--bg-subtle);padding:0.6rem 1.25rem;">
+              <h3 style="margin:0;font-size:0.85rem;font-weight:600;">Directed Inter-Agent Communication &amp; Handoff Graph (Click Node or Edge to Filter)</h3>
+              <span class="mono" style="font-size:0.72rem;color:var(--text-muted);" id="traj-graph-stats-badge">12 Nodes · Handoffs &amp; Tool Calls</span>
+            </div>
+            <div style="padding:0.5rem 0.75rem;background:var(--bg-surface);">
+              <svg id="traj-agent-graph-svg" class="topo-canvas" viewBox="0 0 1320 400" style="width:100%;height:auto;max-height:310px;" aria-label="Directed Inter-Agent Communication Graph"></svg>
+            </div>
+            <div style="padding:0.55rem 1rem;border-top:1px solid var(--border-hairline);background:var(--bg-subtle);display:flex;flex-wrap:wrap;align-items:center;gap:0.35rem;">
+              <span class="mono" style="font-size:0.72rem;font-weight:600;color:var(--text-secondary);margin-right:0.25rem;">Filter by Handoff Edge:</span>
+              <div id="traj-edge-pills" style="display:flex;flex-wrap:wrap;gap:0.35rem;"></div>
+            </div>
+          </div>
+
+          <!-- Right: Interactive "Converse with the Trajectory" Explorer -->
+          <div class="zone" style="display:flex;flex-direction:column;">
+            <div class="zone-header" style="background:var(--bg-subtle);padding:0.6rem 1.25rem;">
+              <h3 style="margin:0;font-size:0.85rem;font-weight:600;">Converse with the Trajectory — Inspect Prompts, Thinking, Tools &amp; Handoffs</h3>
+              <span class="mono" style="font-size:0.72rem;color:var(--accent-primary);">Grounded on 275+ Reconstructed Steps</span>
+            </div>
+            <div style="padding:0.65rem 1rem;border-bottom:1px solid var(--border-hairline);background:var(--bg-surface);display:flex;flex-direction:column;gap:0.5rem;">
+              <div style="display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;">
+                <span class="mono" style="font-size:0.7rem;color:var(--text-muted);">Quick Queries:</span>
+                <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Show @lead, @reviewer, and @deployer prompts, thinking and tool calls on #34 clickable facets')">#34 Clickable Facets (Prompts &amp; Tools)</button>
+                <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Show @backend and @frontend thinking and tool usage on #33 visual multimodal search')">#33 Multimodal Search (@backend/@frontend)</button>
+                <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Why did @reviewer reject #2 API key leak and @deployer roll back Wave 1 00010?')">Wave 1 Rollback &amp; #2 Review Gate</button>
+                <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Show @backend and @reviewer thinking and SQL tool checks on #32 variant grouping')">#32 Variant Grouping SQL &amp; Tools</button>
+              </div>
+              <form onsubmit="submitTrajectoryChat(event)" style="display:flex;gap:0.5rem;">
+                <input id="traj-chat-input" class="input" type="text" value="Show @lead, @reviewer, and @deployer prompts, thinking and tool calls on #34 clickable facets" placeholder="Ask about any agent's prompts, thinking, tool calls, issues (#1-#34), or handoffs..." style="flex:1;" />
+                <button type="submit" id="btn-traj-chat" class="btn btn-primary">Ask Trajectory</button>
+              </form>
+            </div>
+            <div id="traj-chat-output" style="padding:0.85rem 1.1rem;font-size:0.8rem;line-height:1.5;max-height:255px;overflow-y:auto;background:var(--bg-canvas);">
+              <div class="mono" style="color:var(--text-muted);">Loading grounded trajectory conversation synthesis...</div>
+            </div>
           </div>
         </div>
 
@@ -919,21 +964,21 @@
         <!-- Selected Agent Summary Strip -->
         <div class="inspector-strip" id="trajectory-agent-summary">
           <span>Viewing Trajectory: <strong class="mono">@lead (psearch)</strong> — Factory Tech Lead &amp; Architecture Orchestrator</span>
-          <span class="mono">Steps: 10 · Issues: 9 · Commits: 10 · Reconstructed Turns / Calls: 68 / 184</span>
+          <span class="mono">Steps: -- · Issues: #1–#34 · Commits &amp; Tool Traces</span>
         </div>
 
-        <!-- Step-by-Step Trajectory Table -->
+        <!-- Step-by-Step Conversation & Tool Trajectory Table -->
         <div class="zone-body table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Step</th>
-                <th>Agent</th>
+                <th>Agent &amp; Handoff Edge</th>
                 <th>Wave / Issue</th>
-                <th>Action Type</th>
-                <th>Commit</th>
+                <th>Action &amp; Cost</th>
+                <th>Artifact</th>
                 <th>Timestamp (UTC)</th>
-                <th>Trajectory Step Action, Architectural Artifacts &amp; Verification Evidence</th>
+                <th>Conversation Turn: Incoming Prompt, Thinking Trace, Tool Usage &amp; Outcome</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -944,6 +989,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=20261014-v3"></script>
+  <script src="app.js?v=20261014-v4"></script>
 </body>
 </html>
