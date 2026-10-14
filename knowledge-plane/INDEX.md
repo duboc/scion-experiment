@@ -1,7 +1,7 @@
 # `psearch` Knowledge Plane — Master Index
 
 Welcome to the canonical **Knowledge Plane** for the `psearch` Software Factory on [`duboc/scion-experiment`](https://github.com/duboc/scion-experiment).
-All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult this index and the linked ADRs before planning, implementing, reviewing, or deploying any GitHub Issue (`#1`–`#11`, `#19`–`#23`, `#28`).
+All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult this index and the linked ADRs before planning, implementing, reviewing, or deploying any GitHub Issue (`#1`–`#11`, `#19`–`#23`, `#28`, `#32`–`#35`).
 
 ---
 
@@ -19,6 +19,7 @@ All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult 
 | [`adr/ADR-008-zero-results-and-b2b-pricing.md`](adr/ADR-008-zero-results-and-b2b-pricing.md) | **#21**, **#22** | Wave 5 — ✅ Live (`00025-5mx`) | **4.1.13 Zero-Results Recovery & Spell Check** (`SEARCH_NGRAMS` Did You Mean + `AND`→`OR` relaxation) & **4.1.14 B2B / Contract Pricing & Assortment** (`product_prices` via `INTERLEAVE IN PARENT products`, effective price, `sort_by`) |
 | [`adr/ADR-009-variant-grouping.md`](adr/ADR-009-variant-grouping.md) | **#32** | Variant grouping — ✅ Accepted (live since `00027-dmv`) | **Variant Grouping / Collapse** (one card per parent `product_id`; `skus` variant columns; `EXISTS` color/size filters on the interleaved child; `ARRAY` aggregation of variants in the hybrid SQL; color/size facets) |
 | [`adr/ADR-010-visual-multimodal-search.md`](adr/ADR-010-visual-multimodal-search.md) | **#33** | Visual & multimodal search — ✅ Accepted (live since `00028-klr`) | **Visual & Multimodal Search** (photo query via `gemini-embedding-2` into the existing `embedding_v2` space; fused photo+text vector, text drives FTS; vector-only SQL for photo-only; inline base64 only, no URL fetch; `multimodal_v2` mode) |
+| [`adr/ADR-011-sponsored-products.md`](adr/ADR-011-sponsored-products.md) | **#35** | Sponsored products / retail media — ✅ Accepted (live since `00030-pqq`) | **Sponsored Products** (`ad_campaigns` + interleaved `ad_clicks`, integer micros; 3rd CTE `sponsored_matches` selects relevant in-budget in-stock ads with the same `catalogFilterSQL`; Go `InjectSponsored` places them last at slots `1,4,8`, deduped, page 1 only, `ads=false` opt-out; `POST /api/ads/click` single `ReadWriteTransaction` idempotent CPC burn, no overspend; `/api/ads/campaigns` admin CRUD) |
 
 ---
 
@@ -64,7 +65,7 @@ All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult 
 
 ## 3. Live State, Product Docs & Evaluation
 
-- **Active revision:** `psearch-serving-00029-7ss` (Issue #34 clickable storefront facets, UI-only, accepted; source `21cfaa9` via `git archive` of `4e8951b`), rollback `00028-klr`. History: `00025-5mx` (#23) → `00027-dmv` (#32) → `00028-klr` (#33) → `00029-7ss` (#34). Models: `gemini-3.8-flash` (text), `gemini-4-argon` (pro), `gemini-embedding-2` 1024-d, Vertex AI `global`. All 14 requirements (4.1.1–4.1.14) live.
+- **Active revision:** `psearch-serving-00030-pqq` (Issue #35 sponsored products / ADR-011, accepted; source `git archive` of `5e6bf63` = code `0644c6f` + `a7e1054`; migrations `023`/`023b` applied), rollback `00029-7ss`. History: `00025-5mx` (#23) → `00027-dmv` (#32) → `00028-klr` (#33) → `00029-7ss` (#34) → `00030-pqq` (#35). Models: `gemini-3.8-flash` (text), `gemini-4-argon` (pro), `gemini-embedding-2` 1024-d, Vertex AI `global`. All 14 requirements (4.1.1–4.1.14) live.
 - **Product & engineering docs:** [`../README.md`](../README.md) · [`../PRODUCT.md`](../PRODUCT.md) · [`../DESIGN.md`](../DESIGN.md) · [`../DEPLOYMENT.md`](../DEPLOYMENT.md) · [`../REVIEW.md`](../REVIEW.md).
 - **Verification & evaluation:** [`../docs/scion/verification-and-eval.md`](../docs/scion/verification-and-eval.md) — control-plane verification and the 5-layer (L1–L5) product evaluation pyramid.
 - **Migrations:** `src/iac/migrations/011`–`021` (see DEPLOYMENT.md §3).
