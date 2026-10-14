@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00028-klr`** (100% traffic, follows latest) — Issue #33, deployed from a clean `git archive` of `2b9a75e`. Rollback target: `psearch-serving-00027-dmv`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00029-7ss`** (100% traffic, follows latest) — Issue #34, deployed from a clean `git archive` of `4e8951b`. Rollback target: `psearch-serving-00028-klr`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -103,7 +103,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `00025-5mx` | `41af0a6` | #23 | `gemini-3.8-flash` / `gemini-4-argon`, project env fallbacks |
 | `00026-7qm` | `2915faf` | #30 | storefront script fix (unclosed autocomplete block), catalog browse (`q=` / `q=*`), "Show All Catalog" |
 | `00027-dmv` | `8367cb0` | #32 | variant grouping (color/size over interleaved SKUs, variant facets) + `[]*variantRow` decode fix + UI selects |
-| **`00028-klr`** | `2b9a75e` | #33 | visual & multimodal search (image → `embedding_v2`, text-fused, image cache) + photo-search UI — **current** |
+| `00028-klr` | `2b9a75e` | #33 | visual & multimodal search (image → `embedding_v2`, text-fused, image cache) + photo-search UI |
+| **`00029-7ss`** | `4e8951b` | #34 | clickable facets (storefront only: facet clicks re-run the search, active-filter chips) — **current** |
 
 ---
 
@@ -565,3 +566,17 @@ Deploy → **`psearch-serving-00028-klr`**, then `update-traffic --to-latest` (1
 | g) storefront `GET /` | ✅ 200, contains `id="image-btn"`; the inline script (28.1 KB) passes `node --check` |
 | Regressions | ✅ variants azul/42 → 3; sansung → samsung → prod-010; cep SP → 12; b2b-corporate asc → prod-015; session personalized; acme → 0 results, `hybrid_v2` |
 | Logs | ✅ clean (no WARN, fallback, InvalidArgument, PermissionDenied, decode or ERROR) |
+
+## Issue #34 clickable facets (storefront): LIVE 2026-10-14
+
+Source: clean `git archive` of **`4e8951b`** (code = `21cfaa9`; image change = `internal/api/routes.go` storefront + its test). **No DDL, no SQL change.** Env unchanged; runtime SA `<RUNTIME_SA>`.
+`cmd/sqlcheck` (`SQLCHECK_IMAGE` = probe shoe photo): **43 OK / 0 FAIL**. Deploy → **`psearch-serving-00029-7ss`**, then `update-traffic --to-latest` (100%, follows latest). **Rollback:** `gcloud run services update-traffic psearch-serving --project=<PROJECT_ID> --region=us-central1 --to-revisions=psearch-serving-00028-klr=100`.
+
+| Check (`<SERVICE_URL>`) | Result |
+|---|---|
+| a) `GET /` | ✅ 200; contains `id="active-filters"` and `function toggleFacet`; the inline script (33.7 KB) passes `node --check` |
+| b) jsdom browser-level e2e against the live service (saved live HTML + live API) | ✅ **RESULT: ALL PASS**. Steps: category click (15 → 4 results, chip "Departamento: Footwear"); + brand stacks (`brand=Adidas`); brand toggled off; price 100–500; IN_STOCK; chip × removes the first filter; new query keeps `only_in_stock`; color azul; Show All → `q=&limit=100` |
+| c) `GET /api/search?q=shoes&category=Footwear` | ✅ 4 results, Footwear only (prod-001/003/002/004) |
+| c) `…&min_price=100&max_price=500` | ✅ 3 results (189.9, 149.5, 169.9), all in range |
+| Regressions | ✅ `q=running shoes` → `hybrid_v2`; `q=` → `catalog_browse` (15); photo POST → `multimodal_v2` (footwear top 3); sansung → prod-010; cep SP → 12; azul/42 → 3 |
+| Logs | ✅ clean |
