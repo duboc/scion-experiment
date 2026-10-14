@@ -147,6 +147,19 @@ Each runbook below has: **Trigger**, **Diagnose**, **Act**, **Check**, **Escalat
   real data.
 - **Check:** the same `curl` returns data that matches the source (e.g. agent count equals `factory-status.sh`).
 
+## Evaluation & Product Verification
+
+For complete methodology on evaluating the hybrid search service, running the 5-Layer Evaluation Pyramid (L1–L5, 76 scenarios, 100% threshold), verifying all 14 Biggy Search requirements across Waves 1–5, and validating Spanner/Firestore persistence, see [`verification-and-eval.md`](verification-and-eval.md).
+
+Quick checks:
+```bash
+# Verify live eval dashboard status and pyramid summary
+curl -s "https://$DASHBOARD_URL/api/eval" | jq '{pass_count, reqs_len: (.requirements | length), pyramid_summary}'
+
+# Verify live search serving service health and models
+curl -s "https://$SERVING_URL/api/info" | jq '{status, active_model, pro_model, embedding_model, location}'
+```
+
 ## The agent-status sync stopped
 
 - **Trigger:** `factory_agent_status.updated_at` older than a few minutes, or the dashboard's agent list is stale.
