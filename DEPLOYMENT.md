@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00025-5mx`** (100% traffic, follows latest) — Issue #23, deployed from a clean `git archive` of `41af0a6`. Rollback target: `psearch-serving-00024-ltv`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00026-7qm`** (100% traffic, follows latest) — Issue #30, deployed from a clean `git archive` of `2915faf`. Rollback target: `psearch-serving-00025-5mx`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -100,7 +100,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `00022-nll` | `4ab8403` | #21, #19 | spell recovery (entity fix), intent default-on, UIs |
 | `00023-z7g` | `1fad8cf` | #22, #20 | B2B pricing (optimizer hint), session personalization |
 | `00024-ltv` | `299f7ec` | #20 | session UI |
-| **`00025-5mx`** | `41af0a6` | #23 | `gemini-3.8-flash` / `gemini-4-argon`, project env fallbacks — **current** |
+| `00025-5mx` | `41af0a6` | #23 | `gemini-3.8-flash` / `gemini-4-argon`, project env fallbacks |
+| **`00026-7qm`** | `2915faf` | #30 | storefront script fix (unclosed autocomplete block), catalog browse (`q=` / `q=*`), "Show All Catalog" — **current** |
 
 ---
 
@@ -501,3 +502,16 @@ Source: clean `git archive` of **`41af0a6`** (PR #25). No DDL; env configured vi
 - B2B contract pricing (#22): `q=laptop&price_table_id=b2b-corporate&sort_by=price_asc` → prod-015 contract price `107.1` (10% discount on 119 basePrice)
 - Session personalization (#20): session boost active, personas and badges working
 - Regressions pass; logs clean (no ERROR or WARN).
+
+## Issue #30 storefront fix + catalog browse: LIVE 2026-10-14
+
+Source: clean `git archive` of **`2915faf`** (fix `d0ef229`, README `82c1ad9`, review record). The image change since `41af0a6` covers `routes.go` (storefront), `handlers.go` and `spanner_service.go` (catalog browse). No DDL; env unchanged; runtime SA `<RUNTIME_SA>`.
+`cmd/sqlcheck`: **35 OK / 0 FAIL**, including the new catalog-browse cases: no filter → 15, `locale=pt-BR` → 5, `b2b-gold` + `price_asc` → 15. Deploy → **`psearch-serving-00026-7qm`**, then `update-traffic --to-latest` (100%, follows latest). Rollback target: `00025-5mx`.
+
+Verification on `00026-7qm` (`<SERVICE_URL>`):
+- `GET /` → 200. The single inline `<script>` (21.8 KB), extracted from the live HTML, **passes `node --check`** (Node v24). The page contains the **"Show All Catalog"** button (`showAllCatalog()`)
+- `GET /api/search?q=&limit=100` and `q=*` → **all 15 products** (15 unique), **`retrieval_mode=catalog_browse`** (not `memory_fallback`), 4 facet groups, OOS (prod-012, prod-004) **last**
+- `q=*&locale=pt-BR` → **5** products, all pt-BR
+- `q=*&price_table_id=b2b-gold&sort_by=price_asc` → 15, ascending contract prices among available (109.48, 137.54, …), OOS last
+- Regressions: tenis → prod-002 first; sansung → samsung (auto-corrected, prod-010); cep SP → 12 promises; b2b-corporate asc → prod-015 at 107.1; session `sess-qa-runner1` personalized; LTR baseline; acme → 0 results, `hybrid_v2`; intent "ate 200 reais" → 5; autocomplete `gel` → geladeira; health 200
+- Logs: clean (no WARN, fallback, InvalidArgument, PermissionDenied, SCORE or ERROR)
