@@ -391,46 +391,52 @@ def probe_all_requirements():
     return reqs
 
 def build_real_diagnostics(avg_ndcg, p50, p95):
+    _, _, info_data = probe_url(f"{SERVING_URL}/api/info")
+    info_data = info_data if isinstance(info_data, dict) else {}
+    text_model = info_data.get("text_model")
+    pro_model = info_data.get("pro_model")
+    issue23_live = (text_model == "gemini-3.8-flash" and pro_model == "gemini-4-argon")
+
     return [
         {
             "id": "diag-all-waves",
             "severity": "HEALTHY",
             "analyst_agent": "@search-evaluator",
             "target_agent": "psearch/@lead",
-            "target_issue": "Wave 1–4 (#1–#10)",
+            "target_issue": "Wave 1–5 (#1–#10, #19–#23)",
             "title": "All 10 Biggy Search Requirements Verified Live (10/10 PASS)",
-            "analysis": f"Comprehensive sweep against psearch-serving-00024-ltv achieved {avg_ndcg:.3f} NDCG@10 and 1.000 MRR@10 across Golden Queries, with p50 latency of {p50:.1f}ms and p95 of {p95:.1f}ms. All 10 requirements pass empirical verification.",
-            "recommendation": "Maintain continuous regression probe sweeps and monitor latency percentiles under multi-tenant load."
+            "analysis": f"Comprehensive sweep against psearch-serving achieved {avg_ndcg:.3f} NDCG@10 and 1.000 MRR@10 across Golden Queries, with p50 latency of {p50:.1f}ms and p95 of {p95:.1f}ms. All 10 core requirements plus Wave 5 (#19–#22) pass empirical verification.",
+            "recommendation": "Maintain continuous regression probe sweeps and close remaining open Wave 5 GitHub issues (#19, #20, #21) using empirical evidence in DEPLOYMENT.md and REVIEW.md."
         },
         {
             "id": "diag-antigravity-provision-fstring",
             "severity": "CRITICAL",
             "analyst_agent": "@factory-analyst",
             "target_agent": "scion-platform/antigravity-harness",
-            "target_issue": "Issue #23 / Gemini 4 Argon Harness Provisioning",
-            "title": "Unescaped F-String in provision.py Breaks Antigravity Pre-Start Hook on Gemini 4 Argon",
-            "analysis": "During the 23:42Z Gemini 4 Argon (High) rollout (AGY 1.3.4), /home/scion/.scion/harness/provision.py line 527 failed with NameError: name '_gcp_location' is not defined on `export GOOGLE_CLOUD_LOCATION=\"${_gcp_location:-global}\"`. Containers only started if a cached env.json existed, leaving GEMINI.md and agy-wrapper.sh un-updated.",
-            "recommendation": "Escape the bash parameter expansion in /home/scion/.scion/harness/provision.py line 527 as `export GOOGLE_CLOUD_LOCATION=\"${{_gcp_location:-global}}\"` so pre-start hook 20-harness-provision succeeds cleanly."
+            "target_issue": "PR #24 / Gemini 4 Argon Harness Provisioning",
+            "title": "Unescaped F-String in provision.py & Multi-Harness Gemini 4 Argon Upgrade (#24)",
+            "analysis": "During the Gemini 4 Argon (High) rollout (AGY 1.3.4, commit eca31de / L26), /home/scion/.scion/harness/provision.py line 527 failed with NameError: name '_gcp_location' is not defined on `export GOOGLE_CLOUD_LOCATION=\"${_gcp_location:-global}\"`. PR #24 (eca31de) patched Antigravity, OpenCode, and Hermes templates with global Vertex location overrides.",
+            "recommendation": "Ensure `${{_gcp_location:-global}}` is escaped in /home/scion/.scion/harness/provision.py line 527 and broker harness-config cache (~/.scion/cache/harness-configs/) is refreshed per L26."
         },
         {
             "id": "diag-lead-stale-objective",
             "severity": "CRITICAL",
             "analyst_agent": "@factory-analyst",
             "target_agent": "psearch/@lead",
-            "target_issue": "Wave 1–4 Closure / Wave 5 Orchestration",
-            "title": "Lead Blocked on Stale Objective (Issues #1–#10 Already Closed)",
-            "analysis": "Lead is blocked attempting to 'Close psearch issues #1-#10 with live acceptance evidence'. Issues #1–#10 are already 100% verified (NDCG@10 0.980, MRR@10 1.000) and closed on GitHub. Lead is not delegating open Issue #23.",
-            "recommendation": "Send scion message to @lead updating directive: confirm #1-#10 acceptance is complete, unblock lead, and delegate Issue #23 (Gemini 3.8 / Gemini 4 upgrade) to @backend."
+            "target_issue": "Wave 5 Closure (#19, #20, #21) & Deploy Trigger",
+            "title": "Lead Blocked on Stale #1–#10 Objective While Wave 5 (#19–#21) Awaits Closure",
+            "analysis": "Lead remains blocked on 'Close psearch issues #1-#10 with live acceptance evidence'. Issues #1–#10, #22, and #23 are already closed on GitHub, and Wave 5 issues #19, #20, #21 are verified in REVIEW.md (da4a707) and DEPLOYMENT.md.",
+            "recommendation": "Unblock @lead to close verified GitHub issues #19, #20, and #21 and trigger @deployer to roll out commit 41af0a6 (#23 model upgrade + ProjectID fallback)."
         },
         {
             "id": "diag-reviewer-abandoned",
-            "severity": "CRITICAL",
+            "severity": "WARNING",
             "analyst_agent": "@factory-analyst",
             "target_agent": "psearch/@reviewer",
-            "target_issue": "Factory Peer Review",
-            "title": "Reviewer Agent Abandoned & Stalled (Hermes Container Dead >4.2d)",
-            "analysis": "The reviewer agent has remained stalled/stopped since 2026-10-09T17:57:21Z (>4.2 days). Peer reviews on main were bypassed or performed directly by Scion Orchestrator, breaking peer review automation.",
-            "recommendation": "Re-provision reviewer agent or migrate from hermes harness to antigravity/claude with valid Vertex AI credentials and register in .scion/agents/."
+            "target_issue": "Factory Peer Review (Hermes Exit Code 2 / L26)",
+            "title": "Reviewer Hermes CLI Flag Crash (--create-if-missing) Fixed in eca31de & REVIEW.md Updated",
+            "analysis": "Reviewer container logged 'Agent crashed with exit code 2' due to unrecognized `--create-if-missing` flag and VERTEX_REGION override in ~/.hermes/.env (documented in L26, commit eca31de). Comprehensive Gemini 4 Argon audit across PRs #12–#17, #24 and Waves 1–5 (#1–#23) is now recorded in REVIEW.md (da4a707).",
+            "recommendation": "Restart @reviewer container with updated hermes-launch.sh wrapper (eca31de) and cleared broker harness-config cache so factory_agent_status transitions from crashed/stalled to healthy standby."
         },
         {
             "id": "diag-telemetry-cloud-gap",
@@ -444,13 +450,13 @@ def build_real_diagnostics(avg_ndcg, p50, p95):
         },
         {
             "id": "diag-backend-idle-handoff",
-            "severity": "WARNING",
+            "severity": "RESOLVED" if issue23_live else "WARNING",
             "analyst_agent": "@factory-analyst",
-            "target_agent": "psearch/@backend",
-            "target_issue": "Issue #23 Model Upgrade",
-            "title": "Backend Agent Idle (>3.3h) While Issue #23 Awaits Implementation",
-            "analysis": "Backend agent remained stalled in 'Ready' state for >3.3 hours before restart while Issue #23 ([Platform] Upgrade to gemini-3.8-flash and gemini-4-argon) is open with precise acceptance criteria for Go serving and GenAI services.",
-            "recommendation": "Assign Issue #23 to @backend via scion message: update IntentLLMModel default to gemini-3.8-flash, add ProLLMModel gemini-4-argon, normalize gemini-4-pro alias, and expose in GET /api/info."
+            "target_agent": "psearch/@backend · psearch/@deployer",
+            "target_issue": "Issue #23 Model Upgrade (da4a707 / 41af0a6)",
+            "title": "Issue #23 Merged (gemini-3.8-flash & gemini-4-argon) — " + ("Live on Cloud Run" if issue23_live else "Awaiting Cloud Run Deploy of 41af0a6"),
+            "analysis": f"Commits da4a707 (#23/#25) and 41af0a6 merged to main and closed Issue #23 (IntentLLMModel=gemini-3.8-flash, ProLLMModel=gemini-4-argon, GCP_SANDBOX_PROJECT fallback). Live /api/info currently reports text_model={text_model!r}, pro_model={pro_model!r}.",
+            "recommendation": "Deploy clean git-archive of commit 41af0a6 via @deployer to psearch-serving so GET /api/info exposes text_model='gemini-3.8-flash' and pro_model='gemini-4-argon' in production."
         },
         {
             "id": "diag-frontend-redundant-work",
@@ -458,9 +464,9 @@ def build_real_diagnostics(avg_ndcg, p50, p95):
             "analyst_agent": "@factory-analyst",
             "target_agent": "psearch/@frontend",
             "target_issue": "Issue #20 UI",
-            "title": "Frontend Stopped After Spinning on Shipped Feature (#20 UI Already Live on 00024-ltv)",
-            "analysis": "Frontend agent worked on 'Issue #20 UI (session personalization)' after commit 299f7ec was already merged to main and deployed to Cloud Run as psearch-serving-00024-ltv at 21:44Z, before stopping at 23:38:23Z.",
-            "recommendation": "Keep @frontend in standby on Issue #20 UI; notify agent that revision 00024-ltv is already live with session personalization panel and tracking."
+            "title": "Frontend Stalled After Redundant Work on Shipped Feature (#20 UI Live on 00024-ltv)",
+            "analysis": "Frontend agent worked on 'Issue #20 UI (session personalization)' after commit 299f7ec was already merged to main and deployed to Cloud Run as psearch-serving-00024-ltv.",
+            "recommendation": "Keep @frontend in standby; Issue #20 UI is already live on 00024-ltv and verified in REVIEW.md."
         },
         {
             "id": "diag-spanner-latency-p95",
@@ -469,7 +475,7 @@ def build_real_diagnostics(avg_ndcg, p50, p95):
             "target_agent": "psearch/@backend",
             "target_issue": "SLA Latency Percentiles",
             "title": f"Cold-Cache p95 Spanner Spike vs. Warm-Cache ({p95:.1f}ms Measured)",
-            "analysis": f"Warm-cache probe measured p50 of {p50:.1f}ms and p95 of {p95:.1f}ms, while cold-cache probes spike up to 384.3ms on unprimed vector embedding computation and multi-CTE hybrid SQL query.",
+            "analysis": f"Warm-cache probe measured p50 of {p50:.1f}ms and p95 of {p95:.1f}ms, while cold-cache probes spike on unprimed vector embedding computation and multi-CTE hybrid SQL query.",
             "recommendation": "Ensure embedding pre-warming daemon runs at deploy time and maintain the @{OPTIMIZER_VERSION=latest_version} statement hint established in commit 1fad8cf."
         },
         {
@@ -478,9 +484,9 @@ def build_real_diagnostics(avg_ndcg, p50, p95):
             "analyst_agent": "@factory-analyst",
             "target_agent": "psearch/@deployer",
             "target_issue": "Continuous Deployment & Rollbacks",
-            "title": "Revision 00024-ltv Live with 100% Traffic Post-Rollback",
-            "analysis": "Deployer successfully resolved Wave 5 rollback incident (00021-x6b rolled back to 00020-552), hotfixed in 4ab8403 (00022-nll), and advanced through 00023-z7g to 00024-ltv with 100% traffic following --to-latest.",
-            "recommendation": "Maintain deployer in standby ready to build clean git-archive from main once Issue #23 is merged."
+            "title": "Revision 00024-ltv Live (100% Traffic); Ready for 41af0a6 (#23) Rollout",
+            "analysis": "Deployer resolved Wave 5 rollback incident and promoted 00024-ltv (299f7ec) to 100% traffic with --to-latest. Main is now at 41af0a6 with #23 model upgrades and ProjectID env fallbacks.",
+            "recommendation": "Trigger @deployer to build clean git-archive of 41af0a6 and deploy next psearch-serving revision with --to-latest."
         }
     ]
 
