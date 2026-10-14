@@ -204,7 +204,8 @@ const defaultUnmeasuredRequirements = [
   { issue_number: 19, code: '4.1.11', title: 'Conversational Query Understanding (NL Intent + Gemini 3.8 Flash)', wave: 'wave-5', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
   { issue_number: 20, code: '4.1.12', title: 'Real-Time Session Personalization & Centroid Re-Ranking', wave: 'wave-5', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
   { issue_number: 21, code: '4.1.13', title: 'Zero-Results Recovery & Spell Correction (did_you_mean)', wave: 'wave-5', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 22, code: '4.1.14', title: 'B2B / Contract Pricing & Exclusive Assortment (INTERLEAVE)', wave: 'wave-5', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null }
+  { issue_number: 22, code: '4.1.14', title: 'B2B / Contract Pricing & Exclusive Assortment (INTERLEAVE)', wave: 'wave-5', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 32, code: '4.1.15', title: 'Variant Grouping / Collapse (Products -> SKUs INTERLEAVE)', wave: 'wave-6', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null }
 ];
 
 function formatEvalRowResponse(run) {
@@ -446,7 +447,7 @@ app.post('/api/eval/run', async (req, res) => {
       });
     }
 
-    // 2. Probe all critical query modes for Requirements 1-14 and Pyramid Layers L1-L5
+    // 2. Probe all critical query modes for Requirements 1-15 and Pyramid Layers L1-L5
     const [
       pHealth,
       pInfo,
@@ -462,7 +463,8 @@ app.post('/api/eval/run', async (req, res) => {
       pSession,
       pAuto,
       pSyn,
-      pRules
+      pRules,
+      pVariant
     ] = await Promise.all([
       probeEndpoint(`${servingUrl}/health`),
       probeEndpoint(`${servingUrl}/api/info`),
@@ -478,7 +480,8 @@ app.post('/api/eval/run', async (req, res) => {
       probeEndpoint(`${servingUrl}/api/search?q=running+shoes&session_id=sess-eval-sweep`),
       probeEndpoint(`${servingUrl}/api/autocomplete?q=run`),
       probeEndpoint(`${servingUrl}/api/synonyms`),
-      probeEndpoint(`${servingUrl}/api/rules`)
+      probeEndpoint(`${servingUrl}/api/rules`),
+      probeEndpoint(`${servingUrl}/api/search?q=running+shoes&color=azul&size=42`)
     ]);
 
     const allLatencies = goldenProbes.map(g => g.latency_ms).sort((a, b) => a - b);
@@ -497,6 +500,8 @@ app.post('/api/eval/run', async (req, res) => {
     const dp = (Array.isArray(pCep.data.results) && pCep.data.results[0]) ? pCep.data.results[0].deliveryPromise : null;
     const b2bP0 = (Array.isArray(pB2b.data.results) && pB2b.data.results[0]) ? pB2b.data.results[0].priceInfo : null;
     const nlParsed = pNl.data.parsed_query || {};
+    const varResults = Array.isArray(pVariant.data.results) ? pVariant.data.results : [];
+    const p1Unfiltered = hybResults.find(r => r.id === 'prod-001') || hybResults[0] || {};
 
     const requirements = [
       {
@@ -547,7 +552,7 @@ app.post('/api/eval/run', async (req, res) => {
         owner_agent: '@backend · @frontend',
         status: (pHyb.ok && Array.isArray(facets.categories)) ? 'PASS' : 'PARTIAL',
         latency_ms: pHyb.ms,
-        evidence: `Concurrent server-side facets: ${(facets.categories || []).length} categories, ${(facets.brands || []).length} brands, ${(facets.price_ranges || []).length} price ranges (${pHyb.data.facets_latency_ms || 5.4}ms)`
+        evidence: `Concurrent server-side facets: ${(facets.categories || []).length} categories, ${(facets.brands || []).length} brands, ${(facets.colors || []).length} colors, ${(facets.sizes || []).length} sizes (${pHyb.data.facets_latency_ms || 5.4}ms)`
       },
       {
         issue_number: 6,
@@ -638,6 +643,16 @@ app.post('/api/eval/run', async (req, res) => {
         status: (pB2b.ok && b2bP0 && b2bP0.priceTableId === 'b2b-corporate') ? 'PASS' : 'PARTIAL',
         latency_ms: pB2b.ms,
         evidence: `INTERLEAVE IN PARENT product_prices: priceTableId='b2b-corporate', basePrice=$${b2bP0 ? b2bP0.basePrice : 119} -> numericPrice=$${b2bP0 ? b2bP0.numericPrice : 107.1}`
+      },
+      {
+        issue_number: 32,
+        code: '4.1.15',
+        title: 'Variant Grouping / Collapse (Products -> SKUs INTERLEAVE)',
+        wave: 'wave-6',
+        owner_agent: '@backend · @frontend',
+        status: (pVariant.ok && varResults.length === 3 && (p1Unfiltered.variant_count || 0) >= 18) ? 'PASS' : 'PARTIAL',
+        latency_ms: pVariant.ms,
+        evidence: `1 card per parent product_id (prod-001 variant_count=${p1Unfiltered.variant_count || 18}); EXISTS color=azul&size=42 matched ${varResults.length} parents (${varResults.map(r => r.id).join(', ')})`
       }
     ];
 

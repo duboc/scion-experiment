@@ -536,7 +536,8 @@
       if (passEl) {
         const pCnt = (evalRes.pass_count !== undefined && evalRes.pass_count !== null) ? evalRes.pass_count : '--';
         const partCnt = (evalRes.partial_count !== undefined && evalRes.partial_count !== null) ? evalRes.partial_count : '--';
-        passEl.textContent = pCnt + ' / 14 PASS · ' + partCnt + ' PARTIAL';
+        const totReqs = evalRes.total_requirements || (Array.isArray(evalRes.requirements) ? evalRes.requirements.length : 15) || 15;
+        passEl.textContent = pCnt + ' / ' + totReqs + ' PASS · ' + partCnt + ' PARTIAL';
       }
 
       const linkStorefront = document.getElementById('link-storefront');
