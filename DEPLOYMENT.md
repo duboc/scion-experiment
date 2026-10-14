@@ -1,17 +1,114 @@
-# Cloud Run & Sandbox Deployment Status (`psearch`)
+# PSearch — Deployment Guide & Release Log
 
-- **GCP Project**: `riojucu-sandbox` (`249096448072`)
-- **Region**: `us-central1`
-- **Service Account**: `agent-deployer@riojucu-sandbox.iam.gserviceaccount.com`
-- **Cloud Spanner**: `psearch-instance` (`ENTERPRISE`, `100 PU`) / Database: `psearch-db`
-- **BigQuery Dataset**: `riojucu-sandbox:psearch_dataset`
-- **Live `psearch-serving` URL**: https://psearch-serving-mhjw244bgq-uc.a.run.app
-- **Live `psearch-eval-dashboard` URL**: https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app
-- **Alternate `psearch-serving` URL**: https://psearch-serving-249096448072.us-central1.run.app (same service)
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00025-5mx`** (100% traffic, follows latest) — Issue #23, deployed from a clean `git archive` of `41af0a6`. Rollback target: `psearch-serving-00024-ltv`.
+
+Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
+
+| Placeholder | Meaning |
+|---|---|
+| `<PROJECT_ID>` / `<PROJECT_NUMBER>` | GCP sandbox project |
+| `<SERVICE_URL>` | `psearch-serving` Cloud Run URL |
+| `<EVAL_DASHBOARD_URL>` | `psearch-eval-dashboard` Cloud Run URL |
+| `<RUNTIME_SA>` | dedicated runtime service account `psearch-serving@<PROJECT_ID>.iam.gserviceaccount.com` (roles: `roles/aiplatform.user` on the project, `roles/spanner.databaseUser` on `psearch-db`) |
+| `<DEPLOYER_SA>` | deployer agent service account (holds `roles/iam.serviceAccountUser` on `<RUNTIME_SA>`) |
+| `<COMPUTE_DEFAULT_SA>` | default compute service account (used only before Issue #11 moved to `<RUNTIME_SA>`) |
+
+## 1. Environment
+
+| Item | Value |
+|---|---|
+| Region | `us-central1` (Cloud Run); Vertex AI calls use location `global` |
+| Cloud Spanner | instance `psearch-instance` (Enterprise, 100 PU), database `psearch-db` |
+| BigQuery | dataset `psearch_dataset` (no tables yet; query logging is a follow-up) |
+| Container | root `Dockerfile` (multi-stage `golang:1.26-alpine` → `alpine:3.20`, binary `/app/psearch-server`, port 8080) |
+
+## 2. Runtime configuration (live revision)
+
+| Variable | Value | Notes |
+|---|---|---|
+| `PROJECT_ID` / `GCP_SANDBOX_PROJECT` / `CLOUDSDK_CORE_PROJECT` | `<PROJECT_ID>` | `ProjectID` falls back through these (Issue #23, `41af0a6`) |
+| `SPANNER_INSTANCE_ID` / `SPANNER_DATABASE_ID` | `psearch-instance` / `psearch-db` | |
+| `ACTIVE_EMBEDDING_VERSION` | `v2` | 1024-d `embedding_v2` |
+| `GENAI_LOCATION` | `global` | |
+| `EMBEDDING_MODEL_NAME` / `EMBEDDING_DIMENSION` | `gemini-embedding-2` / `1024` | |
+| `TEXT_FOLDING` | `true` | accent-folded tokenlists (migration 014b) |
+| `SPANNER_DISABLE_BUILTIN_METRICS` | `true` | silences client-metrics export (runtime SA has no monitoring role) |
+| `GEMINI_TEXT_MODEL` / `GEMINI_PRO_MODEL` | defaults `gemini-3.8-flash` / `gemini-4-argon` | reported by `/api/info` as `text_model` / `pro_model` |
+| `INTENT_LLM_FALLBACK` | unset (`false`) | parser-only query understanding |
+| `ADMIN_TOKEN` | unset | admin writes (rules, synonyms, embedding-version switch) return 403 |
+| `BOOST_WEIGHT`, `SESSION_BOOST_WEIGHT`, `LTR_MODEL_JSON` | defaults (`0.002`, `0.003`, baseline model) | |
+
+Service account: `<RUNTIME_SA>`. Full variable reference: [DESIGN.md §16](DESIGN.md#16-configuration-environment).
+
+## 3. Spanner schema migrations
+
+The base schema (`products` with 768-d `embedding`, `title_tokens`, `description_tokens`, search index `products_text_idx`, plus `eval_runs` and `factory_agent_status`) predates the numbered migrations and is defined in `src/iac/modules/spanner`. Numbered migrations live in `src/iac/migrations/` and are applied online with `gcloud spanner databases ddl update psearch-db --instance=psearch-instance --ddl-file=<file>` (DDL) or `gcloud spanner databases execute-sql` (DML, comment lines stripped). See [knowledge-plane/playbooks/SPANNER-DDL-MIGRATION-GUIDE.md](knowledge-plane/playbooks/SPANNER-DDL-MIGRATION-GUIDE.md).
+
+| Migration | Kind | Issue | Change |
+|---|---|---|---|
+| `011_add_embedding_v2_gemini_1024.sql` | DDL | #11 / #2 | `products.embedding_v2 ARRAY<FLOAT32>(vector_length=>1024)` (backfilled by `cmd/backfill-embeddings`) |
+| `012_availability_visibility_channels.sql` | DDL | #3 | `is_visible`, `channels` |
+| `012b_backfill_visibility_channels.dml.sql` | DML | #3 | visibility + channels for the seed catalog |
+| `013_embedding_cache.sql` | DDL | #2 | `embedding_cache` |
+| `014_tenant_locale.sql` | DDL | #4 | `tenant_id`, `locale` |
+| `014b_accent_folded_tokens.sql` | DDL | #4 | `title_tokens_folded`, `description_tokens_folded` + `ALTER SEARCH INDEX products_text_idx` (applied in two steps) |
+| `014c_backfill_tenant_locale.dml.sql` | DML | #4 | tenant/locale from `product_data` |
+| `015_search_synonyms.sql` / `015b_seed_synonyms.dml.sql` | DDL / DML | #7 | `search_synonyms` + 8 seed rows |
+| `016_merchandising.sql` / `016b_backfill_boost_signals.dml.sql` | DDL / DML | #6 | 8 signal columns + `merchandising_rules`; signal backfill |
+| `017_delivery_interleaved.sql` | DDL | #8 | `skus` (interleaved in `products`), `regional_inventory` (interleaved in `skus`) |
+| `017b_seed_skus.dml.sql` / `017c_seed_regional_inventory.dml.sql` | DML | #8 | 15 SKUs, 57 inventory rows (5 CD regions) |
+| `018_autocomplete.sql` / `018b_seed_autocomplete.dml.sql` | DDL / DML | #9 | `autocomplete_suggestions` + `autocomplete_ngram_idx`; 48 bootstrap suggestions |
+| `019_b2b_product_prices.sql` / `019b_seed_product_prices.dml.sql` | DDL / DML | #22 | `product_prices` (interleaved in `products`); 45 contract prices |
+| `020_query_intent_cache.sql` | DDL | #19 | `query_intent_cache` |
+| `021_user_session_events.sql` | DDL | #20 | `user_session_events` |
+
+## 4. Release procedure
+
+1. Code reviewed (PASS in [REVIEW.md](REVIEW.md)), reviewed in a private worktree — never in the shared checkout.
+2. Stage a clean snapshot: `git archive <sha> | tar -x -C /tmp/deploy-<sha>` (never deploy from `/workspace`).
+3. Apply additive DDL/DML first (split multi-statement DDL so failures are attributable).
+4. `go run ./cmd/sqlcheck` from the archive with the production env — every case must pass (32 checks at `00025-5mx`).
+5. `gcloud run deploy psearch-serving --source /tmp/deploy-<sha> --region us-central1 --service-account <RUNTIME_SA> …`, then `gcloud run services update-traffic psearch-serving --to-latest` (`deploy` does not accept `--to-latest`; after any `--to-revisions` rollback the next rollout must restore `--to-latest`).
+6. Verify live endpoints and logs; on failure `update-traffic --to-revisions=<previous>=100`.
+7. Record the result below and post evidence on the GitHub issue.
+
+## 5. Revision history
+
+| Revision | Source | Issue(s) | Outcome |
+|---|---|---|---|
+| `00001-dj8` | baseline | — | initial psearch serving (v1, compute SA) |
+| `00002-gq9` | `799e5e5` | #11 | Gen AI SDK + v1 config, live |
+| `00003-p7p` | `799e5e5` | #11 | v2 flip failed (IAM 403) → rolled back |
+| `00004-d2t` | `799e5e5` | #11 | v1 rollback |
+| `00005-vq7` | `1e96a34` | #11 | `retrieval_mode` field |
+| `00006-caw` | probe | #11 | zero-traffic v2 IAM probe (403) |
+| `00007-sr9` | template reset | #11 | zero-traffic, template back to v1 |
+| `00008-ms8` | `b4229a0` | #11 | v1 on dedicated runtime SA |
+| `00009-9dc` | `b4229a0` | #11 | **v2 live** on runtime SA |
+| `00010-w7g` | `8894c6d` | #1, #3 | Spanner nested-aggregate error → rolled back |
+| `00011-p6t` | `79b15a2` | #1, #3 | live |
+| `00012-65q` | `23bf1f7` | #2 | embedding cache + version endpoint |
+| `00013-5vm` | `14add09` | #4, #5 | tenant/locale, accent folding, facets |
+| `00014-pc5` | `abf6432` | #4 | empty Spanner results authoritative |
+| `00015-dzf` | `6d62e7e` | #7 | synonyms |
+| `00016-jtj` | `0b54d52` | #6 | merchandising rules + boost signals |
+| `00017-9wc` | `cbc384c` | #8 | delivery promises |
+| `00018-rc5` | `69bdc21` | #9, #10 | autocomplete + LTR |
+| `00019-dsr` | `5d5c136` | #10 | LTR UI |
+| `00020-552` | `7a958ef` | #19 | query understanding (opt-in) |
+| `00021-x6b` | `612d939` | #21, #19 | "sansung" correction not applied → rolled back |
+| `00022-nll` | `4ab8403` | #21, #19 | spell recovery (entity fix), intent default-on, UIs |
+| `00023-z7g` | `1fad8cf` | #22, #20 | B2B pricing (optimizer hint), session personalization |
+| `00024-ltv` | `299f7ec` | #20 | session UI |
+| **`00025-5mx`** | `41af0a6` | #23 | `gemini-3.8-flash` / `gemini-4-argon`, project env fallbacks — **current** |
+
+---
+
+## 6. Release log (newest last)
 
 ## Issue #11: Gemini model upgrade rollout (2026-10-12)
 
-Source: `main` @ `73a9017` (code from `799e5e5`, review passed in `73a9017`). Runtime SA: `249096448072-compute@developer.gserviceaccount.com`.
+Source: `main` @ `73a9017` (code from `799e5e5`, review passed in `73a9017`). Runtime SA: `<COMPUTE_DEFAULT_SA>`.
 
 | Step | Result |
 |---|---|
@@ -25,9 +122,9 @@ Source: `main` @ `73a9017` (code from `799e5e5`, review passed in `73a9017`). Ru
 Env added on the service: `GENAI_LOCATION=global`, `EMBEDDING_MODEL_NAME=gemini-embedding-2`, `EMBEDDING_DIMENSION=1024`, `ACTIVE_EMBEDDING_VERSION=v1`.
 
 ### Findings / blockers
-- **IAM blocker:** the compute SA lacks Vertex AI predict permission (needs `roles/aiplatform.user` on `riojucu-sandbox`). The backfill worked because it ran as `agent-deployer`. The Cloud Resource Manager API is disabled, so the project policy can't be read with gcloud.
+- **IAM blocker:** the compute SA lacks Vertex AI predict permission (needs `roles/aiplatform.user` on `<PROJECT_ID>`). The backfill worked because it ran as `agent-deployer`. The Cloud Resource Manager API is disabled, so the project policy can't be read with gcloud.
 - **False-positive check:** at v2, `q=tenis` still returned non-zero `score.vector`. The lexical-only Spanner query returns 0 rows for `tenis`, so `HybridSearch` falls back to `memoryHybridSearch`, which uses the 768-d deterministic embedding. "Non-zero score.vector" therefore doesn't prove Gemini is serving. Better criteria: no `lexical-only` / `PERMISSION_DENIED` logs, plus a v2-only signal (e.g. a per-response `embedding_version` or `retrieval_mode` field).
-- **To retry v2:** grant `roles/aiplatform.user` to `249096448072-compute@developer.gserviceaccount.com` (or use a dedicated runtime SA), then `gcloud run services update psearch-serving --project=riojucu-sandbox --region=us-central1 --update-env-vars=ACTIVE_EMBEDDING_VERSION=v2`.
+- **To retry v2:** grant `roles/aiplatform.user` to `<COMPUTE_DEFAULT_SA>` (or use a dedicated runtime SA), then `gcloud run services update psearch-serving --project=<PROJECT_ID> --region=us-central1 --update-env-vars=ACTIVE_EMBEDDING_VERSION=v2`.
 
 ## Issue #11 follow-up: redeploy at v1 with `retrieval_mode` (2026-10-12)
 
@@ -40,20 +137,20 @@ Source: `main` @ `1e96a34` (fix `6e4c0fb`, review passed in `1e96a34`). Revision
 | `GET /api/search?q=tenis` | 200 `total_found=15`, `embedding_version=v1`, `retrieval_mode=hybrid_v1`; top `prod-002` "Tênis de Corrida Nimbus Cloud" (text 0, vector 0.0164) |
 | `GET /api/search?q=running+shoes&alpha=0.5` | 200 `total_found=15`, `embedding_version=v1`, `retrieval_mode=hybrid_v1`; top `prod-001` "UltraBoost Pro Running Shoes" (text and vector 0.0164) |
 
-v2 **not** flipped. It is waiting on the `roles/aiplatform.user` grant for `249096448072-compute@developer.gserviceaccount.com`. v2 acceptance: `retrieval_mode=hybrid_v2` (not `lexical_only_degraded` / `memory_fallback`) and no `lexical` / `PERMISSION_DENIED` / 403 in the logs.
+v2 **not** flipped. It is waiting on the `roles/aiplatform.user` grant for `<COMPUTE_DEFAULT_SA>`. v2 acceptance: `retrieval_mode=hybrid_v2` (not `lexical_only_degraded` / `memory_fallback`) and no `lexical` / `PERMISSION_DENIED` / 403 in the logs.
 
 ## Issue #11: zero-traffic v2 IAM probe and template reset (2026-10-12)
 
 **Probe:** revision `psearch-serving-00006-caw`, same image as `00005-vq7`, `ACTIVE_EMBEDDING_VERSION=v2`, `--no-traffic --tag=v2probe`.
 
-| Check (tag URL `https://v2probe---psearch-serving-mhjw244bgq-uc.a.run.app`) | Result |
+| Check (tag URL `https://v2probe---<SERVICE_URL>`) | Result |
 |---|---|
 | `GET /api/info` | 200 `active_embedding_version=v2`, `embedding_dimension=1024` |
 | `GET /api/search?q=running+shoes` | 200 `retrieval_mode=lexical_only_degraded`, `effective_alpha=0`, `total_found=1` (prod-001, vector 0) |
 | `GET /api/search?q=tenis` | 200 `retrieval_mode=lexical_only_degraded`, `total_found=0`, `results=null` (the 6e4c0fb fix means memory fallback no longer masks it) |
-| Revision logs (14:03:06Z, ×2) | `WARN: query embedding failed (embed RETRIEVAL_QUERY (gemini-embedding-2 @ global): Error 403, Message: Permission 'aiplatform.endpoints.predict' denied on resource '//aiplatform.googleapis.com/projects/riojucu-sandbox/locations/global/publishers/google/models/gemini-embedding-2' ... PERMISSION_DENIED` |
+| Revision logs (14:03:06Z, ×2) | `WARN: query embedding failed (embed RETRIEVAL_QUERY (gemini-embedding-2 @ global): Error 403, Message: Permission 'aiplatform.endpoints.predict' denied on resource '//aiplatform.googleapis.com/projects/<PROJECT_ID>/locations/global/publishers/google/models/gemini-embedding-2' ... PERMISSION_DENIED` |
 
-Conclusion: `roles/aiplatform.user` is **still missing** for `249096448072-compute@developer.gserviceaccount.com`. Tag `v2probe` removed afterwards.
+Conclusion: `roles/aiplatform.user` is **still missing** for `<COMPUTE_DEFAULT_SA>`. Tag `v2probe` removed afterwards.
 
 **Template reset:** revision `psearch-serving-00007-sr9` (Ready, 0% traffic, `--no-traffic`) sets the service template back to `ACTIVE_EMBEDDING_VERSION=v1`, so the next deploy can't ship v2 by accident. Template env: `GCP_PROJECT_ID`, `PROJECT_ID`, `SPANNER_INSTANCE(_ID)`, `SPANNER_DATABASE(_ID)`, `BIGQUERY_DATASET`, `GENAI_LOCATION=global`, `EMBEDDING_MODEL_NAME=gemini-embedding-2`, `EMBEDDING_DIMENSION=1024`, `ACTIVE_EMBEDDING_VERSION=v1`.
 
@@ -61,7 +158,7 @@ Conclusion: `roles/aiplatform.user` is **still missing** for `249096448072-compu
 
 ## Issue #11: v2 LIVE on dedicated runtime SA (2026-10-12)
 
-**Runtime SA (new):** `psearch-serving@riojucu-sandbox.iam.gserviceaccount.com`, with `roles/aiplatform.user` (project) and `roles/spanner.databaseUser` (`psearch-db`), created by the PO. It replaces `249096448072-compute@developer.gserviceaccount.com`. No IAM change was made to the compute SA. Earlier attempts to enable the CRM API (`serviceusage.services.enable` denied) and to grant the compute SA (CRM `SERVICE_DISABLED`) both failed and changed nothing; the plan was superseded.
+**Runtime SA (new):** `<RUNTIME_SA>`, with `roles/aiplatform.user` (project) and `roles/spanner.databaseUser` (`psearch-db`), created by the PO. It replaces `<COMPUTE_DEFAULT_SA>`. No IAM change was made to the compute SA. Earlier attempts to enable the CRM API (`serviceusage.services.enable` denied) and to grant the compute SA (CRM `SERVICE_DISABLED`) both failed and changed nothing; the plan was superseded.
 
 Source: `main` @ `b4229a0` (includes `6e4c0fb` retrieval_mode and `a876979` empty results `[]`).
 
@@ -79,7 +176,7 @@ v2 verification (`00009-9dc`, 100% traffic, follows latest):
 
 Service template = serving revision: SA `psearch-serving@`, `ACTIVE_EMBEDDING_VERSION=v2`, `GENAI_LOCATION=global`, `EMBEDDING_MODEL_NAME=gemini-embedding-2`, `EMBEDDING_DIMENSION=1024`, plus project/Spanner/BQ vars. No tags.
 
-**Rollback:** `gcloud run services update-traffic psearch-serving --project=riojucu-sandbox --region=us-central1 --to-revisions=psearch-serving-00008-ms8=100` (v1, new SA), or `--update-env-vars=ACTIVE_EMBEDDING_VERSION=v1`.
+**Rollback:** `gcloud run services update-traffic psearch-serving --project=<PROJECT_ID> --region=us-central1 --to-revisions=psearch-serving-00008-ms8=100` (v1, new SA), or `--update-env-vars=ACTIVE_EMBEDDING_VERSION=v1`.
 
 Observation (not a blocker): with only 15 products, the v2 ANN leg ranks every row, so low-relevance items appear lower in the list (e.g. `tenis` #3 is a TV). A `min_score`/cosine cutoff for the vector leg would be worth considering.
 

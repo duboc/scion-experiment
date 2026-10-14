@@ -1,5 +1,31 @@
 # `psearch` Software Factory — Verification & Review Log
 
+
+## Review summary (through Wave 5 and Issue #23)
+
+All reviews ran `go vet ./...` and `go test -race ./...` in `src/psearch/serving` (plus `npm run build` for UI commits) and checked compliance with the linked ADR. Since 2026-10-13 ~20:30Z reviews run in private `/tmp` worktrees with no git writes to the shared checkout; `lead` commits the review text.
+
+| Wave | Issue(s) | Requirement | Reviewed commits | ADR | Status |
+|---|---|---|---|---|---|
+| — | #11 | Gen AI SDK, `gemini-embedding-2` v2 | `799e5e5`, `6e4c0fb`, `a876979` | ADR-001 | PASS |
+| 1 | #1, #3 | 4.1.1 hybrid alpha, 4.1.3 availability | `7b404be`, `79b15a2` | ADR-001, ADR-002 | PASS |
+| 1 | #2 | 4.1.2 embedding cache, version endpoint | `23bf1f7` | ADR-001 | PASS |
+| 2 | #4, #5 | 4.1.4 multilanguage, 4.1.5 facets | `254c8f7`, `405d454`, `abf6432` | ADR-002, ADR-003 | PASS |
+| 3 | #7 | 4.1.7 synonyms | `6d62e7e` | ADR-003 | PASS |
+| 3 | #6 | 4.1.6 merchandising | `0b54d52`, `2586e94`, `f07d668` | ADR-004 | PASS |
+| 3 | #8 | 4.1.8 delivery promises | `dea13c8`, `f00acb7` | ADR-005 | PASS |
+| 4 | #9 | 4.1.9 autocomplete | `c717604`, `3e9e0dd`, `f3fc754`, `69bdc21` | ADR-006 | PASS |
+| 4 | #10 | 4.1.10 LTR | `75fee13`, `8a7017d` | ADR-006 | PASS |
+| 5 | #19 | 4.1.11 query understanding | `b35ce14`, `612d939`, `07c75d5` | ADR-007 | PASS |
+| 5 | #21 | 4.1.13 zero-results recovery | `d674656`, `d1b602b`, `8ba9d06`, `4ab8403` | ADR-008 | PASS |
+| 5 | #22 | 4.1.14 B2B pricing | `372ad12`, `1fad8cf`, `497fee6` (UI) | ADR-008 | PASS |
+| 5 | #20 | 4.1.12 session personalization | `497fee6`, `299f7ec` | ADR-007 | PASS |
+| — | #23 | `gemini-3.8-flash` / `gemini-4-argon` | `da4a707`, `41af0a6` | ADR-001, ADR-007 | PASS (Gemini 4 Argon audit below) |
+
+Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gate or live verification three times (nested aggregate in `ORDER BY` → `79b15a2`; `SCORE` needing optimizer v6 → `1fad8cf`; entity-only correction → `4ab8403`); each fix was reviewed before redeploy.
+
+**Correction to the audit entry at the end of this file:** PRs #12–#16 are Scion factory documentation/tooling changes (playbook, template upload, audit fixes, watchdog/alerts/budgets, eval-dashboard branch), not search features, and PR #17 is the acceptance record that closed #1. Search features were delivered as direct commits on `main` (see the table above); PR #24 upgraded the agent harnesses and PR #25 implemented #23.
+
 ## Baseline Import (`GoogleCloudPlatform/psearch` + Knowledge Plane ADRs #001–#006)
 - **Date:** 2026-10-09
 - **Status:** APPROVED
