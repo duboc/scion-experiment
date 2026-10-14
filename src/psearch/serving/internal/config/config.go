@@ -54,7 +54,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Port:                     8080,
 		Environment:              getEnv("ENVIRONMENT", "production"),
-		ProjectID:                getEnv("PROJECT_ID", "psearch-sandbox"),
+		ProjectID:                getEnv("PROJECT_ID", getEnv("GCP_SANDBOX_PROJECT", getEnv("CLOUDSDK_CORE_PROJECT", "psearch-sandbox"))),
 		Region:                   getEnv("REGION", "us-central1"),
 		SpannerInstanceID:        getEnv("SPANNER_INSTANCE_ID", "psearch-instance"),
 		SpannerDatabaseID:        getEnv("SPANNER_DATABASE_ID", "psearch-db"),
