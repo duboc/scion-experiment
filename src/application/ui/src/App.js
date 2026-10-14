@@ -39,7 +39,9 @@ import {
 import SearchIcon from '@mui/icons-material/Search';
 import SettingsIcon from '@mui/icons-material/Settings';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
+import CampaignIcon from '@mui/icons-material/Campaign';
 import RuleManager from './components/RuleManager';
+import AdCampaignManager from './components/AdCampaignManager';
 import ProductDetails from './components/ProductDetails';
 import SourceIngestion from './components/SourceIngestion';
 import Filters from './components/Filters'; // Import the custom filters component
@@ -48,6 +50,7 @@ import ProductImage from './components/ProductImage'; // Import the optimized Pr
 import SearchInput from './components/SearchInput'; // Import the new isolated search component
 import SessionPanel from './components/SessionPanel';
 import { getSessionId, recordSessionEvent } from './services/sessionService';
+import { recordAdClick } from './services/adService';
 import axios from 'axios';
 import config from './config';
 const API_URL = config.apiUrl;
@@ -126,6 +129,7 @@ function ProductSearch({
     const [size, setSize] = useState('');
     const [serverFacets, setServerFacets] = useState(null);
     const [facetsLatencyMs, setFacetsLatencyMs] = useState(null);
+    const [sponsoredCount, setSponsoredCount] = useState(0);
     // State for the filters component - now a dynamic object
     const [selectedFilters, setSelectedFilters] = useState({});
     // Store filter configurations
@@ -141,9 +145,12 @@ function ProductSearch({
             .join(' ');
     };
 
-    // Generate filter configurations based on product data
-    const generateFilterConfigs = useCallback((products) => {
-        if (!products || products.length === 0) {
+    // Generate filter configurations based on product data (excluding sponsored items per ADR-011)
+    const generateFilterConfigs = useCallback((rawProducts) => {
+        const products = Array.isArray(rawProducts)
+            ? rawProducts.filter(product => !product || !product.sponsored)
+            : [];
+        if (products.length === 0) {
             return [];
         }
 
@@ -154,20 +161,22 @@ function ProductSearch({
         const filterAdders = [
             // Categories filter
             () => {
-                const allCategories = new Set();
+                const categoryCounts = new Map();
                 products.forEach(product => {
                     if (product.categories) {
-                        product.categories.forEach(category => allCategories.add(category));
+                        product.categories.forEach(category => {
+                            categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
+                        });
                     }
                 });
 
-                const categories = Array.from(allCategories);
+                const categories = Array.from(categoryCounts.keys());
                 if (categories.length > 0) {
                     configs.push({
                         id: 'categories',
                         title: 'Department',
                         priority: 100, // High priority
-                        options: categories.map(cat => ({ label: cat, value: cat })),
+                        options: categories.map(cat => ({ label: cat, value: cat, count: categoryCounts.get(cat) })),
                         type: 'checkbox'
                     });
                 }
@@ -175,27 +184,31 @@ function ProductSearch({
 
             // Brands filter
             () => {
-                const allBrands = new Set();
+                const brandCounts = new Map();
                 products.forEach(product => {
                     if (product.brands) {
-                        product.brands.forEach(brand => allBrands.add(brand));
+                        product.brands.forEach(brand => {
+                            brandCounts.set(brand, (brandCounts.get(brand) || 0) + 1);
+                        });
                     }
                     // Also check attributes for brand if top-level is missing
                     if (!product.brands && product.attributes) {
                         const brandAttr = product.attributes.find(attr => attr.key === 'brand');
                         if (brandAttr && brandAttr.value?.text) {
-                            brandAttr.value.text.forEach(b => allBrands.add(b));
+                            brandAttr.value.text.forEach(b => {
+                                brandCounts.set(b, (brandCounts.get(b) || 0) + 1);
+                            });
                         }
                     }
                 });
 
-                const brands = Array.from(allBrands);
+                const brands = Array.from(brandCounts.keys());
                 if (brands.length > 0) {
                     configs.push({
                         id: 'brands',
                         title: 'Brands',
                         priority: 90, // High priority
-                        options: brands.map(brand => ({ label: brand, value: brand })),
+                        options: brands.map(brand => ({ label: brand, value: brand, count: brandCounts.get(brand) })),
                         type: 'checkbox'
                     });
                 }
@@ -218,7 +231,7 @@ function ProductSearch({
                         id: 'prices',
                         title: 'Price',
                         priority: 80, // High priority
-                        options: [{ label: `$${minPrice.toFixed(2)}`, value: `${minPrice}-${minPrice}` }],
+                        options: [{ label: `$${minPrice.toFixed(2)}`, value: `${minPrice}-${minPrice}`, count: validPrices.length }],
                         type: 'checkbox'
                     });
                     return;
@@ -233,11 +246,15 @@ function ProductSearch({
                     const rangeMax = minPrice + (i + 1) * step;
                     // Ensure the last range includes the max price
                     const finalMax = (i === numRanges - 1) ? maxPrice : rangeMax;
+                    const fMin = Math.floor(rangeMin);
+                    const fMax = Math.ceil(finalMax);
+                    const rangeCount = validPrices.filter(p => p >= fMin && p <= fMax).length;
 
                     ranges.push({
                         // Use Math.floor/ceil to avoid overlapping ranges due to floating point issues
-                        label: `$${Math.floor(rangeMin).toFixed(2)} - $${Math.ceil(finalMax).toFixed(2)}`,
-                        value: `${Math.floor(rangeMin)}-${Math.ceil(finalMax)}`
+                        label: `$${fMin.toFixed(2)} - $${fMax.toFixed(2)}`,
+                        value: `${fMin}-${fMax}`,
+                        count: rangeCount
                     });
                 }
 
@@ -251,26 +268,30 @@ function ProductSearch({
 
             // Colors filter
             () => {
-                const allColors = new Set();
+                const colorCounts = new Map();
                 products.forEach(product => {
+                    const prodColors = new Set();
                     if (product.colorInfo?.colors) {
-                        product.colorInfo.colors.forEach(color => allColors.add(color));
+                        product.colorInfo.colors.forEach(color => prodColors.add(color));
                     }
                     if (product.colorInfo?.colorFamilies) {
-                        product.colorInfo.colorFamilies.forEach(color => allColors.add(color));
+                        product.colorInfo.colorFamilies.forEach(color => prodColors.add(color));
                     }
                     if (Array.isArray(product.available_colors)) {
-                        product.available_colors.forEach(color => allColors.add(color));
+                        product.available_colors.forEach(color => prodColors.add(color));
                     }
+                    prodColors.forEach(color => {
+                        colorCounts.set(color, (colorCounts.get(color) || 0) + 1);
+                    });
                 });
 
-                const colors = Array.from(allColors);
+                const colors = Array.from(colorCounts.keys());
                 if (colors.length > 0) {
                     configs.push({
                         id: 'colors',
                         title: 'Cor',
                         priority: 70, // Medium-high priority
-                        options: colors.map(color => ({ label: color, value: color })),
+                        options: colors.map(color => ({ label: color, value: color, count: colorCounts.get(color) })),
                         type: 'checkbox'
                     });
                 }
@@ -278,23 +299,27 @@ function ProductSearch({
 
             // Sizes filter
             () => {
-                const allSizes = new Set();
+                const sizeCounts = new Map();
                 products.forEach(product => {
+                    const prodSizes = new Set();
                     if (product.sizes) {
-                        product.sizes.forEach(size => allSizes.add(size));
+                        product.sizes.forEach(size => prodSizes.add(size));
                     }
                     if (Array.isArray(product.available_sizes)) {
-                        product.available_sizes.forEach(size => allSizes.add(size));
+                        product.available_sizes.forEach(size => prodSizes.add(size));
                     }
+                    prodSizes.forEach(size => {
+                        sizeCounts.set(size, (sizeCounts.get(size) || 0) + 1);
+                    });
                 });
 
-                const sizes = Array.from(allSizes);
+                const sizes = Array.from(sizeCounts.keys());
                 if (sizes.length > 0) {
                     configs.push({
                         id: 'sizes',
                         title: 'Tamanho',
                         priority: 60, // Medium priority
-                        options: sizes.map(size => ({ label: size, value: size })),
+                        options: sizes.map(size => ({ label: size, value: size, count: sizeCounts.get(size) })),
                         type: 'checkbox'
                     });
                 }
@@ -302,21 +327,18 @@ function ProductSearch({
 
             // Availability filter
             () => {
-                const availabilityOptions = [
-                    { label: 'In Stock', value: 'IN_STOCK' },
-                    { label: 'Out of Stock', value: 'OUT_OF_STOCK' }
-                ];
+                const inStockCount = products.filter(p => p.availability === 'IN_STOCK').length;
+                const outOfStockCount = products.filter(p => p.availability === 'OUT_OF_STOCK').length;
 
-                // Only add if both statuses are present
-                const hasInStock = products.some(p => p.availability === 'IN_STOCK');
-                const hasOutOfStock = products.some(p => p.availability === 'OUT_OF_STOCK');
-
-                if (hasInStock && hasOutOfStock) {
+                if (inStockCount > 0 && outOfStockCount > 0) {
                     configs.push({
                         id: 'availability',
                         title: 'Availability',
                         priority: 50, // Medium priority
-                        options: availabilityOptions,
+                        options: [
+                            { label: 'In Stock', value: 'IN_STOCK', count: inStockCount },
+                            { label: 'Out of Stock', value: 'OUT_OF_STOCK', count: outOfStockCount }
+                        ],
                         type: 'checkbox'
                     });
                 }
@@ -343,23 +365,25 @@ function ProductSearch({
                     // Skip if it only appears in one product or is already used (like brand)
                     if (count < 2 || key === 'brand') return;
 
-                    // Get all values for this attribute
-                    const values = new Set();
+                    // Get all values and counts for this attribute
+                    const valCounts = new Map();
                     products.forEach(product => {
                         if (product.attributes) {
                             const attr = product.attributes.find(a => a.key === key);
                             if (attr && attr.value?.text) {
-                                attr.value.text.forEach(val => values.add(val));
+                                attr.value.text.forEach(val => {
+                                    valCounts.set(val, (valCounts.get(val) || 0) + 1);
+                                });
                             }
                         }
                     });
 
-                    if (values.size > 0) {
+                    if (valCounts.size > 0) {
                         configs.push({
                             id: `attr_${key}`,
                             title: formatFilterName(key),
                             priority: 40, // Lower priority for dynamic attributes
-                            options: Array.from(values).map(value => ({ label: value, value })),
+                            options: Array.from(valCounts.keys()).map(value => ({ label: value, value, count: valCounts.get(value) })),
                             type: 'checkbox'
                         });
                     }
@@ -755,6 +779,11 @@ function ProductSearch({
                 } else {
                     setPersonalized(false);
                 }
+                if (typeof response.data.sponsored_count === 'number') {
+                    setSponsoredCount(response.data.sponsored_count);
+                } else {
+                    setSponsoredCount(0);
+                }
             }
 
             // Simple processing - just map products without modifying anything
@@ -792,6 +821,7 @@ function ProductSearch({
             setEffectivePriceTableId('');
             setEffectiveSortBy('');
             setPersonalized(false);
+            setSponsoredCount(0);
             const serverErrMsg = error.response?.data?.error || error.response?.data?.message;
             const displayError = serverErrMsg || error.message || 'An error occurred while searching';
             setError(displayError);
@@ -1000,6 +1030,7 @@ function ProductSearch({
         setQueryRelaxed(false);
         setDidYouMean('');
         setResponseQuery('');
+        setSponsoredCount(0);
         const nextQuery = typeof searchText === 'string' ? searchText : searchText?.query || '';
         if (nextQuery === activeSearchQuery && (nextQuery.trim() || imageChanged)) {
             fetchProducts({
@@ -1069,8 +1100,13 @@ function ProductSearch({
     // Prevent search input changes from causing product grid re-renders
     // Only fetch products when activeSearchQuery changes (not during typing)
 
-    // Stable handler for product clicks
-    const handleProductClick = useCallback((productId) => {
+    // Stable handler for product clicks (fires ad click beacon as fire-and-forget when sponsored)
+    const handleProductClick = useCallback((productOrId) => {
+        const product = typeof productOrId === 'object' && productOrId !== null ? productOrId : null;
+        const productId = product ? product.id : productOrId;
+        if (product && product.sponsored && product.ad_campaign_id && product.ad_click_id) {
+            recordAdClick(product.ad_campaign_id, product.ad_click_id);
+        }
         recordSessionEvent(productId, 'click', tenantId);
         setSessionRefreshKey(prev => prev + 1);
         navigate(`/product/${productId}`);
@@ -1106,11 +1142,13 @@ function ProductSearch({
                         product.images[0].uri ?
                         product.images[0].uri :
                         null;
+                    const isSponsored = Boolean(product.sponsored);
+                    const cardKey = product.ad_click_id ? `${product.id}-${product.ad_click_id}` : product.id;
 
                     return (
                         <Grid 
                             item 
-                            key={product.id}
+                            key={cardKey}
                             sx={{ 
                                 width: 'calc(16.666% - 16px)',
                                 padding: '8px',
@@ -1118,17 +1156,24 @@ function ProductSearch({
                             }}
                         >
                             <Card
+                                data-testid={isSponsored ? 'sponsored-card' : 'product-card'}
+                                data-sponsored={isSponsored ? 'true' : 'false'}
                                 sx={{
                                     minHeight: '300px',
                                     display: 'flex',
                                     flexDirection: 'column',
                                     cursor: 'pointer',
                                     transition: 'box-shadow 0.3s ease',
+                                    ...(isSponsored ? {
+                                        border: '1px solid #f59e0b',
+                                        backgroundColor: '#fffbeb',
+                                        boxShadow: '0 2px 8px rgba(245, 158, 11, 0.15)',
+                                    } : {}),
                                     '&:hover': {
                                         boxShadow: 6,
                                     }
                                 }}
-                                onClick={() => onProductClick(product.id)}
+                                onClick={() => onProductClick(product)}
                             >
                                 {/* Each product processes its own image data */}
                                 <ProductImage
@@ -1143,6 +1188,23 @@ function ProductSearch({
                                     padding: '8px',
                                 }}>
                                     <Box>
+                                        {isSponsored && (
+                                            <Box sx={{ mb: 0.75, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <Chip
+                                                    label="Patrocinado"
+                                                    size="small"
+                                                    data-testid="sponsored-badge"
+                                                    sx={{
+                                                        height: 20,
+                                                        fontSize: '0.7rem',
+                                                        fontWeight: 700,
+                                                        backgroundColor: '#fef3c7',
+                                                        color: '#92400e',
+                                                        border: '1px solid #f59e0b',
+                                                    }}
+                                                />
+                                            </Box>
+                                        )}
                                         <Typography 
                                             gutterBottom 
                                             variant="subtitle2" 
@@ -1665,8 +1727,21 @@ function ProductSearch({
                                 {effectivePriceTableId && ` • price_table: ${effectivePriceTableId}`}
                                 {effectiveSortBy && ` • sort: ${effectiveSortBy}`}
                                 {personalized && ` • Personalizado`}
+                                {sponsoredCount > 0 && ` • sponsored: ${sponsoredCount}`}
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                                {sponsoredCount > 0 && (
+                                    <Chip
+                                        size="small"
+                                        label={`Patrocinados: ${sponsoredCount}`}
+                                        sx={{
+                                            backgroundColor: '#fef3c7',
+                                            color: '#92400e',
+                                            border: '1px solid #f59e0b',
+                                            fontWeight: 600,
+                                        }}
+                                    />
+                                )}
                                 {personalized && (
                                     <Chip size="small" color="secondary" label="Personalizado" />
                                 )}
@@ -1965,6 +2040,14 @@ function App() {
                             >
                                 Manage Rules
                             </Button>
+                            <Button
+                                component={Link}
+                                to="/ads"
+                                color="inherit"
+                                startIcon={<CampaignIcon />}
+                            >
+                                Sponsored Ads
+                            </Button>
                         </Toolbar>
                     </AppBar>
 
@@ -1972,6 +2055,7 @@ function App() {
                         <Route path="/" element={<ProductSearch tenantId={tenantId} setTenantId={setTenantId} locale={locale} setLocale={setLocale} />} />
                         <Route path="/source-ingestion" element={<SourceIngestion />} />
                         <Route path="/manage" element={<RuleManager />} />
+                        <Route path="/ads" element={<AdCampaignManager tenantId={tenantId} />} />
                         <Route path="/product/:productId" element={<ProductDetails />} />
                     </Routes>
                 </Box>

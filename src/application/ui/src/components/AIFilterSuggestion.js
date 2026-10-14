@@ -72,11 +72,17 @@ const AIFilterSuggestion = ({
         }
     }, [searchQuery]);
 
+    // Exclude sponsored products from client-side facet and filter option counts (ADR-011)
+    const organicProducts = useMemo(() => {
+        if (!Array.isArray(allProducts)) return [];
+        return allProducts.filter(p => !p || !p.sponsored);
+    }, [allProducts]);
+
     // OPTIMIZATION: Memoize filtered products calculation to prevent recalculation
     const filteredProducts = useMemo(() => {
-        if (!allProducts || !selectedFilters) return allProducts || [];
+        if (!organicProducts.length || !selectedFilters) return organicProducts;
 
-        let filtered = [...allProducts];
+        let filtered = [...organicProducts];
 
         // Apply each filter type
         Object.entries(selectedFilters).forEach(([filterId, values]) => {
@@ -138,7 +144,7 @@ const AIFilterSuggestion = ({
         });
 
         return filtered;
-    }, [allProducts, selectedFilters]);
+    }, [organicProducts, selectedFilters]);
 
     // OPTIMIZATION: Memoized filter simulation function
     const simulateFilter = useCallback((filterId, value, products) => {
@@ -265,13 +271,13 @@ const AIFilterSuggestion = ({
     const fetchAIFilterSuggestions = async (query) => {
         setIsLoadingAI(true);
         try {
-            // OPTIMIZATION: Only extract essential data for API
-            const categories = [...new Set(allProducts.flatMap(p => p.categories || []))];
-            const brands = [...new Set(allProducts.flatMap(p => p.brands || []))];
+            // OPTIMIZATION: Only extract essential data for API (excluding sponsored products)
+            const categories = [...new Set(organicProducts.flatMap(p => p.categories || []))];
+            const brands = [...new Set(organicProducts.flatMap(p => p.brands || []))];
 
             // Build a product context object with summary info
             const productContext = {
-                total_products: allProducts.length,
+                total_products: organicProducts.length,
                 categories: categories.slice(0, 30), // Limit size
                 brands: brands.slice(0, 30), // Limit size
                 available_filters: filterConfigs.map(config => ({
