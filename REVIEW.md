@@ -282,3 +282,6 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
 
 ### #32 UI (de626d7)
 - **Status:** PASS (reviewer, private worktree `/tmp/rev-32ui`): `npm run build` PASS (pre-existing eslint warnings only); `go vet` / `go test -race ./internal/api` PASS incl. `TestStorefrontInlineJSParses`; node --check of the storefront script exits 0; color/size selects and facet groups wired in React and storefront (Show All clears color/size); storefront variant chips use createElement/textContent only.
+
+### #32 hotfix (2442093)
+- **Status:** PASS (reviewer, private worktree `/tmp/rev-32fix`): `go vet` / `go test -race` PASS incl. `TestVariantRowsDecodeFromSpannerArrayOfStruct`; variants decoded into `[]*variantRow` in hybrid and browse paths (Spanner client requires pointer slices for `ARRAY<STRUCT>`); nil entries skipped. Found by deployer's sqlcheck gate before production.
