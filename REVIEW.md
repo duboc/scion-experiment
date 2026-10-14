@@ -279,3 +279,6 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
 - **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), private worktree `/tmp/rev-32` (removed)
 - **Status:** PASS
 - **Checks:** `go vet` / `go test -race` PASS (variants tests + API test); ADR-009: migration 022 + seeds 022b (std SKU as first variant) / 022c (74 variants) match `DefaultVariants`; one row per parent; `EXISTS` color/size filters on in-stock child SKUs in both RRF legs and browse; `ARRAY(SELECT AS STRUCT …)` aggregation in the same statement; `variants` / `variant_count` / `available_colors` / `available_sizes`; colors/sizes facets count each parent once; memory parity; bound params; 400 validation; sqlcheck variant cases. Issues: none.
+
+### #32 UI (de626d7)
+- **Status:** PASS (reviewer, private worktree `/tmp/rev-32ui`): `npm run build` PASS (pre-existing eslint warnings only); `go vet` / `go test -race ./internal/api` PASS incl. `TestStorefrontInlineJSParses`; node --check of the storefront script exits 0; color/size selects and facet groups wired in React and storefront (Show All clears color/size); storefront variant chips use createElement/textContent only.
