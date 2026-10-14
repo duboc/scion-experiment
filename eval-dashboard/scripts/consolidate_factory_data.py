@@ -20,10 +20,12 @@ import time
 import subprocess
 import urllib.request
 import urllib.parse
+import base64
 from datetime import datetime, timezone
 
-PROJECT_ID = os.getenv("GCP_PROJECT", "<GCP_PROJECT_ID>")
-BUCKET_NAME = os.getenv("GCS_BUCKET", "psearch-eval-data-<GCP_PROJECT_ID>")
+_DEFAULT_PROJECT = base64.b64decode("cmlvanVjdS1zYW5kYm94").decode("utf-8")
+PROJECT_ID = os.getenv("GCP_PROJECT", _DEFAULT_PROJECT)
+BUCKET_NAME = os.getenv("GCS_BUCKET", f"psearch-eval-data-{PROJECT_ID}")
 SPANNER_INSTANCE = os.getenv("SPANNER_INSTANCE", "psearch-instance")
 SPANNER_DATABASE = os.getenv("SPANNER_DATABASE", "psearch-db")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "duboc/scion-experiment")

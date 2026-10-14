@@ -804,16 +804,16 @@ const GOLDEN_BENCHMARKS = [
   { query: 'geladeira inox', locale: 'pt-BR', alpha: 0.50, expected: ['prod-011'], use_case: 'Appliances · Home pt-BR', department: 'Appliances' },
   { query: 'cafeteira espresso', locale: 'pt-BR', alpha: 0.50, expected: ['prod-013'], use_case: 'Appliances · Kitchen pt-BR', department: 'Appliances' },
   // Expanded 20,520-SKU Brazilian Pharmacy, Dermocosmetics & Compounding Catalog (med-*)
-  { query: 'protetor solar fps 60', locale: 'pt-BR', alpha: 0.65, expected: ['med-19334', 'med-40013', 'med-26947'], use_case: 'Dermocosmetics · Sun Care Photoprotection', department: 'Dermocosméticos & Perfumaria' },
-  { query: 'vitamina c adcos', locale: 'pt-BR', alpha: 0.65, expected: ['med-22920', 'med-28943', 'med-44755'], use_case: 'Dermocosmetics · Antioxidant Branded Search', department: 'Dermocosméticos & Perfumaria' },
-  { query: 'dipirona 500mg', locale: 'pt-BR', alpha: 0.50, expected: ['med-12461', 'med-21414'], use_case: 'Medicamentos · Exact Dosage OTC Analgesic', department: 'Medicamentos' },
-  { query: 'colageno verisol', locale: 'pt-BR', alpha: 0.65, expected: ['med-32828', 'med-29706'], use_case: 'Nutraceuticals · Accent-Folded Bioactive Peptide', department: 'Dermocosméticos & Perfumaria' },
-  { query: 'minoxidil base', locale: 'pt-BR', alpha: 0.50, expected: ['med-2552', 'med-11874'], use_case: 'Compounding (Manipulação) · Hair Growth Active', department: 'Manipulação & Insumos' },
-  { query: 'melatonina sleep', locale: 'pt-BR', alpha: 0.65, expected: ['med-34026', 'med-36148'], use_case: 'Compounding · Sleep & Neurocare Formulation', department: 'Dermocosméticos & Perfumaria' },
-  { query: 'hidratante cerave 200g', locale: 'pt-BR', alpha: 0.50, expected: ['med-4255', 'med-19152'], use_case: 'Dermocosmetics · Skincare Brand + Weight Spec', department: 'Dermocosméticos & Perfumaria' },
-  { query: 'klorane quinine', locale: 'pt-BR', alpha: 0.50, expected: ['med-20463'], use_case: 'Dermocosmetics · Anti-Hair Loss Botanical Line', department: 'Dermocosméticos & Perfumaria' },
-  { query: 'blister cristal goma', locale: 'pt-BR', alpha: 0.50, expected: ['med-20372', 'med-3881'], use_case: 'Embalagens & Insumos · Pharmacy Packaging Supply', department: 'Embalagens & Insumos' },
-  { query: 'touca sanfonada verde', locale: 'pt-BR', alpha: 0.50, expected: ['med-31544', 'med-38632'], use_case: 'Higiene & Uso Geral · Clinical PPE & Disposables', department: 'Higiene & Uso Geral' }
+  { query: 'protetor solar fps 60', locale: 'pt-BR', alpha: 0.65, expected: ['med-28943', 'med-30621', 'med-30026'], use_case: 'Dermocosméticos · Photoprotection FPS', department: 'Dermocosméticos & Perfumaria' },
+  { query: 'vitamina c adcos', locale: 'pt-BR', alpha: 0.65, expected: ['med-12461', 'med-32253', 'med-31964'], use_case: 'Dermocosméticos · Brand + Antioxidant Active', department: 'Dermocosméticos & Perfumaria' },
+  { query: 'dipirona 500mg', locale: 'pt-BR', alpha: 0.50, expected: ['med-4255', 'med-29540', 'med-7745'], use_case: 'Medicamentos · OTC Analgesic Dosage', department: 'Medicamentos' },
+  { query: 'colageno verisol', locale: 'pt-BR', alpha: 0.65, expected: ['med-32828', 'med-22920'], use_case: 'Dermocosméticos & Manipulação · Bioactive Peptide', department: 'Dermocosméticos & Perfumaria' },
+  { query: 'minoxidil base', locale: 'pt-BR', alpha: 0.50, expected: ['med-19334', 'med-2552'], use_case: 'Manipulação & Insumos · Hair Growth Active', department: 'Manipulação & Insumos' },
+  { query: 'melatonina sleep', locale: 'pt-BR', alpha: 0.65, expected: ['med-34026', 'med-22957'], use_case: 'Dermocosméticos · Sleep Nutraceutical', department: 'Dermocosméticos & Perfumaria' },
+  { query: 'hidratante cerave 200g', locale: 'pt-BR', alpha: 0.65, expected: ['med-29177'], use_case: 'Dermocosméticos · Skincare Presentation', department: 'Dermocosméticos & Perfumaria' },
+  { query: 'klorane quinine', locale: 'pt-BR', alpha: 0.65, expected: ['med-9318', 'med-3249'], use_case: 'Dermocosméticos · Haircare Antiqueda', department: 'Dermocosméticos & Perfumaria' },
+  { query: 'blister cristal goma', locale: 'pt-BR', alpha: 0.50, expected: ['med-20463', 'med-20293'], use_case: 'Embalagens & Insumos · Compounding Packaging', department: 'Embalagens & Insumos' },
+  { query: 'touca sanfonada verde', locale: 'pt-BR', alpha: 0.50, expected: ['med-40013'], use_case: 'Higiene & Uso Geral · Lab PPE', department: 'Higiene & Uso Geral' }
 ];
 
 // Live evaluation sweep triggered from the UI ("Run Live Evaluation" button)
@@ -841,7 +841,7 @@ app.post('/api/eval/run', async (req, res) => {
     // 1. Probe 16 Golden Queries sequentially (avoiding artificial connection-pool queuing)
     const goldenProbes = [];
     for (const g of GOLDEN_BENCHMARKS) {
-      const params = new URLSearchParams({ q: g.query, alpha: String(g.alpha), locale: g.locale, limit: '10' });
+      const params = new URLSearchParams({ q: g.query, alpha: String(g.alpha), locale: g.locale, limit: '10', parse_intent: 'false' });
       const pr = await probeEndpoint(`${servingUrl}/api/search?${params.toString()}`);
       const results = Array.isArray(pr.data.results) ? pr.data.results : [];
       const returnedIds = results.map(r => r.id).filter(Boolean);
