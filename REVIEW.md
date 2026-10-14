@@ -261,3 +261,9 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
        - `/api/info` exposing `embedding_model`, `text_model`, `pro_model`, and `genai_location`.
        - Python services and tooling updated to `gemini-3.8-flash` / `gemini-4-argon`.
        - Tests: `go test -race -count=1 ./...` PASS. Zero occurrences of `gemini-3.5` remaining.
+
+## #28 Documentation refresh (0fa411e)
+- **Date:** 2026-10-14
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), private worktree `/tmp/rev-0fa411e` (removed after review)
+- **Status:** PASS
+- **Checks:** (1) every path, route, `/api/search` parameter, response field, env var and default in README.md, PRODUCT.md, DESIGN.md, DEPLOYMENT.md, REVIEW.md and knowledge-plane/INDEX.md matches `src/psearch/serving`; `go vet` / `go test -race` PASS; (2) model IDs (`gemini-3.8-flash`, `gemini-4-argon`, `gemini-embedding-2` 1024-d, `global`) and live revision `psearch-serving-00025-5mx` consistent; (3) migrations 011–021 accurate; (4) no real project IDs, project numbers, emails, Cloud Run URLs or secrets; (5) all 44 internal links/anchors resolve; (6) requirements 4.1.1–4.1.14 consistent with ADR-001–ADR-008. Inaccuracies found: none.
