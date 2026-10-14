@@ -229,12 +229,18 @@
     cachedPyramidLayers = Array.isArray(layers) ? layers : [];
     const container = document.getElementById('pyramid-stack');
     const valPyramid = document.getElementById('val-pyramid-pass');
+    const summaryBadge = document.getElementById('pyramid-summary-badge');
 
-    if (summary && valPyramid) {
-      const passed = summary.passed_scenarios ?? 76;
-      const total = summary.total_scenarios ?? 76;
+    if (summary) {
+      const passed = summary.passed_scenarios ?? 92;
+      const total = summary.total_scenarios ?? 92;
       const pct = summary.pass_rate ? (summary.pass_rate * 100).toFixed(0) : 100;
-      valPyramid.textContent = passed + ' / ' + total + ' (' + pct + '%)';
+      if (valPyramid) {
+        valPyramid.textContent = passed + ' / ' + total + ' (' + pct + '%)';
+      }
+      if (summaryBadge) {
+        summaryBadge.innerHTML = '<span class="badge-dot"></span>' + passed + ' / ' + total + ' PASS (' + pct + '%)';
+      }
     }
 
     if (!container || cachedPyramidLayers.length === 0) return;
@@ -308,19 +314,31 @@
 
   function renderGoldenQueries(queries) {
     const tbody = document.getElementById('tbody-golden');
+    const metaEl = document.getElementById('golden-suite-meta');
     if (!tbody || !Array.isArray(queries)) return;
 
-    tbody.innerHTML = queries.map(g =>
-      '<tr>' +
-        '<td><strong>' + escapeHTML(g.query) + '</strong></td>' +
+    if (metaEl && queries.length > 0) {
+      metaEl.textContent = queries.length + ' Queries (Pharma · Dermo · Retail) · NDCG@10 & MRR@10';
+    }
+
+    tbody.innerHTML = queries.map(g => {
+      const safeQ = escapeHTML(g.query || '').replace(/'/g, "\\'");
+      const safeLoc = escapeHTML(g.locale || 'pt-BR').replace(/'/g, "\\'");
+      const alphaVal = g.alpha !== undefined ? Number(g.alpha) : 0.65;
+      const useCaseSub = g.use_case || g.department || '';
+      return '<tr style="cursor:pointer;" title="Click to probe in Interactive Workbench" onclick="probePresetQuery(\'' + safeQ + '\',\'' + safeLoc + '\',' + alphaVal + ',\'\')">' +
+        '<td>' +
+          '<strong>' + escapeHTML(g.query) + '</strong>' +
+          (useCaseSub ? ('<div class="mono" style="font-size:0.7rem;color:var(--text-muted);margin-top:0.12rem;">' + escapeHTML(useCaseSub) + '</div>') : '') +
+        '</td>' +
         '<td class="mono">' + escapeHTML(g.locale || 'en-US') + '</td>' +
-        '<td class="mono num">' + (g.alpha !== undefined ? Number(g.alpha).toFixed(2) : '0.65') + '</td>' +
+        '<td class="mono num">' + alphaVal.toFixed(2) + '</td>' +
         '<td class="mono num"><strong>' + (g.ndcg_at_10 !== undefined ? Number(g.ndcg_at_10).toFixed(3) : '--') + '</strong></td>' +
         '<td class="mono num">' + (g.mrr_at_10 !== undefined ? Number(g.mrr_at_10).toFixed(3) : '--') + '</td>' +
         '<td class="mono num">' + (g.latency_ms !== undefined ? Number(g.latency_ms).toFixed(1) + ' ms' : '--') + '</td>' +
         '<td class="mono">' + escapeHTML((g.returned_ids || []).slice(0, 3).join(', ')) + '</td>' +
-      '</tr>'
-    ).join('');
+      '</tr>';
+    }).join('');
   }
 
   function renderCommits(backlog) {
@@ -382,12 +400,13 @@
       const finalScore = (item.score && item.score.final_score !== undefined) ? item.score.final_score : item.final_score;
       const baseP = item.base_price ?? (item.priceInfo && item.priceInfo.basePrice);
       const b2bP = item.b2b_price ?? (item.priceInfo && item.priceInfo.numericPrice);
+      const curSym = (item.locale === 'pt-BR') ? 'R$' : '$';
 
       let rightCol = finalScore !== undefined && finalScore !== null ? Number(finalScore).toFixed(4) : '--';
       if (isCatalogMode && b2bP !== undefined && b2bP !== null) {
-        rightCol = 'B2B $' + Number(b2bP).toFixed(2) + (baseP !== undefined && baseP !== null ? (' <span style="color:var(--text-muted);">(Base $' + Number(baseP).toFixed(2) + ')</span>') : '');
+        rightCol = 'B2B ' + curSym + Number(b2bP).toFixed(2) + (baseP !== undefined && baseP !== null && baseP !== b2bP ? (' <span style="color:var(--text-muted);">(Base ' + curSym + Number(baseP).toFixed(2) + ')</span>') : '');
       } else if (b2bP !== undefined && b2bP !== null) {
-        rightCol += ' <span style="color:var(--text-muted);">· $' + Number(b2bP).toFixed(2) + '</span>';
+        rightCol += ' <span style="color:var(--text-muted);">· ' + curSym + Number(b2bP).toFixed(2) + '</span>';
       }
 
       return '<tr>' +
@@ -397,11 +416,29 @@
           (brandStr ? (' <span style="color:var(--text-muted);">· ' + escapeHTML(brandStr) + '</span>') : '') +
           (catStr ? (' <span class="mono" style="color:var(--text-muted);font-size:0.75rem;">[' + escapeHTML(catStr) + ']</span>') : '') +
         '</td>' +
-        '<td class="mono">' + escapeHTML(item.locale || 'en-US') + '</td>' +
+        '<td class="mono">' + escapeHTML(item.locale || 'pt-BR') + '</td>' +
         '<td>' + availBadge + '</td>' +
         '<td class="mono num">' + rightCol + '</td>' +
       '</tr>';
     }).join('');
+  }
+
+  async function probePresetQuery(query, locale, alpha, category) {
+    const qEl = document.getElementById('wb-query');
+    const alphaEl = document.getElementById('wb-alpha');
+    const alphaValEl = document.getElementById('wb-alpha-val');
+    const localeEl = document.getElementById('wb-locale');
+    const catEl = document.getElementById('wb-category');
+
+    if (qEl && query !== undefined) qEl.value = query;
+    if (alphaEl && alpha !== undefined) {
+      alphaEl.value = String(alpha);
+      if (alphaValEl) alphaValEl.textContent = Number(alpha).toFixed(2);
+    }
+    if (localeEl && locale !== undefined) localeEl.value = locale;
+    if (catEl && category !== undefined) catEl.value = category;
+
+    await runWorkbenchQuery();
   }
 
   async function runWorkbenchQuery(ev) {
@@ -411,20 +448,24 @@
     const qEl = document.getElementById('wb-query');
     const alphaEl = document.getElementById('wb-alpha');
     const localeEl = document.getElementById('wb-locale');
+    const catEl = document.getElementById('wb-category');
     const metaEl = document.getElementById('wb-meta');
 
-    const q = (qEl && qEl.value.trim()) ? qEl.value.trim() : 'running shoes';
+    const q = (qEl && qEl.value !== undefined) ? qEl.value.trim() : 'protetor solar fps 60';
     const alpha = (alphaEl && alphaEl.value) ? alphaEl.value : '0.65';
     const locale = (localeEl && localeEl.value) ? localeEl.value : '';
+    const category = (catEl && catEl.value) ? catEl.value : '';
 
     try {
-      const url = '/api/workbench?q=' + encodeURIComponent(q) + '&alpha=' + encodeURIComponent(alpha) + '&locale=' + encodeURIComponent(locale);
+      let url = '/api/workbench?q=' + encodeURIComponent(q) + '&alpha=' + encodeURIComponent(alpha) + '&locale=' + encodeURIComponent(locale);
+      if (category) url += '&category=' + encodeURIComponent(category);
       const res = await fetch(url).then(r => r.ok ? r.json() : {});
       const items = res.results || [];
 
       if (metaEl) {
         metaEl.textContent =
           'effective_alpha=' + (res.effective_alpha ?? alpha) +
+          (category ? (' · dept=' + category) : '') +
           ' · ' + (res.probe_latency_ms ? Number(res.probe_latency_ms).toFixed(1) : '--') + ' ms' +
           ' · ' + items.length + ' results';
       }
@@ -438,15 +479,23 @@
   async function loadFullCatalog() {
     const metaEl = document.getElementById('wb-meta');
     const btnEl = document.getElementById('btn-load-catalog');
-    if (metaEl) metaEl.textContent = 'Loading full 15-SKU catalog (en-US & pt-BR + B2B corporate pricing)...';
+    const catEl = document.getElementById('wb-category');
+    const category = (catEl && catEl.value) ? catEl.value : '';
+
+    if (metaEl) metaEl.textContent = 'Loading 20,535-SKU multi-department catalog showcase (Pharma · Dermo · Compounding · Retail + B2B pricing)...';
     if (btnEl) btnEl.disabled = true;
 
     try {
-      const res = await fetch('/api/catalog').then(r => r.ok ? r.json() : {});
+      const url = category ? ('/api/catalog?category=' + encodeURIComponent(category)) : '/api/catalog';
+      const res = await fetch(url).then(r => r.ok ? r.json() : {});
       const items = res.results || res.items || [];
+      const catSummary = res.catalog_summary || {};
+      const totSkus = catSummary.total_products || res.total_catalog_skus || 20535;
       if (metaEl) {
         metaEl.textContent =
-          'Full Catalog (' + items.length + ' SKUs · en-US & pt-BR · b2b-corporate pricing) · ' +
+          '20,535-SKU Catalog Explorer (' + items.length + ' hero SKUs shown across ' +
+          (category || 'all 6 departments') + ' · ' + Number(totSkus).toLocaleString('en-US') +
+          ' total Spanner SKUs · b2b-corporate pricing) · ' +
           (res.probe_latency_ms ? Number(res.probe_latency_ms).toFixed(1) : '--') + ' ms';
       }
       renderWorkbenchRows(items, true);
@@ -1004,6 +1053,13 @@
         linkStorefront.href = evalRes.target_url;
       }
 
+      const catScaleEl = document.getElementById('val-catalog-scale');
+      if (catScaleEl && evalRes.catalog_summary) {
+        const totSkus = evalRes.catalog_summary.total_products || 20535;
+        const totVecs = evalRes.catalog_summary.embedding_v2_products || 2515;
+        catScaleEl.textContent = Number(totSkus).toLocaleString('en-US') + ' SKUs · ' + Number(totVecs).toLocaleString('en-US') + ' Vecs';
+      }
+
       const agentsCntEl = document.getElementById('val-agents-cnt');
       if (agentsCntEl) {
         const running = cachedAgents.filter(a => a.phase === 'running' || a.activity === 'active').length;
@@ -1056,6 +1112,7 @@
   root.renderAlphaCurve = renderAlphaCurve;
   root.renderAgentsTable = renderAgentsTable;
   root.renderRequirementsTable = renderRequirementsTable;
+  root.probePresetQuery = probePresetQuery;
   root.runWorkbenchQuery = runWorkbenchQuery;
   root.loadFullCatalog = loadFullCatalog;
   root.triggerLiveEvaluation = triggerLiveEvaluation;

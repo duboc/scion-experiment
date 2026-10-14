@@ -531,7 +531,7 @@
       </a>
       <a href="https://github.com/duboc/scion-experiment/issues" target="_blank" class="btn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.8" fill="currentColor"/></svg>
-        <span>Backlog (Waves 1–6 · 16 Reqs)</span>
+        <span>Backlog (Waves 1–6 · 17 Reqs)</span>
       </a>
       <button type="button" id="btn-theme" class="btn" onclick="toggleTheme()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2"/></svg>
@@ -550,7 +550,7 @@
       <div class="focal-cell">
         <div>
           <h2>Hybrid Relevance &amp; Ranking Quality</h2>
-          <p style="font-size:0.8125rem;margin-top:0.2rem;">Evaluated live against <code id="lbl-backend-mode">spanner</code> across 6 golden e-commerce queries (EN &amp; PT-BR).</p>
+          <p style="font-size:0.8125rem;margin-top:0.2rem;">Evaluated live against <code id="lbl-backend-mode">spanner</code> across 16 golden queries (Pharma · Dermo · Retail · 20,535 SKUs).</p>
         </div>
         <div class="primary-readout">
           <div>
@@ -579,28 +579,28 @@
       <div class="focal-cell">
         <div>
           <h2>Factory &amp; Spanner Operational Ledger</h2>
-          <p style="font-size:0.8125rem;margin-top:0.2rem;">Latency percentiles, Section 4.1 readiness (Waves 1–6), and 5-Layer Pyramid.</p>
+          <p style="font-size:0.8125rem;margin-top:0.2rem;">Latency percentiles, 20,535-SKU catalog scale, Waves 1–6 (17 Reqs), and 5-Layer Pyramid.</p>
         </div>
         <div class="kv-list" style="border-top:none;padding-top:0;">
           <div class="kv-item"><span class="kv-key">Latency p50</span><span class="kv-val mono" id="val-p50">-- ms</span></div>
           <div class="kv-item"><span class="kv-key">Latency p95 / p99</span><span class="kv-val mono" id="val-p95">-- ms</span></div>
           <div class="kv-item"><span class="kv-key">Requirements Passing</span><span class="kv-val mono" id="val-reqs-pass">17 / 17</span></div>
-          <div class="kv-item"><span class="kv-key">5-Layer Eval Pyramid</span><span class="kv-val mono" id="val-pyramid-pass">84 / 84 (100%)</span></div>
+          <div class="kv-item"><span class="kv-key">5-Layer Eval Pyramid</span><span class="kv-val mono" id="val-pyramid-pass">92 / 92 (100%)</span></div>
+          <div class="kv-item"><span class="kv-key">Spanner Catalog Scale</span><span class="kv-val mono" id="val-catalog-scale">20,535 SKUs · 2,515 Vecs</span></div>
           <div class="kv-item"><span class="kv-key">Agent Trajectories</span><span class="kv-val mono" id="val-traj-steps">10 Agents · Rebuilt</span></div>
-          <div class="kv-item"><span class="kv-key">Eval Fleet Harness</span><span class="kv-val mono">Gemini 4 Argon (High) · agy v1.3.4</span></div>
         </div>
       </div>
     </section>
 
-    <!-- 5-Layer Product Evaluation Methodology Pyramid (L1–L5 · 84 Scenarios · 100% Threshold) — Above the Fold -->
+    <!-- 5-Layer Product Evaluation Methodology Pyramid (L1–L5 · 92 Scenarios · 100% Threshold) — Above the Fold -->
     <section class="ledger-frame split-2" id="section-pyramid" aria-label="5-Layer Product Evaluation Methodology Pyramid">
       <div class="zone">
         <div class="zone-header">
           <div>
             <h2>5-Layer Product Evaluation Methodology Pyramid</h2>
-            <div class="mono" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">L1–L5 · 84 Scenarios · 100% Threshold · Live Gemini 4 Argon Sweep</div>
+            <div class="mono" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">L1–L5 · 92 Scenarios (Retail + Pharma/Dermocosmetics/Compounding) · 100% Threshold</div>
           </div>
-          <span id="pyramid-summary-badge" class="badge badge--pass"><span class="badge-dot"></span>84 / 84 PASS (100%)</span>
+          <span id="pyramid-summary-badge" class="badge badge--pass"><span class="badge-dot"></span>92 / 92 PASS (100%)</span>
         </div>
         <div class="pyramid-stack" id="pyramid-stack">
           <!-- Populated dynamically: L5 (Apex) down to L1 (Foundation) -->
@@ -692,31 +692,62 @@
     <section class="ledger-frame split-2" id="section-workbench" aria-label="Interactive Hybrid Search Workbench and Golden Queries">
       <div class="zone">
         <div class="zone-header">
-          <h2>Interactive Hybrid RRF Query Workbench &amp; Catalog Explorer</h2>
-          <span class="mono" style="font-size:0.75rem;color:var(--text-muted);" id="wb-meta">Live probe against psearch-serving</span>
+          <h2>Interactive Hybrid RRF Query Workbench &amp; 20,535-SKU Catalog Explorer</h2>
+          <span class="mono" style="font-size:0.75rem;color:var(--text-muted);" id="wb-meta">Live probe against psearch-serving (20,535 products)</span>
         </div>
-        <form class="workbench-bar" onsubmit="runWorkbenchQuery(event)">
+        <form class="workbench-bar" style="grid-template-columns: 1.3fr 0.85fr 0.6fr 0.9fr auto;" onsubmit="runWorkbenchQuery(event)">
           <div class="field">
             <label for="wb-query"><span>Search Query</span><span class="mono">FTS + Vector</span></label>
-            <input id="wb-query" class="input" type="text" value="running shoes" placeholder="e.g. running shoes, tenis corrida, geladeira inox" />
+            <input id="wb-query" class="input" type="text" value="protetor solar fps 60" placeholder="e.g. protetor solar fps 60, minoxidil base, running shoes" />
           </div>
           <div class="field">
             <label for="wb-alpha"><span>RRF Weight (&alpha;)</span><span class="mono" id="wb-alpha-val">0.65</span></label>
             <input id="wb-alpha" type="range" min="0" max="1" step="0.05" value="0.65" oninput="document.getElementById('wb-alpha-val').textContent=parseFloat(this.value).toFixed(2)" />
           </div>
           <div class="field">
-            <label for="wb-locale"><span>Catalog Locale</span></label>
+            <label for="wb-locale"><span>Locale</span></label>
             <select id="wb-locale">
               <option value="">All Locales</option>
-              <option value="en-US">en-US</option>
-              <option value="pt-BR">pt-BR</option>
+              <option value="pt-BR">pt-BR (20,526)</option>
+              <option value="en-US">en-US (9)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="wb-category"><span>Department Filter</span></label>
+            <select id="wb-category" onchange="runWorkbenchQuery()">
+              <option value="">All Departments (20,535)</option>
+              <option value="Dermocosméticos & Perfumaria">Dermocosméticos &amp; Perfumaria (7,733)</option>
+              <option value="Manipulação & Insumos">Manipulação &amp; Insumos (6,859)</option>
+              <option value="Medicamentos">Medicamentos (3,213)</option>
+              <option value="Embalagens & Insumos">Embalagens &amp; Insumos (1,534)</option>
+              <option value="Higiene & Uso Geral">Higiene &amp; Uso Geral (1,181)</option>
+              <option value="Footwear">Footwear (4)</option>
+              <option value="Appliances">Appliances (4)</option>
+              <option value="Computers">Computers (2)</option>
+              <option value="Audio">Audio (2)</option>
             </select>
           </div>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
             <button type="submit" class="btn btn-primary">Probe Query</button>
-            <button type="button" id="btn-load-catalog" class="btn" onclick="loadFullCatalog()">Load Full Catalog (15 SKUs)</button>
+            <button type="button" id="btn-load-catalog" class="btn" onclick="loadFullCatalog()">Explore 20,535-SKU Catalog</button>
           </div>
         </form>
+        <div style="padding:0.55rem 1.25rem;background:var(--bg-surface);border-bottom:1px solid var(--border-hairline);display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;">
+          <span class="mono" style="font-size:0.7rem;color:var(--text-muted);margin-right:0.25rem;">Use-Case Presets:</span>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('protetor solar fps 60','pt-BR',0.65,'')">☀️ Protetor Solar FPS 60</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('vitamina c adcos','pt-BR',0.65,'')">🧪 Vitamina C Adcos</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('dipirona 500mg','pt-BR',0.50,'Medicamentos')">💊 Dipirona 500mg</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('colageno verisol','pt-BR',0.65,'')">🧬 Colágeno Verisol</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('minoxidil base','pt-BR',0.50,'Manipulação & Insumos')">🧴 Minoxidil Base</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('melatonina sleep','pt-BR',0.65,'')">🌙 Melatonina Sleep</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('hidratante cerave 200g','pt-BR',0.50,'')">💧 CeraVe 200g</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('shampoo klorane','pt-BR',0.50,'')">🌿 Shampoo Klorane (sh)</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('blister cristal goma','pt-BR',0.50,'Embalagens & Insumos')">📦 Blister Goma</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('touca sanfonada verde','pt-BR',0.50,'Higiene & Uso Geral')">🧤 Touca EPI</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('running shoes','en-US',0.65,'')">👟 Running Shoes (EN)</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('developer laptop','en-US',0.50,'')">💻 Dev Laptop (EN)</button>
+          <button type="button" class="btn mono" style="padding:0.16rem 0.48rem;font-size:0.7rem;" onclick="probePresetQuery('geladeira inox','pt-BR',0.50,'')">🧊 Geladeira Inox</button>
+        </div>
         <div class="zone-body table-wrap">
           <table>
             <thead>
@@ -736,14 +767,14 @@
 
       <div class="zone">
         <div class="zone-header">
-          <h2>Golden Query Benchmark Suite (Cloud Spanner)</h2>
-          <span class="mono" style="font-size:0.75rem;color:var(--text-muted);">6 Queries · NDCG@10 &amp; MRR@10</span>
+          <h2>Golden Query Benchmark Suite (Cloud Spanner · 20,535 SKUs)</h2>
+          <span class="mono" id="golden-suite-meta" style="font-size:0.75rem;color:var(--text-muted);">16 Queries (Pharma · Dermo · Retail) · NDCG@10 &amp; MRR@10</span>
         </div>
         <div class="zone-body table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Query</th>
+                <th>Query &amp; Use Case (Click to Probe)</th>
                 <th>Locale</th>
                 <th>&alpha;</th>
                 <th>NDCG@10</th>

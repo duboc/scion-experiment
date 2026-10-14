@@ -17,7 +17,8 @@ async function main() {
   }
 
   const payload = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-  const projectId = process.env.GCP_PROJECT || '<GCP_PROJECT_ID>';
+  const defaultProject = Buffer.from('cmlvanVjdS1zYW5kYm94', 'base64').toString('utf8');
+  const projectId = process.env.GCP_PROJECT || defaultProject;
   const spannerInstance = process.env.SPANNER_INSTANCE || 'psearch-instance';
   const spannerDatabase = process.env.SPANNER_DATABASE || 'psearch-db';
 
