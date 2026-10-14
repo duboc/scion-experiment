@@ -277,8 +277,15 @@ type geminiIntentLLM struct {
 	model  string
 }
 
-// NewGeminiIntentLLM builds the Vertex AI-backed fallback (GENAI_LOCATION, GEMINI_LITE_MODEL).
+// NewGeminiIntentLLM builds the Vertex AI-backed fallback (GENAI_LOCATION, GEMINI_TEXT_MODEL / GEMINI_LITE_MODEL).
 func NewGeminiIntentLLM(ctx context.Context, cfg *config.Config, model string) (IntentLLM, error) {
+	if model == "" && cfg != nil {
+		model = cfg.IntentLLMModel
+	}
+	if model == "" {
+		model = "gemini-3.8-flash"
+	}
+	model = config.NormalizeModelID(model)
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{Backend: genai.BackendVertexAI, Project: cfg.ProjectID, Location: cfg.GenAILocation})
 	if err != nil {
 		return nil, err

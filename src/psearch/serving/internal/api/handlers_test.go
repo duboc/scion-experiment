@@ -19,12 +19,16 @@ func newTestRouter() *gin.Engine {
 	cfg := &config.Config{
 		Port:                   8080,
 		Environment:            "test",
-		ProjectID:              "riojucu-sandbox",
+		ProjectID:              "psearch-sandbox",
 		Region:                 "us-central1",
 		SpannerInstanceID:      "psearch-instance",
 		SpannerDatabaseID:      "psearch-db",
+		EmbeddingModelName:     "gemini-embedding-2",
 		EmbeddingDimension:     768,
 		ActiveEmbeddingVersion: "v1",
+		IntentLLMModel:         "gemini-3.8-flash",
+		ProLLMModel:            "gemini-4-argon",
+		GenAILocation:          "global",
 		DefaultAlpha:           0.5,
 		DefaultLimit:           10,
 		UseMemoryStore:         true,
@@ -36,13 +40,36 @@ func newTestRouter() *gin.Engine {
 func TestHealthAndInfoEndpoints(t *testing.T) {
 	r := newTestRouter()
 
-	for _, path := range []string{"/health", "/api/health", "/api/info"} {
+	for _, path := range []string{"/health", "/api/health"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			t.Fatalf("GET %s status = %d, want 200", path, w.Code)
 		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/info", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/info status = %d, want 200", w.Code)
+	}
+	var info map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &info); err != nil {
+		t.Fatalf("unmarshal /api/info: %v", err)
+	}
+	if info["embedding_model"] != "gemini-embedding-2" {
+		t.Errorf("embedding_model = %v, want gemini-embedding-2", info["embedding_model"])
+	}
+	if info["text_model"] != "gemini-3.8-flash" {
+		t.Errorf("text_model = %v, want gemini-3.8-flash", info["text_model"])
+	}
+	if info["pro_model"] != "gemini-4-argon" {
+		t.Errorf("pro_model = %v, want gemini-4-argon", info["pro_model"])
+	}
+	if info["genai_location"] != "global" {
+		t.Errorf("genai_location = %v, want global", info["genai_location"])
 	}
 }
 
