@@ -638,7 +638,7 @@ func TestVariantGroupingAPI(t *testing.T) {
 
 // ADR-010 (#33): image search validation and availability.
 func TestSearchImageValidation(t *testing.T) {
-	r := newTestRouter() // v1 + memory: image search unavailable
+	r := newTestRouter()       // v1 + memory: image search unavailable
 	jpeg := "/9j/4AAQSkZJRg==" // FF D8 FF E0 ...
 	cases := []struct {
 		name string

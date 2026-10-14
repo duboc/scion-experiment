@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"google.golang.org/genai"
+	"psearch/serving-go/internal/models"
 )
 
 // Visual & multimodal search (Issue #33, ADR-010).
@@ -226,4 +227,25 @@ func unit(v []float32) []float32 {
 		out[i] = float32(float64(x) / n)
 	}
 	return out
+}
+
+// CheckSpannerMultimodal runs the real multimodal SQL (no memory fallback) for
+// cmd/sqlcheck and returns the row count and top product IDs. Read-only.
+func (s *SpannerService) CheckSpannerMultimodal(ctx context.Context, query string, alpha float64, filters models.SearchFilters) (int, []string, error) {
+	if s.client == nil {
+		return 0, nil, fmt.Errorf("no Spanner client (memory mode)")
+	}
+	if len(filters.ImageVector) == 0 {
+		return 0, nil, fmt.Errorf("no image vector")
+	}
+	plan := s.planImageQuery(ctx, query, filters)
+	res, err := s.spannerHybridSearch(ctx, query, s.config.DefaultLimit, 0, alpha, plan, filters)
+	if err != nil {
+		return 0, nil, err
+	}
+	var top []string
+	for i := 0; i < len(res) && i < 4; i++ {
+		top = append(top, res[i].ID)
+	}
+	return len(res), top, nil
 }

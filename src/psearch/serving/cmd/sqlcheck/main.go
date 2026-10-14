@@ -4,7 +4,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"log"
 	"os"
 	"time"
@@ -21,8 +25,9 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 	var embedder services.QueryEmbedder
+	var embSvc *services.EmbeddingService
 	if emb, err := services.NewEmbeddingService(ctx, cfg); err == nil {
-		embedder = emb
+		embedder, embSvc = emb, emb
 	} else {
 		log.Printf("WARN: embedding service unavailable: %v", err)
 	}
@@ -159,6 +164,36 @@ func main() {
 	} else {
 		log.Printf("OK   variant facets colors=%v sizes=%d", f.Colors, len(f.Sizes))
 	}
+	// Visual search (Issue #33): live image embedding + vector-only and fused SQL.
+	// SQLCHECK_IMAGE may point at a JPEG; otherwise a generated 64x64 JPEG is used
+	// (validates the image API and SQL shape, not relevance).
+	if embSvc == nil || !cfg.UseGeminiEmbeddings() {
+		log.Printf("SKIP multimodal: embedding service unavailable or ACTIVE_EMBEDDING_VERSION != v2")
+	} else {
+		img, label := sqlcheckImage()
+		vec, err := embSvc.EmbedImage(ctx, img, "image/jpeg")
+		if err != nil {
+			failed = true
+			log.Printf("FAIL image embedding (%s): %v", label, err)
+		} else {
+			log.Printf("OK   image embedding (%s) dims=%d", label, len(vec))
+			for _, c := range []struct {
+				q string
+				f models.SearchFilters
+			}{
+				{"", models.SearchFilters{ImageVector: vec}},                                         // image-only: vector-only SQL
+				{"mas em verde", models.SearchFilters{ImageVector: vec, ImageWeight: 0.6}},           // fused vector + text leg
+				{"running shoes", models.SearchFilters{ImageVector: vec, Color: "azul", Size: "42"}}, // + variant filters
+			} {
+				if n, top, err := svc.CheckSpannerMultimodal(ctx, c.q, 0.7, c.f); err != nil {
+					failed = true
+					log.Printf("FAIL multimodal q=%q: %v", c.q, err)
+				} else {
+					log.Printf("OK   multimodal q=%q color=%q rows=%d top=%v", c.q, c.f.Color, n, top)
+				}
+			}
+		}
+	}
 	// Facet queries (Issue #5) over the full catalog.
 	if f, err := svc.Facets(ctx, []string{"prod-001", "prod-002", "prod-004", "prod-012"}, "b2b-gold", "default"); err != nil {
 		failed = true
@@ -169,4 +204,21 @@ func main() {
 	if failed {
 		os.Exit(1)
 	}
+}
+
+func sqlcheckImage() ([]byte, string) {
+	if p := os.Getenv("SQLCHECK_IMAGE"); p != "" {
+		if b, err := os.ReadFile(p); err == nil {
+			return b, p
+		}
+	}
+	m := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 64; x++ {
+			m.Set(x, y, color.RGBA{R: uint8(4 * x), G: 120, B: uint8(4 * y), A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	_ = jpeg.Encode(&buf, m, nil)
+	return buf.Bytes(), "generated 64x64"
 }
