@@ -1219,7 +1219,7 @@ function enrichStepWithConversationAndTools(step, meta) {
       thinking = `Auditing Issue #${issue} (${sha}) in isolated worktree. Checking SQL injection safety, Spanner schema/query alignment, DOM XSS safety (createElement/textContent), test coverage, and scanning diff for any leaked keys or project IDs.`;
       toolCalls = [
         { tool: 'run_command', command: `git worktree add --detach /tmp/rev-${sha} && cd /tmp/rev-${sha}/src/psearch/serving && go vet ./... && go test -race ./...`, output: step.status === 'REJECTED' ? `FAIL: Defect found in Issue #${issue} (${detail})` : `PASS: go vet ./... & go test -race ./... exited 0`, status: step.status === 'REJECTED' ? 'ERROR' : 'OK' },
-        { tool: 'run_command', command: `git grep -inE "AIza|ghp_|github_pat_" && edit REVIEW.md`, output: (rawBody || detail).slice(0, 280), status: step.status === 'ERROR' ? 'ERROR' : 'OK' },
+        { tool: 'run_command', command: `git grep -inE "<secret-patterns>" && edit REVIEW.md`, output: (rawBody || detail).slice(0, 280), status: step.status === 'ERROR' ? 'ERROR' : 'OK' },
         { tool: 'scion_message', command: `scion message lead "Review #${issue} (${sha}): Verdict ${step.status}"`, output: `Message delivered to agent 'lead'.`, status: 'OK' }
       ];
     } else if (agent === 'deployer') {
