@@ -944,7 +944,82 @@ function classifyGithubCommit(commitObj, branch) {
   }
 }
 
-function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = []) {
+function inferWaveFromIssue(issueNum) {
+  if ([11].includes(issueNum)) return 'wave-0';
+  if ([1, 2, 3].includes(issueNum)) return 'wave-1';
+  if ([4, 5, 6].includes(issueNum)) return 'wave-2';
+  if ([7, 8].includes(issueNum)) return 'wave-3';
+  if ([9, 10, 18].includes(issueNum)) return 'wave-4';
+  if ([19, 20, 21, 22, 23, 26, 28, 29, 30, 31].includes(issueNum)) return 'wave-5';
+  if ([32, 33].includes(issueNum)) return 'wave-6';
+  return 'wave-6';
+}
+
+function classifyGithubComment(commentObj) {
+  if (!commentObj || !commentObj.body || !commentObj.issue_url) return null;
+  const issueNum = Number(String(commentObj.issue_url).split('/').pop()) || 0;
+  const rawBody = String(commentObj.body);
+  const lines = rawBody.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) return null;
+
+  const firstLine = lines[0].replace(/^[#*>\-\s]+/, '').replace(/\*\*/g, '').trim();
+  const secondLine = (lines[1] || '').replace(/^[#*>\-\s]+/, '').replace(/\*\*/g, '').trim();
+  const ts = commentObj.created_at || commentObj.updated_at || new Date().toISOString();
+  const wave = inferWaveFromIssue(issueNum);
+  const commentKey = `comment-${commentObj.id}`;
+
+  let project = [18, 26, 29, 31].includes(issueNum) ? 'psearch-eval' : 'psearch';
+  let agent = 'lead';
+  let stepType = 'ISSUE_COMMENT';
+  let status = 'PASS';
+
+  if (/Evaluation & Deployment Approval|Claimed by `@eval-lead`|Evaluation & Observability Plan|Live Verification Sweep|Verification Complete: All 10|Final Deployment & Complete 22\/22|5-Layer Product Evaluation Methodology Pyramid|Empirical Verification & Delivery Summary \(Issue #29\)|Completed & Verified Live on Cloud Run \(Issue #31\)/i.test(rawBody)) {
+    project = 'psearch-eval';
+    agent = 'eval-lead';
+    stepType = /Approval/i.test(firstLine) ? 'EVAL_APPROVAL_GATE' : 'EVAL_REPORT';
+  } else if (/\(deployer/i.test(firstLine) || /rollout evidence \(deployer\)|re-rollout \(deployer\)|v2 LIVE \(deployer\)|v1 redeploy.*\(deployer\)|UI follow-up \(deployer\)|Follow-up \(deployer\)/i.test(firstLine)) {
+    project = 'psearch';
+    agent = 'deployer';
+    if (/ROLLED BACK/i.test(firstLine)) {
+      stepType = 'ROLLOUT_ROLLED_BACK';
+      status = 'ROLLED_BACK';
+    } else if (/Smoke test/i.test(firstLine)) {
+      stepType = 'SMOKE_TEST';
+    } else {
+      stepType = 'ROLLOUT_EVIDENCE';
+    }
+  } else if (/changes requested, not committed/i.test(firstLine)) {
+    project = 'psearch';
+    agent = 'lead';
+    stepType = 'REVIEW_REJECTED';
+    status = 'REJECTED';
+  } else if (/Accepted & closed|Accepted by PO & closed|Accepted & Verified|Accepted — closing|Closing #\d+|Done —/i.test(firstLine)) {
+    project = 'psearch';
+    agent = 'lead';
+    stepType = 'ISSUE_ACCEPTED_CLOSED';
+  } else if (/^lead[:\s]|Lead triage/i.test(firstLine)) {
+    project = 'psearch';
+    agent = 'lead';
+    stepType = /blocked by IAM/i.test(rawBody) ? 'IAM_BLOCKER_ESCALATION' : 'WAVE_ORCHESTRATION';
+    if (/blocked by IAM/i.test(rawBody)) status = 'BLOCKED_RESOLVED';
+  }
+
+  return {
+    project,
+    agent,
+    wave,
+    issue_number: issueNum,
+    step_type: stepType,
+    commit_sha: commentKey,
+    comment_url: commentObj.html_url || `https://github.com/duboc/scion-experiment/issues/${issueNum}#issuecomment-${commentObj.id}`,
+    event_timestamp: ts,
+    status,
+    title: `[Issue #${issueNum} Comment] ${firstLine.slice(0, 110)}`,
+    detail: (secondLine || firstLine).slice(0, 260)
+  };
+}
+
+function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], liveIssueComments = []) {
   const byAgentKey = {};
   for (const meta of AGENT_METADATA) {
     const key = `${meta.project}:${meta.name}`;
@@ -980,8 +1055,34 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = []) {
     }
   };
 
+  // Merge all GitHub issue comments across Issues #1-#33 so every rollout, review rejection, rollback, and acceptance is captured
+  const mergeComments = (comments) => {
+    if (!Array.isArray(comments)) return;
+    for (const cm of comments) {
+      const parsed = classifyGithubComment(cm);
+      if (!parsed || !parsed.commit_sha) continue;
+      const key = `${parsed.project}:${parsed.agent}`;
+      const bucket = byAgentKey[key];
+      if (bucket && !bucket.seenShas.has(parsed.commit_sha)) {
+        bucket.seenShas.add(parsed.commit_sha);
+        bucket.steps.push({
+          wave: parsed.wave,
+          issue_number: parsed.issue_number,
+          step_type: parsed.step_type,
+          commit_sha: parsed.commit_sha,
+          comment_url: parsed.comment_url,
+          event_timestamp: parsed.event_timestamp,
+          status: parsed.status,
+          title: parsed.title,
+          detail: parsed.detail
+        });
+      }
+    }
+  };
+
   mergeCommits(liveMainCommits, 'main');
   mergeCommits(liveEvalCommits, 'eval-dashboard');
+  mergeComments(liveIssueComments);
 
   const agentsSummary = [];
   const trajectoriesByAgent = {};

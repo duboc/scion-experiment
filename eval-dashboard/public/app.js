@@ -577,14 +577,24 @@
         ? '<a href="https://github.com/duboc/scion-experiment/issues/' + encodeURIComponent(s.issue_number) + '" target="_blank" class="mono">#' + escapeHTML(s.issue_number) + '</a>'
         : '—';
       const waveIssueCell = '<span class="mono">' + escapeHTML(s.wave || 'wave') + '</span> · ' + issuePart;
-      const commitCell = s.commit_sha
-        ? '<a href="https://github.com/duboc/scion-experiment/commit/' + encodeURIComponent(s.commit_sha) + '" target="_blank" class="mono">' + escapeHTML(String(s.commit_sha).slice(0, 7)) + '</a>'
-        : '<span class="mono" style="color:var(--text-muted);">spanner</span>';
+      const shaStr = String(s.commit_sha || '');
+      let commitCell = '<span class="mono" style="color:var(--text-muted);">spanner</span>';
+      if (shaStr.indexOf('comment-') === 0) {
+        const cid = shaStr.replace('comment-', '');
+        const cUrl = s.comment_url || ('https://github.com/duboc/scion-experiment/issues/' + encodeURIComponent(s.issue_number || 1) + '#issuecomment-' + encodeURIComponent(cid));
+        commitCell = '<a href="' + escapeHTML(cUrl) + '" target="_blank" class="mono">#' + escapeHTML(cid.slice(-6)) + '</a>';
+      } else if (shaStr) {
+        commitCell = '<a href="https://github.com/duboc/scion-experiment/commit/' + encodeURIComponent(shaStr) + '" target="_blank" class="mono">' + escapeHTML(shaStr.slice(0, 7)) + '</a>';
+      }
       const tsFormatted = s.timestamp ? escapeHTML(String(s.timestamp).replace('T', ' ').slice(0, 19)) : '—';
       const artifactsHtml = Array.isArray(s.artifacts) && s.artifacts.length > 0
         ? '<div class="mono" style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">Artifacts: ' + s.artifacts.map(a => escapeHTML(a)).join(' · ') + '</div>'
         : '';
-      const statusBadge = '<span class="badge badge--pass"><span class="badge-dot"></span>' + escapeHTML(s.status || 'PASS') + '</span>';
+      const stVal = s.status || 'PASS';
+      const stClass = (stVal === 'ROLLED_BACK' || stVal === 'REJECTED')
+        ? 'badge--critical'
+        : (stVal === 'BLOCKED_RESOLVED' ? 'badge--partial' : 'badge--pass');
+      const statusBadge = '<span class="badge ' + stClass + '"><span class="badge-dot"></span>' + escapeHTML(stVal) + '</span>';
 
       return '<tr>' +
         '<td class="mono num">#' + escapeHTML(stepNum) + '</td>' +

@@ -153,9 +153,11 @@ app.get('/api/agents', async (req, res) => {
       json: true
     });
 
+    const liveData = await fetchLiveCommitsForTrajectories(false);
     const trajPayload = buildTrajectoriesPayload(
-      backlogCache ? backlogCache.main_commits : [],
-      backlogCache ? backlogCache.eval_commits : []
+      liveData.mainCommits,
+      liveData.evalCommits,
+      liveData.issueComments
     );
 
     const agents = rows.map(r => {
@@ -211,8 +213,17 @@ app.get('/api/agents', async (req, res) => {
   }
 });
 
-// Helper to fetch live GitHub commits for trajectory reconstruction
-async function fetchLiveCommitsForTrajectories() {
+let trajGithubCache = null;
+let trajGithubCacheTime = 0;
+const TRAJ_GITHUB_CACHE_TTL_MS = 60 * 1000;
+
+// Helper to fetch live GitHub commits and issue comments for trajectory reconstruction
+async function fetchLiveCommitsForTrajectories(forceRefresh = false) {
+  const now = Date.now();
+  if (!forceRefresh && trajGithubCache && (now - trajGithubCacheTime < TRAJ_GITHUB_CACHE_TTL_MS)) {
+    return trajGithubCache;
+  }
+
   const headers = {
     'User-Agent': 'psearch-eval-dashboard',
     'Accept': 'application/vnd.github.v3+json'
@@ -221,9 +232,9 @@ async function fetchLiveCommitsForTrajectories() {
   if (token && token.trim()) {
     headers['Authorization'] = `Bearer ${token.trim()}`;
   }
-  const fetchBranchCommits = async (branch) => {
+  const fetchGithubArray = async (pathUrl) => {
     try {
-      const resp = await fetch(`https://api.github.com/repos/duboc/scion-experiment/commits?sha=${branch}&per_page=50`, { headers });
+      const resp = await fetch(`https://api.github.com/repos/duboc/scion-experiment${pathUrl}`, { headers });
       if (!resp.ok) return [];
       const data = await resp.json();
       return Array.isArray(data) ? data : [];
@@ -231,25 +242,24 @@ async function fetchLiveCommitsForTrajectories() {
       return [];
     }
   };
-  const [mainCommits, evalCommits] = await Promise.all([
-    fetchBranchCommits('main'),
-    fetchBranchCommits('eval-dashboard')
+  const [mainCommits, evalCommits, commentsPage1, commentsPage2] = await Promise.all([
+    fetchGithubArray('/commits?sha=main&per_page=100'),
+    fetchGithubArray('/commits?sha=eval-dashboard&per_page=100'),
+    fetchGithubArray('/issues/comments?per_page=100&page=1'),
+    fetchGithubArray('/issues/comments?per_page=100&page=2')
   ]);
-  return { mainCommits, evalCommits };
+  const issueComments = [...commentsPage1, ...commentsPage2];
+  trajGithubCache = { mainCommits, evalCommits, issueComments };
+  trajGithubCacheTime = now;
+  return trajGithubCache;
 }
 
 // GET /api/trajectories - Returns per-agent and chronological execution trajectories across psearch and psearch-eval
 app.get('/api/trajectories', async (req, res) => {
   try {
-    let mainCommits = backlogCache ? backlogCache.main_commits : [];
-    let evalCommits = backlogCache ? backlogCache.eval_commits : [];
-    if (req.query.live === 'true' || (!mainCommits.length && !evalCommits.length)) {
-      const fetched = await fetchLiveCommitsForTrajectories();
-      mainCommits = fetched.mainCommits;
-      evalCommits = fetched.evalCommits;
-    }
-
-    const payload = buildTrajectoriesPayload(mainCommits, evalCommits);
+    const forceLive = req.query.live === 'true';
+    const { mainCommits, evalCommits, issueComments } = await fetchLiveCommitsForTrajectories(forceLive);
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments);
 
     // Check Cloud Spanner row count in agent_trajectories for telemetry verification
     let spannerRowCount = 0;
@@ -289,12 +299,12 @@ app.get('/api/trajectories', async (req, res) => {
   }
 });
 
-// POST /api/trajectories/rebuild - Rebuilds all psearch & psearch-eval agent trajectories from git + ADRs + reviews and persists to Cloud Spanner
+// POST /api/trajectories/rebuild - Rebuilds all psearch & psearch-eval agent trajectories from git + issue comments + ADRs + reviews and persists to Cloud Spanner
 app.post('/api/trajectories/rebuild', async (req, res) => {
   const start = Date.now();
   try {
-    const { mainCommits, evalCommits } = await fetchLiveCommitsForTrajectories();
-    const payload = buildTrajectoriesPayload(mainCommits, evalCommits);
+    const { mainCommits, evalCommits, issueComments } = await fetchLiveCommitsForTrajectories(true);
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments);
     const db = getSpannerDatabase();
     let syncStats = { synced_steps: 0, synced_agents: 0, error: null };
     if (db) {
