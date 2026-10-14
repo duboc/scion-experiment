@@ -273,3 +273,9 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
 - **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), private worktree `/tmp/rev-30` (removed)
 - **Status:** PASS
 - **Checks:** `go vet` / `go test -race` PASS incl. `TestStorefrontInlineJSParses` (node --check of the inline storefront script), `TestStorefrontShowAllCatalog`, `TestCatalogBrowse`, `TestBrowseSQL`; independent node --check of the extracted script exits 0; missing brace restored, empty initial query, "Show All Catalog"; empty/`*` queries use Spanner `catalog_browse` (all catalog filters, bound params, optimizer hint, availability first) and skip zero-results recovery; sqlcheck browse cases; README has all 14 sections with accurate paths, routes, parameters and Gen AI endpoints; no real IDs/URLs/emails/tokens. Issues found: none.
+
+## #32 Variant grouping / collapse (e5cd6b7, de966b8)
+- **Date:** 2026-10-14
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), private worktree `/tmp/rev-32` (removed)
+- **Status:** PASS
+- **Checks:** `go vet` / `go test -race` PASS (variants tests + API test); ADR-009: migration 022 + seeds 022b (std SKU as first variant) / 022c (74 variants) match `DefaultVariants`; one row per parent; `EXISTS` color/size filters on in-stock child SKUs in both RRF legs and browse; `ARRAY(SELECT AS STRUCT …)` aggregation in the same statement; `variants` / `variant_count` / `available_colors` / `available_sizes`; colors/sizes facets count each parent once; memory parity; bound params; 400 validation; sqlcheck variant cases. Issues: none.
