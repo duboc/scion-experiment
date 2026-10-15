@@ -1187,6 +1187,7 @@ const COMMIT_SHA_MAP = {
   'c9d8436': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'ISSUE_ACCEPTED_CLOSED' },
   '508867f': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'DOCS_SYNC' },
   'c148a6f': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'ADR_PLAN' },
+  '0a850c9': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'BACKEND_IMPL' },
   'ea9d6e4': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
   '2f2702a': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'ui-craftsman',  step_type: 'UI_IMPL' },
   '24d62c2': { issue_number: 11, pr_number: 12, project: 'psearch',      agent: 'lead',            step_type: 'ADR_PLAN' },
