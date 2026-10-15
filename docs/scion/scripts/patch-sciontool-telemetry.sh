@@ -88,6 +88,7 @@ for c in '"${CONTAINERS[*]}"'; do
 
   # Ensure credentials exist in container
   docker exec -u 0 "$c" mkdir -p /home/scion/.scion /root/.scion
+  docker exec -u 0 "$c" sh -c "chmod 666 /tmp/scion-trace-state.json /tmp/scion-trace-state.json.lock 2>/dev/null || true; rm -f /tmp/scion-trace-state.json.tmp"
   if [ -f "$KEY" ]; then
     docker cp "$KEY" "$c:/home/scion/.scion/telemetry-gcp-credentials.json"
     docker cp "$KEY" "$c:/root/.scion/telemetry-gcp-credentials.json"

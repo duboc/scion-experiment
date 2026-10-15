@@ -421,3 +421,21 @@ fix now lives. Dates are UTC. "Encoded in" points to the script, template rule o
   - [`scripts/patch-antigravity-hooks.py`](scripts/patch-antigravity-hooks.py)
   - [`scripts/patch-opencode-and-hermes.py`](scripts/patch-opencode-and-hermes.py)
   - [`scripts/push-templates.py`](scripts/push-templates.py)
+
+## L27. Cross-process trace state (`tracestate.go`) and stacked parent-child conversation traces in Cloud Trace
+
+- **When:** 2026-10-15.
+- **Symptom:** Traces from agent containers appeared in Cloud Trace, but every hook invocation (`agent.turn.start`, `agent.tool.result`, `gen_ai.api.response`, `agent.turn.end`) showed up as an isolated ~0ms root span with `parentSpanId: null` and a random `traceId`. Operators could not expand a waterfall of a turn or follow a multi-turn conversation path.
+- **Root Causes:**
+  1. **Ephemeral Hook Processes + In-Memory `sync.Map`:** Every harness hook (`PreInvocation`, `PostInvocation`, `PreToolUse`, `PostToolUse`, `Stop`) executes as a separate short-lived `sciontool hook` process. `TelemetryHandler` stored in-flight spans in an in-memory `sync.Map` (`h.spanStore`). Because `startSpan` never called `span.End()`, start events (`PreInvocation`, `PreToolUse`) were discarded when their hook process exited; end events (`PostInvocation`, `PostToolUse`, `Stop`) ran in a fresh process where `h.spanStore` was empty and fell back to `singleSpan(context.Background())` — emitting a ~0ms root span with a brand-new `TraceID`.
+  2. **Claude Code Native OTLP Logs Lacked Trace Context & Child Spans:** Claude Code emits `api_request` events as native OTLP logs to `127.0.0.1:4317` without a `TraceId`/`SpanId`, so Claude API calls were invisible inside the turn's Cloud Trace waterfall.
+  3. **Antigravity `PostToolUse` Omitted `tool_name`:** Antigravity's `PostToolUse` hook payload only carries `response` (omitting `toolCall.name`), so without state persisted from `PreToolUse`, `agent.tool.result` spans had empty `tool_name`.
+  4. **Sticky `/tmp` Ownership Between `root` and `scion`:** Container lifecycle hooks (`post-start`) run as `root` (`uid=0`), whereas harness hooks run as `scion` (`uid=1000`). Writing `/tmp/scion-trace-state.json` with `0600` or via `os.Rename` failed across `root`/`scion` in sticky `/tmp` (`1777`).
+- **Fix:**
+  1. **Cross-Process `TraceState` (`/tmp/scion-trace-state.json`):** Implemented `pkg/sciontool/telemetry/tracestate.go` with `syscall.Flock` locking and world-rw (`0666`) in-place truncation (`O_CREATE|O_RDWR|O_TRUNC`), plus `ExplicitIDGenerator` so `sdktrace.TracerProvider` honors persisted `TraceID`, `TurnSpanID`, `PendingModel`, and `PendingTools` across hook processes.
+  2. **Hierarchical Turn Waterfall (`agent.turn/<agent_slug>`):**
+     - Root span `agent.turn/<agent_slug>` (`SpanID = TurnSpanID`, `ParentSpanID = nil`) spans `[TurnStartTime, TurnEndTime]` with summary attributes (`turn.index`, `turn.model_calls`, `turn.tool_calls`, cumulative token usage, `scion.previous_trace_id`) and an OTel **Span Link** (`link.type = "previous_turn"`) to the previous turn in the conversation.
+     - Child spans (`ParentSpanID = TurnSpanID`) share the turn's `TraceID` and real `[StartTime, EndTime]` durations: `agent.turn.prompt`, `gen_ai.api.response/<model>`, `agent.tool.result/<tool_name>`, and `agent.status/<status_type>` (which nests 3 levels deep under the active tool span when `sciontool status` runs inside a tool call).
+  3. **Claude Code Log-to-Span Synthesis & Cloud Logging Correlation:** `CorrelateAndSynthesizeClaudeSpans` attaches the active turn's `TraceID`/`SpanID` to native OTLP logs and synthesizes `gen_ai.api.response/<model>` child spans for `api_request`/`api_error`. `protoLogToCloudEntry` sets top-level `entry.SpanID`, `entry.TraceSampled = true`, and `SCION_GCP_PROJECT_ID` fallback so logs appear inline inside Cloud Trace waterfalls.
+  4. **Safe Live Deployment:** Update `/usr/local/bin/sciontool.real` in running containers via `docker cp` ([`scripts/patch-sciontool-telemetry.sh`](scripts/patch-sciontool-telemetry.sh)) — never run `docker restart` on `--rm` Scion containers.
+- **Encoded in:** [`scripts/patch-sciontool-telemetry.sh`](scripts/patch-sciontool-telemetry.sh), [`scripts/verify-telemetry-e2e.sh`](scripts/verify-telemetry-e2e.sh).
