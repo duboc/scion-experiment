@@ -554,6 +554,374 @@
   let selectedInteractionEdge = 'all';
   let showTrajectoryConversationTraces = true;
   let trajChatInitialized = false;
+  let costLedgerMode = 'pr'; // 'pr' or 'issue'
+  let selectedDrilldownWorkItem = { type: 'pr', id: 17 };
+  let selectedTrajectoryPrFilter = 'all';
+  let selectedTrajectoryIssueFilter = 'all';
+
+  function switchCostLedgerMode(mode) {
+    costLedgerMode = (mode === 'issue') ? 'issue' : 'pr';
+    const btnPr = document.getElementById('btn-cost-mode-pr');
+    const btnIss = document.getElementById('btn-cost-mode-issue');
+    if (btnPr) btnPr.setAttribute('aria-pressed', costLedgerMode === 'pr' ? 'true' : 'false');
+    if (btnIss) btnIss.setAttribute('aria-pressed', costLedgerMode === 'issue' ? 'true' : 'false');
+
+    if (costLedgerMode === 'issue' && selectedDrilldownWorkItem.type !== 'issue') {
+      selectedDrilldownWorkItem = { type: 'issue', id: 35 };
+    } else if (costLedgerMode === 'pr' && selectedDrilldownWorkItem.type !== 'pr') {
+      selectedDrilldownWorkItem = { type: 'pr', id: 17 };
+    }
+    renderCostAndWorkItemExplorer();
+  }
+
+  function selectCostDrilldownItem(type, num, applyTurnFilter) {
+    const cleanNum = Number(num);
+    if (!cleanNum) return;
+    selectedDrilldownWorkItem = { type: type === 'issue' ? 'issue' : 'pr', id: cleanNum };
+    if (type === 'issue' && costLedgerMode !== 'issue') {
+      costLedgerMode = 'issue';
+      const btnPr = document.getElementById('btn-cost-mode-pr');
+      const btnIss = document.getElementById('btn-cost-mode-issue');
+      if (btnPr) btnPr.setAttribute('aria-pressed', 'false');
+      if (btnIss) btnIss.setAttribute('aria-pressed', 'true');
+    } else if (type === 'pr' && costLedgerMode !== 'pr') {
+      costLedgerMode = 'pr';
+      const btnPr = document.getElementById('btn-cost-mode-pr');
+      const btnIss = document.getElementById('btn-cost-mode-issue');
+      if (btnPr) btnPr.setAttribute('aria-pressed', 'true');
+      if (btnIss) btnIss.setAttribute('aria-pressed', 'false');
+    }
+
+    if (applyTurnFilter !== false) {
+      selectedInteractionEdge = 'all';
+      selectedTrajectoryProject = 'all';
+      selectedTrajectoryAgent = 'all';
+      document.querySelectorAll('[data-traj-key]').forEach(b => {
+        b.setAttribute('aria-pressed', b.getAttribute('data-traj-key') === 'all:all' ? 'true' : 'false');
+      });
+      if (type === 'pr') {
+        selectedTrajectoryPrFilter = String(cleanNum);
+        selectedTrajectoryIssueFilter = 'all';
+      } else {
+        selectedTrajectoryIssueFilter = String(cleanNum);
+        selectedTrajectoryPrFilter = 'all';
+      }
+      syncWorkItemSelectDropdowns();
+      renderAgentTrajectory();
+    } else {
+      renderCostAndWorkItemExplorer();
+    }
+  }
+
+  function filterTurnsByDrilldownAgent(project, agentName) {
+    if (!project || !agentName) return;
+    selectedInteractionEdge = 'all';
+    selectedTrajectoryProject = project;
+    selectedTrajectoryAgent = agentName;
+    const targetKey = project + ':' + agentName;
+    document.querySelectorAll('[data-traj-key]').forEach(b => {
+      b.setAttribute('aria-pressed', b.getAttribute('data-traj-key') === targetKey ? 'true' : 'false');
+    });
+    renderAgentTrajectory();
+  }
+
+  function onTrajectoryPrFilterChange(val) {
+    selectedTrajectoryPrFilter = val || 'all';
+    if (selectedTrajectoryPrFilter !== 'all') {
+      selectedTrajectoryIssueFilter = 'all';
+      selectedInteractionEdge = 'all';
+      selectedTrajectoryProject = 'all';
+      selectedTrajectoryAgent = 'all';
+      document.querySelectorAll('[data-traj-key]').forEach(b => {
+        b.setAttribute('aria-pressed', b.getAttribute('data-traj-key') === 'all:all' ? 'true' : 'false');
+      });
+      selectedDrilldownWorkItem = { type: 'pr', id: Number(selectedTrajectoryPrFilter) };
+      costLedgerMode = 'pr';
+      const btnPr = document.getElementById('btn-cost-mode-pr');
+      const btnIss = document.getElementById('btn-cost-mode-issue');
+      if (btnPr) btnPr.setAttribute('aria-pressed', 'true');
+      if (btnIss) btnIss.setAttribute('aria-pressed', 'false');
+    }
+    syncWorkItemSelectDropdowns();
+    renderAgentTrajectory();
+  }
+
+  function onTrajectoryIssueFilterChange(val) {
+    selectedTrajectoryIssueFilter = val || 'all';
+    if (selectedTrajectoryIssueFilter !== 'all') {
+      selectedTrajectoryPrFilter = 'all';
+      selectedInteractionEdge = 'all';
+      selectedTrajectoryProject = 'all';
+      selectedTrajectoryAgent = 'all';
+      document.querySelectorAll('[data-traj-key]').forEach(b => {
+        b.setAttribute('aria-pressed', b.getAttribute('data-traj-key') === 'all:all' ? 'true' : 'false');
+      });
+      selectedDrilldownWorkItem = { type: 'issue', id: Number(selectedTrajectoryIssueFilter) };
+      costLedgerMode = 'issue';
+      const btnPr = document.getElementById('btn-cost-mode-pr');
+      const btnIss = document.getElementById('btn-cost-mode-issue');
+      if (btnPr) btnPr.setAttribute('aria-pressed', 'false');
+      if (btnIss) btnIss.setAttribute('aria-pressed', 'true');
+    }
+    syncWorkItemSelectDropdowns();
+    renderAgentTrajectory();
+  }
+
+  function clearTrajectoryWorkItemFilters() {
+    selectedTrajectoryPrFilter = 'all';
+    selectedTrajectoryIssueFilter = 'all';
+    syncWorkItemSelectDropdowns();
+    renderAgentTrajectory();
+  }
+
+  function syncWorkItemSelectDropdowns() {
+    const selPr = document.getElementById('traj-filter-pr');
+    const selIssue = document.getElementById('traj-filter-issue');
+    const clearBtn = document.getElementById('btn-clear-traj-workitem-filters');
+    if (selPr && selPr.value !== String(selectedTrajectoryPrFilter)) {
+      selPr.value = String(selectedTrajectoryPrFilter);
+    }
+    if (selIssue && selIssue.value !== String(selectedTrajectoryIssueFilter)) {
+      selIssue.value = String(selectedTrajectoryIssueFilter);
+    }
+    if (clearBtn) {
+      clearBtn.style.display = (selectedTrajectoryPrFilter !== 'all' || selectedTrajectoryIssueFilter !== 'all') ? 'inline-flex' : 'none';
+    }
+  }
+
+  function renderCostAndWorkItemExplorer() {
+    if (!cachedTrajectories) return;
+    const costSummary = cachedTrajectories.cost_summary || {};
+    const prRollups = Array.isArray(cachedTrajectories.pr_rollups) ? cachedTrajectories.pr_rollups : [];
+    const issueRollups = Array.isArray(cachedTrajectories.issue_rollups) ? cachedTrajectories.issue_rollups : [];
+
+    // 1. Update Top Cost Banner Summary
+    const bannerEl = document.getElementById('traj-cost-banner-summary');
+    if (bannerEl && costSummary.total_cost_usd !== undefined) {
+      const totM = ((Number(costSummary.total_tokens) || 0) / 1e6).toFixed(2);
+      bannerEl.innerHTML =
+        'Total Factory Cost: <strong style="color:var(--text-primary);">$' + Number(costSummary.total_cost_usd || 0).toFixed(4) + ' USD</strong> ' +
+        '(psearch: $' + Number(costSummary.psearch_cost_usd || 0).toFixed(4) + ' · psearch-eval: $' + Number(costSummary.psearch_eval_cost_usd || 0).toFixed(4) + ') · ' +
+        'Total Turns: <strong>' + (costSummary.total_turns || 0) + '</strong> (' + (costSummary.total_steps || 0) + ' steps · ' + (costSummary.total_model_calls || 0) + ' model calls · ' + (costSummary.total_tool_calls || 0) + ' tool calls · ' + totM + 'M tokens)';
+    }
+
+    // 2. Populate PR & Issue Filter Dropdowns
+    const selPr = document.getElementById('traj-filter-pr');
+    if (selPr && prRollups.length > 0) {
+      let prOpts = '<option value="all">All Pull Requests (' + prRollups.length + ' PRs · #12–#27)</option>';
+      prRollups.forEach(pr => {
+        const selAttr = String(selectedTrajectoryPrFilter) === String(pr.pr_number) ? ' selected' : '';
+        prOpts += '<option value="' + escapeHTML(pr.pr_number) + '"' + selAttr + '>' +
+          'PR #' + escapeHTML(pr.pr_number) + ' ($' + Number(pr.cost_usd || 0).toFixed(4) + ' · ' + (pr.turns_count || 0) + ' turns · ' + (pr.agents_count || 0) + ' agents) — ' + escapeHTML(String(pr.title || '').slice(0, 46)) +
+          '</option>';
+      });
+      selPr.innerHTML = prOpts;
+    }
+
+    const selIssue = document.getElementById('traj-filter-issue');
+    if (selIssue && issueRollups.length > 0) {
+      let issOpts = '<option value="all">All GitHub Issues (' + issueRollups.length + ' Issues · #1–#35)</option>';
+      issueRollups.forEach(ir => {
+        const selAttr = String(selectedTrajectoryIssueFilter) === String(ir.issue_number) ? ' selected' : '';
+        issOpts += '<option value="' + escapeHTML(ir.issue_number) + '"' + selAttr + '>' +
+          'Issue #' + escapeHTML(ir.issue_number) + ' [' + escapeHTML(ir.req_id || '') + '] ($' + Number(ir.cost_usd || 0).toFixed(4) + ' · ' + (ir.turns_count || 0) + ' turns · ' + (ir.agents_count || 0) + ' agents) — ' + escapeHTML(String(ir.title || '').slice(0, 42)) +
+          '</option>';
+      });
+      selIssue.innerHTML = issOpts;
+    }
+    syncWorkItemSelectDropdowns();
+
+    // 3. Render Left Table: PR Ledger or Issue Ledger
+    const tbodyList = document.getElementById('tbody-cost-workitems');
+    const thWorkitem = document.getElementById('th-cost-workitem');
+    const tblTitle = document.getElementById('cost-ledger-table-title');
+    const tblMeta = document.getElementById('cost-ledger-table-meta');
+
+    if (tbodyList) {
+      if (costLedgerMode === 'pr') {
+        if (thWorkitem) thWorkitem.textContent = 'PR';
+        if (tblTitle) tblTitle.textContent = 'Pull Request Cost, Turns & Agent Ledger (Click Any Row to Dig In & Filter Turns)';
+        if (tblMeta) tblMeta.textContent = prRollups.length + ' Merged PRs (#12–#27) · Avg $' + Number(costSummary.avg_cost_per_pr_usd || 0).toFixed(4) + '/PR';
+
+        tbodyList.innerHTML = prRollups.map(pr => {
+          const isSelected = selectedDrilldownWorkItem.type === 'pr' && Number(selectedDrilldownWorkItem.id) === Number(pr.pr_number);
+          const isFiltered = String(selectedTrajectoryPrFilter) === String(pr.pr_number);
+          const rowStyle = isSelected ? 'background:var(--bg-elevated);border-left:3px solid var(--accent-primary);' : 'cursor:pointer;';
+          const linkedIssuesStr = (pr.linked_issues || []).map(i => '#' + i).join(', ');
+          const agentsList = (pr.agents_involved || []).map(a => '@' + a.agent).join(', ');
+
+          return '<tr style="' + rowStyle + '" onclick="selectCostDrilldownItem(\'pr\',' + Number(pr.pr_number) + ',true)">' +
+            '<td class="mono" style="white-space:nowrap;font-weight:700;">' +
+              '<a href="https://github.com/duboc/scion-experiment/pull/' + encodeURIComponent(pr.pr_number) + '" target="_blank" onclick="event.stopPropagation()">PR #' + escapeHTML(pr.pr_number) + '</a>' +
+              '<div style="font-size:0.66rem;color:var(--text-muted);">' + escapeHTML(pr.merge_commit || '') + '</div>' +
+            '</td>' +
+            '<td>' +
+              '<div style="font-weight:600;font-size:0.78rem;">' + escapeHTML(pr.title || '') + '</div>' +
+              '<div class="mono" style="font-size:0.68rem;color:var(--text-muted);margin-top:0.12rem;">' +
+                escapeHTML(pr.branch || 'main') + ' · Issues: ' + escapeHTML(linkedIssuesStr || '—') + ' · +' + (pr.additions || 0) + '/-' + (pr.deletions || 0) + ' (' + (pr.changed_files || 0) + ' files)' +
+              '</div>' +
+            '</td>' +
+            '<td class="mono num" style="font-weight:700;color:var(--text-primary);white-space:nowrap;">$' + Number(pr.cost_usd || 0).toFixed(4) + '</td>' +
+            '<td class="mono num" style="white-space:nowrap;">' +
+              '<strong>' + (pr.turns_count || 0) + '</strong> turns' +
+              '<div style="font-size:0.66rem;color:var(--text-muted);">' + (pr.steps_count || 0) + ' steps · ' + (pr.tool_calls_count || 0) + ' tools</div>' +
+            '</td>' +
+            '<td class="mono" style="font-size:0.7rem;">' +
+              '<strong>' + (pr.agents_count || 0) + ' agents</strong>' +
+              '<div style="font-size:0.66rem;color:var(--text-secondary);">' + escapeHTML(agentsList) + '</div>' +
+            '</td>' +
+            '<td>' +
+              '<button type="button" class="btn mono" style="padding:0.18rem 0.48rem;font-size:0.68rem;' + (isFiltered ? 'background:var(--accent-primary);color:var(--bg-surface);' : '') + '" onclick="event.stopPropagation();selectCostDrilldownItem(\'pr\',' + Number(pr.pr_number) + ',true)">' +
+                (isFiltered ? 'Active Filter ✓' : 'Dig In &rarr;') +
+              '</button>' +
+            '</td>' +
+          '</tr>';
+        }).join('');
+      } else {
+        if (thWorkitem) thWorkitem.textContent = 'Issue';
+        if (tblTitle) tblTitle.textContent = 'GitHub Issue Cost, Turns & Agent Ledger (Click Any Row to Dig In & Filter Turns)';
+        if (tblMeta) tblMeta.textContent = issueRollups.length + ' Issues (#1–#35) · Avg $' + Number(costSummary.avg_cost_per_issue_usd || 0).toFixed(4) + '/Issue';
+
+        tbodyList.innerHTML = issueRollups.map(ir => {
+          const isSelected = selectedDrilldownWorkItem.type === 'issue' && Number(selectedDrilldownWorkItem.id) === Number(ir.issue_number);
+          const isFiltered = String(selectedTrajectoryIssueFilter) === String(ir.issue_number);
+          const rowStyle = isSelected ? 'background:var(--bg-elevated);border-left:3px solid var(--accent-primary);' : 'cursor:pointer;';
+          const prLinksStr = (ir.linked_prs && ir.linked_prs.length > 0) ? (' · PR #' + ir.linked_prs.join(', PR #')) : '';
+          const agentsList = (ir.agents_involved || []).map(a => '@' + a.agent).join(', ');
+
+          return '<tr style="' + rowStyle + '" onclick="selectCostDrilldownItem(\'issue\',' + Number(ir.issue_number) + ',true)">' +
+            '<td class="mono" style="white-space:nowrap;font-weight:700;">' +
+              '<a href="https://github.com/duboc/scion-experiment/issues/' + encodeURIComponent(ir.issue_number) + '" target="_blank" onclick="event.stopPropagation()">#' + escapeHTML(ir.issue_number) + '</a>' +
+              '<div style="font-size:0.66rem;color:var(--text-muted);">' + escapeHTML(ir.req_id || '') + '</div>' +
+            '</td>' +
+            '<td>' +
+              '<div style="font-weight:600;font-size:0.78rem;">' + escapeHTML(ir.title || '') + '</div>' +
+              '<div class="mono" style="font-size:0.68rem;color:var(--text-muted);margin-top:0.12rem;">' +
+                escapeHTML(ir.wave || '') + prLinksStr + (ir.cloud_run_revision ? (' · ' + escapeHTML(ir.cloud_run_revision)) : '') +
+              '</div>' +
+            '</td>' +
+            '<td class="mono num" style="font-weight:700;color:var(--text-primary);white-space:nowrap;">$' + Number(ir.cost_usd || 0).toFixed(4) + '</td>' +
+            '<td class="mono num" style="white-space:nowrap;">' +
+              '<strong>' + (ir.turns_count || 0) + '</strong> turns' +
+              '<div style="font-size:0.66rem;color:var(--text-muted);">' + (ir.steps_count || 0) + ' steps · ' + (ir.tool_calls_count || 0) + ' tools</div>' +
+            '</td>' +
+            '<td class="mono" style="font-size:0.7rem;">' +
+              '<strong>' + (ir.agents_count || 0) + ' agents</strong>' +
+              '<div style="font-size:0.66rem;color:var(--text-secondary);">' + escapeHTML(agentsList) + '</div>' +
+            '</td>' +
+            '<td>' +
+              '<button type="button" class="btn mono" style="padding:0.18rem 0.48rem;font-size:0.68rem;' + (isFiltered ? 'background:var(--accent-primary);color:var(--bg-surface);' : '') + '" onclick="event.stopPropagation();selectCostDrilldownItem(\'issue\',' + Number(ir.issue_number) + ',true)">' +
+                (isFiltered ? 'Active Filter ✓' : 'Dig In &rarr;') +
+              '</button>' +
+            '</td>' +
+          '</tr>';
+        }).join('');
+      }
+    }
+
+    // 4. Render Right Zone: Deep-Dive Inspector Card for Selected PR or Issue
+    const ddTitle = document.getElementById('drilldown-workitem-title');
+    const ddMeta = document.getElementById('drilldown-workitem-meta');
+    const ddActions = document.getElementById('drilldown-workitem-actions');
+    const ddKpis = document.getElementById('drilldown-workitem-kpis');
+    const ddAgentsTbody = document.getElementById('tbody-drilldown-agents');
+
+    let targetItem = null;
+    if (selectedDrilldownWorkItem.type === 'pr') {
+      targetItem = prRollups.find(p => Number(p.pr_number) === Number(selectedDrilldownWorkItem.id)) || prRollups[0];
+    } else {
+      targetItem = issueRollups.find(i => Number(i.issue_number) === Number(selectedDrilldownWorkItem.id)) || issueRollups[0];
+    }
+
+    if (!targetItem) return;
+
+    const isPr = selectedDrilldownWorkItem.type === 'pr';
+    const itemId = isPr ? targetItem.pr_number : targetItem.issue_number;
+
+    if (ddTitle) {
+      ddTitle.innerHTML = isPr
+        ? ('PR #' + escapeHTML(itemId) + ': ' + escapeHTML(targetItem.title || ''))
+        : ('Issue #' + escapeHTML(itemId) + ' (' + escapeHTML(targetItem.req_id || '') + '): ' + escapeHTML(targetItem.title || ''));
+    }
+    if (ddMeta) {
+      if (isPr) {
+        const linkedIss = (targetItem.linked_issues || []).map(n => '#' + n).join(', ');
+        ddMeta.innerHTML = 'Merge Commit: <strong>' + escapeHTML(targetItem.merge_commit || 'main') + '</strong> · Branch: ' + escapeHTML(targetItem.branch || 'main') + ' · Linked Issues: <strong>' + escapeHTML(linkedIss || 'n/a') + '</strong> · Diff: +' + (targetItem.additions || 0) + ' / -' + (targetItem.deletions || 0) + ' (' + (targetItem.changed_files || 0) + ' files)';
+      } else {
+        const linkedPrs = (targetItem.linked_prs && targetItem.linked_prs.length > 0) ? ('PR #' + targetItem.linked_prs.join(', PR #')) : 'Direct main commit flow';
+        ddMeta.innerHTML = 'Wave: <strong>' + escapeHTML(targetItem.wave || '') + '</strong> · Linked PRs: <strong>' + escapeHTML(linkedPrs) + '</strong> · Cloud Run Revision: <strong>' + escapeHTML(targetItem.cloud_run_revision || 'psearch-serving') + '</strong>';
+      }
+    }
+    if (ddActions) {
+      const ghUrl = isPr
+        ? ('https://github.com/duboc/scion-experiment/pull/' + encodeURIComponent(itemId))
+        : ('https://github.com/duboc/scion-experiment/issues/' + encodeURIComponent(itemId));
+      const isCurrentlyFiltered = isPr
+        ? (String(selectedTrajectoryPrFilter) === String(itemId))
+        : (String(selectedTrajectoryIssueFilter) === String(itemId));
+      ddActions.innerHTML =
+        '<button type="button" class="btn mono" style="padding:0.2rem 0.55rem;font-size:0.7rem;' + (isCurrentlyFiltered ? 'background:var(--accent-primary);color:var(--bg-surface);' : '') + '" onclick="selectCostDrilldownItem(\'' + (isPr ? 'pr' : 'issue') + '\',' + Number(itemId) + ',true)">' +
+          (isCurrentlyFiltered ? 'Filtering Turns Below ✓' : 'Filter Turns Below &darr;') +
+        '</button>' +
+        '<a href="' + escapeHTML(ghUrl) + '" target="_blank" class="btn mono" style="padding:0.2rem 0.5rem;font-size:0.7rem;text-decoration:none;">GitHub &nearr;</a>';
+    }
+
+    if (ddKpis) {
+      const tokK = ((Number(targetItem.total_tokens) || 0) / 1000).toFixed(1);
+      ddKpis.innerHTML =
+        '<div style="padding:0.55rem 0.85rem;border-right:1px solid var(--border-hairline);">' +
+          '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;">Total ' + (isPr ? 'PR' : 'Issue') + ' Cost</div>' +
+          '<div class="mono num" style="font-size:1.05rem;font-weight:700;color:var(--text-primary);margin-top:0.1rem;">$' + Number(targetItem.cost_usd || 0).toFixed(4) + ' <span style="font-size:0.7rem;color:var(--text-muted);">USD</span></div>' +
+        '</div>' +
+        '<div style="padding:0.55rem 0.85rem;border-right:1px solid var(--border-hairline);">' +
+          '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;">Turns &amp; Steps</div>' +
+          '<div class="mono num" style="font-size:1.05rem;font-weight:700;color:var(--text-primary);margin-top:0.1rem;">' + (targetItem.turns_count || 0) + ' <span style="font-size:0.72rem;font-weight:500;color:var(--text-secondary);">turns (' + (targetItem.steps_count || 0) + ' steps)</span></div>' +
+        '</div>' +
+        '<div style="padding:0.55rem 0.85rem;border-right:1px solid var(--border-hairline);">' +
+          '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;">Agents Involved</div>' +
+          '<div class="mono num" style="font-size:1.05rem;font-weight:700;color:var(--accent-primary);margin-top:0.1rem;">' + (targetItem.agents_count || 0) + ' <span style="font-size:0.72rem;font-weight:500;color:var(--text-secondary);">agents</span></div>' +
+        '</div>' +
+        '<div style="padding:0.55rem 0.85rem;">' +
+          '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;">Calls, Tools &amp; Tokens</div>' +
+          '<div class="mono num" style="font-size:0.86rem;font-weight:700;color:var(--text-primary);margin-top:0.18rem;">' + (targetItem.model_calls_count || 0) + ' calls · ' + (targetItem.tool_calls_count || 0) + ' tools · ' + tokK + 'k tok</div>' +
+        '</div>';
+    }
+
+    if (ddAgentsTbody) {
+      const agentsBreakdown = Array.isArray(targetItem.agents_involved) ? targetItem.agents_involved : [];
+      if (agentsBreakdown.length === 0) {
+        ddAgentsTbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:0.8rem;">No agent steps recorded for this item.</td></tr>';
+      } else {
+        ddAgentsTbody.innerHTML = agentsBreakdown.map(ag => {
+          const sharePct = Number(ag.share_pct || 0);
+          const barW = Math.min(100, Math.max(4, Math.round(sharePct)));
+          const tokStr = ((Number(ag.total_tokens) || 0) / 1000).toFixed(1) + 'k';
+          const safeProj = escapeHTML(ag.project || 'psearch').replace(/'/g, "\\'");
+          const safeAg = escapeHTML(ag.agent || 'lead').replace(/'/g, "\\'");
+          return '<tr style="cursor:pointer;" title="Click to filter turn table below to @' + escapeHTML(ag.agent) + ' on this ' + (isPr ? 'PR' : 'Issue') + '" onclick="filterTurnsByDrilldownAgent(\'' + safeProj + '\',\'' + safeAg + '\')">' +
+            '<td class="mono">' +
+              '<strong>@' + escapeHTML(ag.agent) + '</strong>' +
+              '<span style="font-size:0.66rem;color:var(--text-muted);margin-left:0.25rem;">(' + escapeHTML(ag.project) + ')</span>' +
+            '</td>' +
+            '<td class="mono" style="font-size:0.7rem;color:var(--text-secondary);">' + escapeHTML(ag.harness || '') + ' · ' + escapeHTML(ag.model || '') + '</td>' +
+            '<td class="mono num"><strong>' + (ag.turns || 0) + '</strong></td>' +
+            '<td class="mono num">' + (ag.steps_count || 0) + '</td>' +
+            '<td class="mono num" style="font-size:0.72rem;">' + (ag.model_calls || 0) + ' / ' + (ag.tool_calls || 0) + '</td>' +
+            '<td class="mono num" style="font-size:0.72rem;">' + tokStr + '</td>' +
+            '<td class="mono num" style="font-weight:700;color:var(--text-primary);">$' + Number(ag.cost_usd || 0).toFixed(4) + '</td>' +
+            '<td style="min-width:105px;">' +
+              '<div style="display:flex;align-items:center;gap:0.35rem;">' +
+                '<div style="flex:1;height:6px;background:var(--bg-subtle);border-radius:3px;overflow:hidden;">' +
+                  '<div style="width:' + barW + '%;height:100%;background:var(--accent-primary);"></div>' +
+                '</div>' +
+                '<span class="mono num" style="font-size:0.68rem;color:var(--text-secondary);min-width:34px;text-align:right;">' + sharePct.toFixed(1) + '%</span>' +
+              '</div>' +
+            '</td>' +
+          '</tr>';
+        }).join('');
+      }
+    }
+  }
 
   function toggleAllTrajectoryTraces() {
     showTrajectoryConversationTraces = !showTrajectoryConversationTraces;
@@ -667,7 +1035,7 @@
       const safeProj = escapeHTML(n.project).replace(/'/g, "\\'");
       const safeId = escapeHTML(n.id).replace(/'/g, "\\'");
       const subText = n.steps_count > 0
-        ? (n.steps_count + ' steps · ' + n.tool_calls_count + ' tools')
+        ? (n.steps_count + ' steps · $' + Number(n.total_cost_usd || 0).toFixed(2))
         : (n.harness + ' · ' + n.model.slice(0, 14));
 
       svgHtml += '<g class="topo-node' + (isSelectedNode ? ' is-active' : '') + '" transform="translate(' + (n.x - 58) + ',' + n.y + ')" style="cursor:pointer;" onclick="selectGraphNode(\'' + safeProj + '\',\'' + safeId + '\')">' +
@@ -716,7 +1084,7 @@
     const btn = document.getElementById('btn-traj-chat');
     if (!outEl) return;
     if (btn) btn.disabled = true;
-    outEl.innerHTML = '<div class="mono" style="color:var(--text-muted);">Querying trajectory prompts, thinking traces, tool invocations &amp; inter-agent handoffs...</div>';
+    outEl.innerHTML = '<div class="mono" style="color:var(--text-muted);">Querying trajectory PR/Issue costs, turns, prompts, thinking traces, tool invocations &amp; handoffs...</div>';
 
     try {
       const resp = await fetch('/api/trajectories/chat', {
@@ -725,17 +1093,46 @@
         body: JSON.stringify({
           message: queryText,
           project: selectedTrajectoryProject,
-          agent: selectedTrajectoryAgent
+          agent: selectedTrajectoryAgent,
+          pr: selectedTrajectoryPrFilter !== 'all' ? selectedTrajectoryPrFilter : null,
+          issue: selectedTrajectoryIssueFilter !== 'all' ? selectedTrajectoryIssueFilter : null
         })
       });
       const data = await resp.json();
       const matchedSteps = Array.isArray(data.matched_steps) ? data.matched_steps : [];
       const matchedEdges = Array.isArray(data.matched_edges) ? data.matched_edges : [];
+      const matchedPrs = Array.isArray(data.matched_prs) ? data.matched_prs : [];
+      const matchedIssues = Array.isArray(data.matched_issues) ? data.matched_issues : [];
 
       let html = '<div style="margin-bottom:0.5rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.4rem;">' +
         '<span class="mono" style="font-weight:700;color:var(--text-primary);">Query: "' + escapeHTML(queryText) + '"</span>' +
-        '<span class="mono" style="font-size:0.7rem;color:var(--text-muted);">Matched ' + matchedSteps.length + ' Conversation Turns · ' + (data.latency_ms || 0) + 'ms</span>' +
+        '<span class="mono" style="font-size:0.7rem;color:var(--text-muted);">Matched ' + matchedSteps.length + ' Turns · ' + (data.latency_ms || 0) + 'ms</span>' +
       '</div>';
+
+      if (matchedPrs.length > 0 || matchedIssues.length > 0) {
+        html += '<div style="margin-bottom:0.6rem;display:flex;flex-direction:column;gap:0.35rem;">';
+        matchedPrs.forEach(pr => {
+          const agBadges = (pr.agents_involved || []).map(a => '@' + escapeHTML(a.agent) + ' ($' + Number(a.cost_usd || 0).toFixed(4) + ', ' + (a.turns || 0) + 't)').join(' · ');
+          html += '<div style="padding:0.45rem 0.65rem;background:var(--bg-subtle);border-left:3px solid var(--accent-primary);font-size:0.75rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.4rem;">' +
+            '<div>' +
+              '<strong class="mono" style="color:var(--text-primary);">PR #' + escapeHTML(pr.pr_number) + ': ' + escapeHTML(pr.title) + '</strong>' +
+              '<div class="mono" style="font-size:0.7rem;color:var(--text-secondary);margin-top:0.12rem;">💰 <strong>$' + Number(pr.cost_usd || 0).toFixed(4) + ' USD</strong> · 🔄 <strong>' + (pr.turns_count || 0) + ' turns</strong> (' + (pr.steps_count || 0) + ' steps) · 👥 <strong>' + (pr.agents_count || 0) + ' agents:</strong> ' + agBadges + '</div>' +
+            '</div>' +
+            '<button type="button" class="btn mono" style="padding:0.15rem 0.45rem;font-size:0.68rem;" onclick="selectCostDrilldownItem(\'pr\',' + Number(pr.pr_number) + ',true)">Filter PR #' + escapeHTML(pr.pr_number) + ' &darr;</button>' +
+          '</div>';
+        });
+        matchedIssues.forEach(ir => {
+          const agBadges = (ir.agents_involved || []).map(a => '@' + escapeHTML(a.agent) + ' ($' + Number(a.cost_usd || 0).toFixed(4) + ', ' + (a.turns || 0) + 't)').join(' · ');
+          html += '<div style="padding:0.45rem 0.65rem;background:var(--bg-subtle);border-left:3px solid var(--status-pass);font-size:0.75rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.4rem;">' +
+            '<div>' +
+              '<strong class="mono" style="color:var(--text-primary);">Issue #' + escapeHTML(ir.issue_number) + ' [' + escapeHTML(ir.req_id || '') + ']: ' + escapeHTML(ir.title) + '</strong>' +
+              '<div class="mono" style="font-size:0.7rem;color:var(--text-secondary);margin-top:0.12rem;">💰 <strong>$' + Number(ir.cost_usd || 0).toFixed(4) + ' USD</strong> · 🔄 <strong>' + (ir.turns_count || 0) + ' turns</strong> (' + (ir.steps_count || 0) + ' steps) · 👥 <strong>' + (ir.agents_count || 0) + ' agents:</strong> ' + agBadges + '</div>' +
+            '</div>' +
+            '<button type="button" class="btn mono" style="padding:0.15rem 0.45rem;font-size:0.68rem;" onclick="selectCostDrilldownItem(\'issue\',' + Number(ir.issue_number) + ',true)">Filter Issue #' + escapeHTML(ir.issue_number) + ' &darr;</button>' +
+          '</div>';
+        });
+        html += '</div>';
+      }
 
       if (matchedEdges.length > 0) {
         html += '<div style="margin-bottom:0.55rem;display:flex;flex-wrap:wrap;gap:0.3rem;align-items:center;">' +
@@ -743,7 +1140,7 @@
           matchedEdges.map(e => {
             const safeEdgeId = escapeHTML(e.id).replace(/'/g, "\\'");
             return '<button type="button" class="btn mono" style="padding:0.12rem 0.45rem;font-size:0.68rem;" onclick="filterByInteractionEdge(\'' + safeEdgeId + '\')">' +
-              escapeHTML(e.from + ' → ' + e.to) + ' (' + e.count + ' handoffs · ' + e.tool_calls_count + ' tools)' +
+              escapeHTML(e.from + ' → ' + e.to) + ' (' + e.count + ' handoffs · $' + Number(e.cost_usd || 0).toFixed(4) + ')' +
             '</button>';
           }).join('') +
         '</div>';
@@ -756,10 +1153,11 @@
             '<div style="color:var(--text-muted);margin-top:0.1rem;">→ ' + escapeHTML(tc.output) + '</div>' +
           '</div>'
         ).join('');
+        const prLabel = s.pr_number ? (' · PR #' + escapeHTML(s.pr_number)) : '';
 
         return '<div style="border:1px solid var(--border-hairline);background:var(--bg-surface);padding:0.55rem 0.75rem;margin-bottom:0.5rem;">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.35rem;">' +
-            '<span class="mono" style="font-weight:700;color:var(--accent-primary);">Step #' + escapeHTML(s.step_index) + ' · @' + escapeHTML(s.agent) + ' (' + escapeHTML(s.interaction_edge || '') + ') · Issue #' + escapeHTML(s.issue_number || 'n/a') + '</span>' +
+            '<span class="mono" style="font-weight:700;color:var(--accent-primary);">Step #' + escapeHTML(s.step_index) + ' · @' + escapeHTML(s.agent) + ' (' + escapeHTML(s.interaction_edge || '') + ') · Issue #' + escapeHTML(s.issue_number || 'n/a') + prLabel + ' · $' + Number(s.cost_usd || 0).toFixed(4) + ' (' + (s.turns_count || 1) + ' turns)</span>' +
             '<span class="mono" style="font-size:0.7rem;color:var(--text-muted);">' + escapeHTML(String(s.commit_sha || '').slice(0, 14)) + ' · ' + escapeHTML(String(s.event_timestamp || '').slice(0, 19)) + '</span>' +
           '</div>' +
           '<div style="margin-top:0.3rem;font-size:0.76rem;"><strong>📥 Prompt:</strong> ' + escapeHTML(s.prompt || '') + '</div>' +
@@ -782,6 +1180,7 @@
     const summaryEl = document.getElementById('trajectory-agent-summary');
     const spannerBadge = document.getElementById('traj-spanner-badge');
     const kpiTrajEl = document.getElementById('val-traj-steps');
+    const filteredCostPill = document.getElementById('traj-filtered-cost-pill');
     if (!tbody) return;
 
     if (!cachedTrajectories || !Array.isArray(cachedTrajectories.agents)) {
@@ -789,14 +1188,16 @@
       return;
     }
 
+    renderCostAndWorkItemExplorer();
     renderInterAgentGraph();
     if (!trajChatInitialized) {
       trajChatInitialized = true;
-      runTrajectoryChatQuery('Show @lead, @reviewer, and @deployer prompts, thinking and tool calls on #34 clickable facets');
+      runTrajectoryChatQuery('How much did PR #17, PR #25, and Issue #35 cost, and how many turns and agents were involved?');
     }
 
     if (kpiTrajEl) {
-      kpiTrajEl.textContent = (cachedTrajectories.total_agents || 10) + ' Agents · ' + (cachedTrajectories.total_steps || 0) + ' Steps';
+      const totCost = cachedTrajectories.cost_summary ? Number(cachedTrajectories.cost_summary.total_cost_usd || 0).toFixed(2) : '0.00';
+      kpiTrajEl.textContent = (cachedTrajectories.total_agents || 10) + ' Agents · ' + (cachedTrajectories.total_steps || 0) + ' Steps ($' + totCost + ')';
     }
     if (spannerBadge) {
       const spannerCnt = cachedTrajectories.spanner_persisted_steps || cachedTrajectories.total_steps || 0;
@@ -813,28 +1214,10 @@
         const edgeId = normFrom + ' → ' + (st.to_agent || 'lead');
         return edgeId === selectedInteractionEdge || st.interaction_edge === selectedInteractionEdge;
       });
-      if (summaryEl) {
-        summaryEl.innerHTML =
-          '<span>Viewing Handoff Edge: <strong class="mono">' + escapeHTML(selectedInteractionEdge) + '</strong> · <button type="button" class="btn" style="padding:0.1rem 0.45rem;font-size:0.7rem;" onclick="filterByInteractionEdge(\'all\')">Clear Edge Filter ×</button></span>' +
-          '<span class="mono">Matching Conversation Turns: ' + stepsToRender.length + '</span>';
-      }
     } else if (selectedTrajectoryProject === 'psearch' && selectedTrajectoryAgent === 'all') {
       stepsToRender = Array.isArray(cachedTrajectories.psearch_chronological) ? cachedTrajectories.psearch_chronological : [];
-      if (summaryEl) {
-        const psearchAgents = cachedTrajectories.agents.filter(a => a.project === 'psearch');
-        const totTurns = psearchAgents.reduce((s, a) => s + (Number(a.reconstructed_turns) || 0), 0);
-        const totCalls = psearchAgents.reduce((s, a) => s + (Number(a.reconstructed_model_calls) || 0), 0);
-        summaryEl.innerHTML =
-          '<span>Viewing Trajectory: <strong class="mono">All psearch Agents (Chronological)</strong> — @lead · @backend · @frontend · @reviewer · @deployer</span>' +
-          '<span class="mono">Total Steps: ' + stepsToRender.length + ' · Waves 0–6 (Issues #1–#34) · Reconstructed Turns / Calls: ' + totTurns + ' / ' + totCalls + '</span>';
-      }
     } else if (selectedTrajectoryProject === 'all' && selectedTrajectoryAgent === 'all') {
       stepsToRender = Array.isArray(cachedTrajectories.chronological_timeline) ? cachedTrajectories.chronological_timeline : [];
-      if (summaryEl) {
-        summaryEl.innerHTML =
-          '<span>Viewing Trajectory: <strong class="mono">All 10 Factory Agents (psearch + psearch-eval)</strong> — Chronological Execution Ledger</span>' +
-          '<span class="mono">Total Steps: ' + stepsToRender.length + ' · Spanner Tables: agent_trajectories + agent_conversation_turns</span>';
-      }
     } else {
       const key = selectedTrajectoryProject + ':' + selectedTrajectoryAgent;
       const agentObj = (cachedTrajectories.agents_by_key && cachedTrajectories.agents_by_key[key]) ||
@@ -848,22 +1231,85 @@
           role: agentObj.role,
           harness: agentObj.harness
         }));
-        if (summaryEl) {
-          const issuesStr = Array.isArray(agentObj.issues_covered) && agentObj.issues_covered.length > 0
-            ? agentObj.issues_covered.map(n => '#' + n).join(', ')
-            : 'All Waves';
-          const liveTurnsNote = agentObj.live_spanner_turns_count > 0
-            ? ' · ⚡ Live Spanner Turns: ' + agentObj.live_spanner_turns_count
-            : '';
-          summaryEl.innerHTML =
-            '<span>Viewing Trajectory: <strong class="mono">@' + escapeHTML(agentObj.name) + ' (' + escapeHTML(agentObj.project) + ')</strong> — ' + escapeHTML(agentObj.role || '') + ' (' + escapeHTML(agentObj.harness || '') + ' · ' + escapeHTML(agentObj.model || 'gemini-4-argon') + ')</span>' +
-            '<span class="mono">Steps: ' + stepsToRender.length + liveTurnsNote + ' · Tool Calls: ' + (agentObj.tool_calls_count || 0) + ' · Cost: $' + Number(agentObj.total_cost_usd || 0).toFixed(2) + ' · Issues: ' + escapeHTML(issuesStr) + '</span>';
-        }
+      }
+    }
+
+    // Apply PR and/or Issue filters on top of stepsToRender
+    const activePrNum = selectedTrajectoryPrFilter !== 'all' ? Number(selectedTrajectoryPrFilter) : null;
+    const activeIssueNum = selectedTrajectoryIssueFilter !== 'all' ? Number(selectedTrajectoryIssueFilter) : null;
+
+    if (activePrNum) {
+      const prObj = (cachedTrajectories.pr_rollups || []).find(p => Number(p.pr_number) === activePrNum);
+      const mergeSha = prObj && prObj.merge_commit ? String(prObj.merge_commit).slice(0, 7) : '';
+      stepsToRender = stepsToRender.filter(st => {
+        if (Number(st.pr_number) === activePrNum) return true;
+        const sha7 = String(st.commit_sha || '').slice(0, 7);
+        const text = (st.title || '') + ' ' + (st.detail || '');
+        if (mergeSha && (sha7 === mergeSha || text.indexOf(mergeSha) !== -1)) return true;
+        if (text.indexOf('#' + activePrNum) !== -1) return true;
+        return false;
+      });
+    }
+
+    if (activeIssueNum) {
+      stepsToRender = stepsToRender.filter(st => Number(st.issue_number) === activeIssueNum);
+    }
+
+    // Compute dynamic cost, turns, tools, tokens & agents involved for currently visible steps
+    const visibleCostUsd = stepsToRender.reduce((acc, s) => acc + (Number(s.cost_usd || (s.tokens && s.tokens.cost_usd) || 0)), 0);
+    const visibleTurns = stepsToRender.reduce((acc, s) => acc + (Number(s.turns_count) || 4), 0);
+    const visibleTools = stepsToRender.reduce((acc, s) => acc + ((s.tool_calls || []).length), 0);
+    const visibleTokens = stepsToRender.reduce((acc, s) => acc + (Number(s.tokens && s.tokens.total_tokens) || 0), 0);
+    const visibleAgentsSet = new Set(stepsToRender.map(s => '@' + (s.agent_name || s.agent)));
+    const visibleAgentsArr = Array.from(visibleAgentsSet);
+
+    if (filteredCostPill) {
+      const scopeTag = activePrNum
+        ? ('PR #' + activePrNum)
+        : (activeIssueNum ? ('Issue #' + activeIssueNum) : (selectedTrajectoryAgent === 'all' ? 'All Selected Agents' : ('@' + selectedTrajectoryAgent)));
+      filteredCostPill.innerHTML =
+        escapeHTML(scopeTag) + ': <strong>$' + visibleCostUsd.toFixed(4) + ' USD</strong> · <strong>' + visibleTurns + ' turns</strong> (' + stepsToRender.length + ' steps) · <strong>' + visibleAgentsArr.length + ' agent(s)</strong> · ' + (visibleTokens / 1000).toFixed(1) + 'k tok';
+    }
+
+    if (summaryEl) {
+      if (activePrNum || activeIssueNum) {
+        const filterTitle = activePrNum
+          ? ('Filtered by PR #' + activePrNum)
+          : ('Filtered by Issue #' + activeIssueNum);
+        const agentScope = selectedTrajectoryAgent !== 'all' ? (' · Agent: @' + escapeHTML(selectedTrajectoryAgent)) : '';
+        summaryEl.innerHTML =
+          '<span><strong>' + escapeHTML(filterTitle) + '</strong>' + agentScope + ' — Agents Involved (' + visibleAgentsArr.length + '): <strong class="mono">' + escapeHTML(visibleAgentsArr.join(', ') || 'none') + '</strong></span>' +
+          '<span class="mono">Total Cost: <strong>$' + visibleCostUsd.toFixed(4) + ' USD</strong> · Total Turns: <strong>' + visibleTurns + '</strong> (' + stepsToRender.length + ' steps · ' + visibleTools + ' tool calls · ' + (visibleTokens / 1000).toFixed(1) + 'k tokens)</span>';
+      } else if (selectedInteractionEdge !== 'all') {
+        summaryEl.innerHTML =
+          '<span>Viewing Handoff Edge: <strong class="mono">' + escapeHTML(selectedInteractionEdge) + '</strong> · <button type="button" class="btn" style="padding:0.1rem 0.45rem;font-size:0.7rem;" onclick="filterByInteractionEdge(\'all\')">Clear Edge Filter ×</button></span>' +
+          '<span class="mono">Matching Turns: ' + visibleTurns + ' (' + stepsToRender.length + ' steps) · Cost: <strong>$' + visibleCostUsd.toFixed(4) + ' USD</strong></span>';
+      } else if (selectedTrajectoryProject === 'psearch' && selectedTrajectoryAgent === 'all') {
+        summaryEl.innerHTML =
+          '<span>Viewing Trajectory: <strong class="mono">All psearch Agents (Chronological)</strong> — @lead · @backend · @frontend · @reviewer · @deployer</span>' +
+          '<span class="mono">Steps: ' + stepsToRender.length + ' · Turns: <strong>' + visibleTurns + '</strong> · Cost: <strong>$' + visibleCostUsd.toFixed(4) + ' USD</strong> · Waves 0–6 (Issues #1–#35)</span>';
+      } else if (selectedTrajectoryProject === 'all' && selectedTrajectoryAgent === 'all') {
+        summaryEl.innerHTML =
+          '<span>Viewing Trajectory: <strong class="mono">All 10 Factory Agents (psearch + psearch-eval)</strong> — Chronological Execution Ledger</span>' +
+          '<span class="mono">Steps: ' + stepsToRender.length + ' · Turns: <strong>' + visibleTurns + '</strong> · Total Cost: <strong>$' + visibleCostUsd.toFixed(4) + ' USD</strong> · Issues #1–#35 &amp; PRs #12–#27</span>';
+      } else {
+        const key = selectedTrajectoryProject + ':' + selectedTrajectoryAgent;
+        const agentObj = (cachedTrajectories.agents_by_key && cachedTrajectories.agents_by_key[key]) ||
+          cachedTrajectories.agents.find(a => a.project === selectedTrajectoryProject && a.name === selectedTrajectoryAgent) || {};
+        const issuesStr = Array.isArray(agentObj.issues_covered) && agentObj.issues_covered.length > 0
+          ? agentObj.issues_covered.map(n => '#' + n).join(', ')
+          : 'All Waves';
+        const prsStr = Array.isArray(agentObj.prs_touched) && agentObj.prs_touched.length > 0
+          ? (' · PRs: #' + agentObj.prs_touched.join(', #'))
+          : '';
+        summaryEl.innerHTML =
+          '<span>Viewing Trajectory: <strong class="mono">@' + escapeHTML(agentObj.name || selectedTrajectoryAgent) + ' (' + escapeHTML(agentObj.project || selectedTrajectoryProject) + ')</strong> — ' + escapeHTML(agentObj.role || '') + ' (' + escapeHTML(agentObj.harness || '') + ' · ' + escapeHTML(agentObj.model || 'gemini-4-argon') + ')</span>' +
+          '<span class="mono">Steps: ' + stepsToRender.length + ' · Turns: <strong>' + visibleTurns + '</strong> · Tool Calls: ' + visibleTools + ' · Cost: <strong>$' + visibleCostUsd.toFixed(4) + ' USD</strong> · Issues: ' + escapeHTML(issuesStr) + escapeHTML(prsStr) + '</span>';
       }
     }
 
     if (stepsToRender.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:1rem;">No trajectory steps found for current selection.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:1rem;">No trajectory steps match the current filter combination. <button type="button" class="btn mono" style="margin-left:0.5rem;padding:0.15rem 0.5rem;font-size:0.72rem;" onclick="clearTrajectoryWorkItemFilters()">Reset PR / Issue Filters</button></td></tr>';
       return;
     }
 
@@ -871,13 +1317,18 @@
       const stepNum = s.step_index || (idx + 1);
       const edgeStr = s.interaction_edge || ((s.from_agent || s.agent_name) + ' → ' + (s.to_agent || 'lead'));
       const isLiveHarness = s.source_mode === 'live_harness_stream' || String(s.commit_sha || '').indexOf('spanner-turn-') === 0;
-      const agentBadge = '<span class="mono" style="font-weight:700;">@' + escapeHTML(s.agent_name || selectedTrajectoryAgent) + '</span>' +
+      const agentBadge = '<span class="mono" style="font-weight:700;">@' + escapeHTML(s.agent_name || s.agent || selectedTrajectoryAgent) + '</span>' +
         '<div class="mono" style="font-size:0.68rem;color:var(--accent-primary);margin-top:0.15rem;">' + escapeHTML(edgeStr) + '</div>' +
         '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);">' + escapeHTML(s.harness || '') + ' · ' + escapeHTML(s.model || '') + (isLiveHarness ? ' · <strong style="color:var(--status-pass);">⚡LIVE</strong>' : '') + '</div>';
+
       const issuePart = s.issue_number
-        ? '<a href="https://github.com/duboc/scion-experiment/issues/' + encodeURIComponent(s.issue_number) + '" target="_blank" class="mono">#' + escapeHTML(s.issue_number) + '</a>'
+        ? '<button type="button" class="btn mono" style="padding:0.08rem 0.36rem;font-size:0.68rem;" title="Filter turns by Issue #' + escapeHTML(s.issue_number) + '" onclick="selectCostDrilldownItem(\'issue\',' + Number(s.issue_number) + ',true)">#' + escapeHTML(s.issue_number) + '</button>'
         : '—';
-      const waveIssueCell = '<span class="mono">' + escapeHTML(s.wave || 'wave') + '</span> · ' + issuePart;
+      const prPart = s.pr_number
+        ? '<div style="margin-top:0.2rem;"><button type="button" class="btn mono" style="padding:0.08rem 0.36rem;font-size:0.66rem;border-color:var(--accent-primary);color:var(--accent-primary);" title="Inspect &amp; Filter turns by PR #' + escapeHTML(s.pr_number) + '" onclick="selectCostDrilldownItem(\'pr\',' + Number(s.pr_number) + ',true)">PR #' + escapeHTML(s.pr_number) + '</button></div>'
+        : '';
+      const waveIssueCell = '<div class="mono" style="font-size:0.7rem;color:var(--text-muted);">' + escapeHTML(s.wave || 'wave') + '</div><div style="margin-top:0.15rem;">' + issuePart + '</div>' + prPart;
+
       const shaStr = String(s.commit_sha || '');
       let commitCell = '<span class="mono" style="color:var(--text-muted);">spanner</span>';
       if (shaStr.indexOf('spanner-turn-') === 0) {
@@ -899,9 +1350,12 @@
       const statusBadge = '<span class="badge ' + stClass + '"><span class="badge-dot"></span>' + escapeHTML(stVal) + '</span>';
 
       const tok = s.tokens || {};
-      const costBadge = tok.cost_usd !== undefined
-        ? '<div class="mono" style="font-size:0.68rem;color:var(--text-muted);margin-top:0.22rem;">in:' + (tok.input_tokens || 0) + (tok.cache_read_tokens ? ' · cache:' + tok.cache_read_tokens : '') + ' · out:' + (tok.output_tokens || 0) + ' · <strong>$' + Number(tok.cost_usd).toFixed(4) + '</strong></div>'
-        : '';
+      const stepCost = Number(s.cost_usd !== undefined ? s.cost_usd : (tok.cost_usd || 0));
+      const stepTurns = Number(s.turns_count) || 4;
+      const stepCalls = Number(s.model_calls_count) || 8;
+      const costBadge =
+        '<div class="mono num" style="font-size:0.74rem;font-weight:700;color:var(--text-primary);margin-top:0.22rem;">$' + stepCost.toFixed(4) + ' USD · ' + stepTurns + ' turns</div>' +
+        '<div class="mono num" style="font-size:0.66rem;color:var(--text-muted);margin-top:0.1rem;">' + stepCalls + ' calls · in:' + (tok.input_tokens || 0) + (tok.cache_read_tokens ? ' · cache:' + tok.cache_read_tokens : '') + ' · out:' + (tok.output_tokens || 0) + '</div>';
 
       let convBlockHtml = '';
       if (showTrajectoryConversationTraces) {
@@ -1102,6 +1556,12 @@
   root.selectGraphNode = selectGraphNode;
   root.filterByInteractionEdge = filterByInteractionEdge;
   root.toggleAllTrajectoryTraces = toggleAllTrajectoryTraces;
+  root.switchCostLedgerMode = switchCostLedgerMode;
+  root.selectCostDrilldownItem = selectCostDrilldownItem;
+  root.filterTurnsByDrilldownAgent = filterTurnsByDrilldownAgent;
+  root.onTrajectoryPrFilterChange = onTrajectoryPrFilterChange;
+  root.onTrajectoryIssueFilterChange = onTrajectoryIssueFilterChange;
+  root.clearTrajectoryWorkItemFilters = clearTrajectoryWorkItemFilters;
   root.askTrajectoryPreset = askTrajectoryPreset;
   root.submitTrajectoryChat = submitTrajectoryChat;
   root.selectTrajectoryView = selectTrajectoryView;

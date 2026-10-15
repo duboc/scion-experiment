@@ -105,11 +105,29 @@ function cleanJsonArgString(val) {
 
 function extractIssueNumberFromText(text) {
   const s = String(text || '');
-  const m = s.match(/(?:issue\s*#?|#)(\d{1,2})\b/i);
-  if (m) {
-    const n = parseInt(m[1], 10);
-    if (n >= 1 && n <= 50) return n;
+  const allPrMentions = Array.from(s.matchAll(/(?:pull request|pr)\s*#?(\d{1,2})\b/gi)).map(m => parseInt(m[1], 10));
+  const uniquePrs = Array.from(new Set(allPrMentions));
+  if (uniquePrs.length === 1 && s.length < 360) {
+    return uniquePrs[0];
   }
+  const withoutRanges = s.replace(/(?:pr\s*)?#\d{1,2}\s*(?:[-–—]+|\.\.+|to)\s*(?:pr\s*)?#?\d{1,2}/gi, ' ');
+  const prNums = new Set([12, 13, 14, 15, 16, 17, 24, 25, 27]);
+  const matches = [];
+  const re = /(?:issue\s*#?|#)(\d{1,2})\b/gi;
+  let m;
+  while ((m = re.exec(withoutRanges)) !== null) {
+    const n = parseInt(m[1], 10);
+    if (n >= 1 && n <= 50 && !prNums.has(n)) matches.push(n);
+  }
+  if (matches.length > 0) {
+    return matches[matches.length - 1];
+  }
+  if (/#1\s*[-–—]+\s*#?35\b/i.test(s) || /sponsored|retail media|00030/i.test(s)) return 35;
+  if (/#1\s*[-–—]+\s*#?34\b/i.test(s) || /clickable facet|faceta|00029/i.test(s)) return 34;
+  if (/#1\s*[-–—]+\s*#?33\b/i.test(s) || /multimodal|00028/i.test(s)) return 33;
+  if (/#1\s*[-–—]+\s*#?32\b/i.test(s) || /variant|00027/i.test(s)) return 32;
+  if (/pyramid|76-scenario|l1[-–]l5|#19\s*[-–—]+\s*#?2[23]/i.test(s)) return 26;
+  if (/#1\s*[-–—]+\s*#?10\b/i.test(s)) return 18;
   return null;
 }
 
@@ -648,13 +666,14 @@ async function fetchGithubTrajectoryInputs() {
       return [];
     }
   };
-  const [mainCommits, evalCommits, c1, c2] = await Promise.all([
-    fetchArr('/commits?sha=main&per_page=100'),
+  const [mainCommits1, mainCommits2, evalCommits, c1, c2] = await Promise.all([
+    fetchArr('/commits?sha=main&per_page=100&page=1'),
+    fetchArr('/commits?sha=main&per_page=100&page=2'),
     fetchArr('/commits?sha=eval-dashboard&per_page=100'),
     fetchArr('/issues/comments?per_page=100&page=1'),
     fetchArr('/issues/comments?per_page=100&page=2')
   ]);
-  return { mainCommits, evalCommits, issueComments: [...c1, ...c2] };
+  return { mainCommits: [...mainCommits1, ...mainCommits2], evalCommits, issueComments: [...c1, ...c2] };
 }
 
 async function syncAllTrajectoriesAndTurnsToSpanner(options = {}) {
@@ -663,9 +682,10 @@ async function syncAllTrajectoriesAndTurnsToSpanner(options = {}) {
 
   // Also ensure all 10 agents across psearch and psearch-eval have their full multi-turn conversation steps
   // in agent_conversation_turns so every agent across both groves has full prompts, thinking, tool calls, and costs in Spanner.
-  const { buildTrajectoriesPayload } = require('./trajectories');
+  const { buildTrajectoriesPayload, syncTrajectoriesToSpanner } = require('./trajectories');
   const ghInputs = await fetchGithubTrajectoryInputs();
   const payload = buildTrajectoriesPayload(ghInputs.mainCommits, ghInputs.evalCommits, ghInputs.issueComments, [], []);
+  await syncTrajectoriesToSpanner(db, payload).catch(() => {});
 
   // Check which agents already have live_harness_stream rows in agent_conversation_turns
   const [liveAgentRows] = await db.run({

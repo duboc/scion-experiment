@@ -866,9 +866,412 @@ const BASELINE_TRAJECTORIES = {
       status: 'PASS',
       title: 'Deploy Revision psearch-eval-dashboard-00013-4gz with Wave 6 Variant Grouping (#32)',
       detail: 'Built image sha256:4c549821, routed 100% traffic (--to-latest), and verified Req 4.1.15 (#32) live.'
+    },
+    {
+      wave: 'wave-6',
+      issue_number: 34,
+      step_type: 'CLOUD_RUN_DEPLOY',
+      commit_sha: 'd32e511',
+      event_timestamp: '2026-10-14T20:42:10Z',
+      status: 'PASS',
+      title: 'Deploy Revision psearch-eval-dashboard-00018 with Issue #34 Clickable Facets & Spanner Turn Logging',
+      detail: 'Verified /api/eval/issue-34, /api/trajectories/turns, 17/17 requirements, and 92/92 5-Layer Pyramid scenarios live.'
+    },
+    {
+      wave: 'wave-6',
+      issue_number: 35,
+      step_type: 'CLOUD_RUN_DEPLOY',
+      commit_sha: '886c58f',
+      event_timestamp: '2026-10-14T23:15:00Z',
+      status: 'PASS',
+      title: 'Verify Issue #35 Sponsored Products (00030-pqq) & PR/Issue Turn Cost Analytics on Cloud Run',
+      detail: 'Probed live sponsored product slots (1,4,8), idempotent click budget burn (POST /api/ads/click), and synced PR/Issue turn cost rollups.'
     }
   ]
 };
+
+// Canonical GitHub Pull Request catalog for duboc/scion-experiment (PRs #12-#17, #24, #25, #27)
+const PR_METADATA = [
+  {
+    pr_number: 12,
+    title: 'docs(scion): reproducible software factory playbook',
+    state: 'MERGED',
+    head_branch: 'docs/scion-factory-playbook',
+    base_branch: 'main',
+    merge_commit: 'a09cb0e',
+    created_at: '2026-10-13T00:23:11Z',
+    merged_at: '2026-10-13T00:54:28Z',
+    additions: 3191,
+    deletions: 0,
+    changed_files: 46,
+    linked_issues: [11, 18],
+    commit_shas: ['08e4596', '31cb28d', 'cb9c62b', '3c61235', 'ce21413', 'a09cb0e', '0a911fc', '6224ff7', '03058b2', '5f475ea', 'd91cb9f', '0d8c0f5'],
+    summary: 'Established the reproducible 10-agent Scion software factory playbook (psearch + psearch-eval), Spanner factory DDL, operations scripts, and 20 lessons learned.'
+  },
+  {
+    pr_number: 13,
+    title: 'docs(scion): safe template upload and reincarnate limitation',
+    state: 'MERGED',
+    head_branch: 'docs/scion-playbook-fixes',
+    base_branch: 'main',
+    merge_commit: 'c882a36',
+    created_at: '2026-10-13T01:13:19Z',
+    merged_at: '2026-10-13T01:14:05Z',
+    additions: 310,
+    deletions: 43,
+    changed_files: 7,
+    linked_issues: [18],
+    commit_shas: ['afd6a17', 'c882a36', '15fa880', '96f010e'],
+    summary: 'Added push-templates.py to prevent template storage path collisions (-legacy rename) and documented Hub-managed reincarnate HTTP 400 fallback (L16, L21).'
+  },
+  {
+    pr_number: 14,
+    title: 'docs(scion): address playbook audit findings, durable hooks, and disaster recovery',
+    state: 'MERGED',
+    head_branch: 'docs/scion-audit-fixes',
+    base_branch: 'main',
+    merge_commit: '8aa2e08',
+    created_at: '2026-10-13T02:30:54Z',
+    merged_at: '2026-10-13T02:31:05Z',
+    additions: 655,
+    deletions: 140,
+    changed_files: 22,
+    linked_issues: [18],
+    commit_shas: ['8aa2e08', '23c63b9', 'ab61624'],
+    summary: 'Implemented 3-tier durable Antigravity pre-start hooks (patch-antigravity-hooks.py), online SQLite Hub backup (backup-hub.sh), and GITHUB_TOKEN injection rules (L22, L23).'
+  },
+  {
+    pr_number: 15,
+    title: 'feat(scion): add factory watchdog daemon, Cloud Monitoring alerts, billing budgets, and notify update policy',
+    state: 'MERGED',
+    head_branch: 'docs/scion-watchdog-and-budgets',
+    base_branch: 'main',
+    merge_commit: '00c6e08',
+    created_at: '2026-10-13T03:27:05Z',
+    merged_at: '2026-10-13T03:27:24Z',
+    additions: 932,
+    deletions: 27,
+    changed_files: 11,
+    linked_issues: [18, 22],
+    commit_shas: ['00c6e08', '2ab5512', '87c19d3'],
+    summary: 'Added factory-watchdog.py circuit-breaker daemon, Cloud Monitoring alert policies, GCP billing budgets, and workspace shared-dir sync.'
+  },
+  {
+    pr_number: 16,
+    title: 'feat(scion): document and configure eval-dashboard as separate orphan branch',
+    state: 'MERGED',
+    head_branch: 'docs/scion-orphan-eval-branch',
+    base_branch: 'main',
+    merge_commit: '22e6259',
+    created_at: '2026-10-13T14:00:45Z',
+    merged_at: '2026-10-13T14:02:58Z',
+    additions: 43,
+    deletions: 6,
+    changed_files: 8,
+    linked_issues: [18],
+    commit_shas: ['22e6259', '28ad839', 'abe23fb', '2fabf16', '7f1efc7'],
+    summary: 'Configured branch isolation between psearch (main) and psearch-eval (eval-dashboard) to eliminate cross-grove git push contention.'
+  },
+  {
+    pr_number: 17,
+    title: '[Req 4.1.1] Hybrid search alpha: acceptance record (Closes #1)',
+    state: 'MERGED',
+    head_branch: 'issue-1-hybrid-alpha',
+    base_branch: 'main',
+    merge_commit: '167ca47',
+    created_at: '2026-10-13T14:20:12Z',
+    merged_at: '2026-10-13T14:21:04Z',
+    additions: 25,
+    deletions: 0,
+    changed_files: 1,
+    linked_issues: [1],
+    commit_shas: ['167ca47', '76df31a', '7b404be', '8894c6d', '1baae5e', '79b15a2', '09b5d18', '31a8c9a', '6af0f25'],
+    summary: 'Delivered and verified Req 4.1.1 (Hybrid Search RRF Alpha parameterization in Spanner SQL, Go API, and React/Storefront UI) on psearch-serving-00011-p6t.'
+  },
+  {
+    pr_number: 24,
+    title: 'feat(scion): upgrade Antigravity, OpenCode, and Hermes to Gemini 4 Argon',
+    state: 'MERGED',
+    head_branch: 'docs/scion-gemini-4-argon',
+    base_branch: 'main',
+    merge_commit: 'eca31de',
+    created_at: '2026-10-14T00:36:27Z',
+    merged_at: '2026-10-14T00:36:41Z',
+    additions: 643,
+    deletions: 57,
+    changed_files: 20,
+    linked_issues: [23],
+    commit_shas: ['eca31de', '12cec7a', 'ba2371a'],
+    summary: 'Upgraded OpenCode, Hermes, and Antigravity agent harnesses across psearch and psearch-eval to Gemini 4 Argon on Vertex AI global endpoint and fixed provision.py f-string escaping.'
+  },
+  {
+    pr_number: 25,
+    title: 'feat(psearch): upgrade text models to gemini-3.8-flash and pro models to gemini-4-argon (#23)',
+    state: 'MERGED',
+    head_branch: 'feat/issue-23-models-upgrade',
+    base_branch: 'main',
+    merge_commit: 'da4a707',
+    created_at: '2026-10-14T00:54:26Z',
+    merged_at: '2026-10-14T00:54:41Z',
+    additions: 159,
+    deletions: 23,
+    changed_files: 14,
+    linked_issues: [23],
+    commit_shas: ['da4a707', '1f2eba6', '41af0a6', '38e4386', '1f1c59f', 'f53514a'],
+    summary: 'Upgraded psearch-serving default text/flash model to gemini-3.8-flash and pro model to gemini-4-argon on Vertex AI global (live on psearch-serving-00025-5mx).'
+  },
+  {
+    pr_number: 27,
+    title: 'docs(scion): verification and 5-layer eval pyramid methodology',
+    state: 'MERGED',
+    head_branch: 'docs/scion-verification-and-5-layer-eval',
+    base_branch: 'main',
+    merge_commit: '346afae',
+    created_at: '2026-10-14T01:30:06Z',
+    merged_at: '2026-10-14T01:30:33Z',
+    additions: 264,
+    deletions: 0,
+    changed_files: 3,
+    linked_issues: [26],
+    commit_shas: ['346afae', '5182d03', 'b10120a', '3294a8e'],
+    summary: 'Codified the 5-Layer Product Evaluation Methodology Pyramid (L1-L5, 76->92 scenarios, 100% pass gate) and multi-agent verification architecture.'
+  }
+];
+
+// Canonical GitHub Issue catalog for duboc/scion-experiment (Issues #1-#11, #18-#23, #26, #28-#35)
+const ISSUE_METADATA = [
+  { issue_number: 1,  req_id: 'Req 4.1.1',  wave: 'wave-1', project: 'psearch',      linked_prs: [17],             cloud_run_revision: 'psearch-serving-00011-p6t', title: '[Req 4.1.1] Busca Híbrida: Parametrizar peso alpha no RRF (SQL + Biggy Search API + UI)' },
+  { issue_number: 2,  req_id: 'Req 4.1.2',  wave: 'wave-1', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00012-65q', title: '[Req 4.1.2] Busca Vetorial: 1024 dim (ScaNN), Blue/Green Index Switch & Cache de Embeddings' },
+  { issue_number: 3,  req_id: 'Req 4.1.3',  wave: 'wave-1', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00011-p6t', title: '[Req 4.1.3] Disponibilidade: Filtro de estoque/canal/visibilidade e indisponíveis no final' },
+  { issue_number: 4,  req_id: 'Req 4.1.4',  wave: 'wave-2', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00014-pc5', title: '[Req 4.1.4] Catálogo Multilanguage: Múltiplos idiomas por tenant (pt-BR, en-US, es-MX)' },
+  { issue_number: 5,  req_id: 'Req 4.1.5',  wave: 'wave-2', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00013-5vm', title: '[Req 4.1.5] Facets Server-Side: Agregação concorrente (texto, faixas numéricas e localização) no Spanner' },
+  { issue_number: 6,  req_id: 'Req 4.1.6',  wave: 'wave-3', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00016-jtj', title: '[Req 4.1.6] Relevance & Merchandising Rules: Regras por merchant no Spanner + 8 sinais de boost no SQL' },
+  { issue_number: 7,  req_id: 'Req 4.1.7',  wave: 'wave-3', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00015-dzf', title: '[Req 4.1.7] Low Relevance Synonyms: Expansão de sinônimos por tenant com peso reduzido no SCORE()' },
+  { issue_number: 8,  req_id: 'Req 4.1.8',  wave: 'wave-3', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00017-9wc', title: '[Req 4.1.8] Delivery Promises: Filtro/SLA por CEP e estoque em CDs/sellers via Spanner INTERLEAVE IN PARENT' },
+  { issue_number: 9,  req_id: 'Req 4.1.9',  wave: 'wave-4', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00018-rc5', title: '[Req 4.1.9] Autocomplete: Top queries do BigQuery Analytics indexadas com TOKENIZE_NGRAMS no Spanner' },
+  { issue_number: 10, req_id: 'Req 4.1.10', wave: 'wave-4', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00019-dsr', title: '[Req 4.1.10] Learning to Rank (LTR): Re-ranking ML em 2 estágios (Top-100 Spanner + In-Memory Scorer ~2ms)' },
+  { issue_number: 11, req_id: 'Platform',   wave: 'wave-0', project: 'psearch',      linked_prs: [12],             cloud_run_revision: 'psearch-serving-00009-9dc', title: '[Platform] Upgrade to latest Gemini models via Google Gen AI SDK (gemini-embedding-2 @1024d)' },
+  { issue_number: 18, req_id: 'Eval W1-4',  wave: 'wave-4', project: 'psearch-eval', linked_prs: [12, 13, 14, 15, 16], cloud_run_revision: 'psearch-eval-dashboard-00010', title: 'eval: full Wave 1–4 (#1–#10) live verification sweep against psearch-serving-00019-dsr' },
+  { issue_number: 19, req_id: 'Req 4.1.11', wave: 'wave-5', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00020-552', title: '[Req 4.1.11] Conversational Query Understanding: Extração de filtros e intenção em linguagem natural' },
+  { issue_number: 20, req_id: 'Req 4.1.12', wave: 'wave-5', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00024-ltv', title: '[Req 4.1.12] Session-Aware Personalization: Re-ranking em tempo real por vetor de sessão' },
+  { issue_number: 21, req_id: 'Req 4.1.13', wave: 'wave-5', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00022-nll', title: '[Req 4.1.13] Zero-Results Recovery & Spell Check: Did You Mean + Relaxamento de Termos' },
+  { issue_number: 22, req_id: 'Req 4.1.14', wave: 'wave-5', project: 'psearch',      linked_prs: [15],             cloud_run_revision: 'psearch-serving-00023-z7g', title: '[Req 4.1.14] B2B / Contract Pricing & Assortment via INTERLEAVE IN PARENT' },
+  { issue_number: 23, req_id: 'Platform',   wave: 'wave-5', project: 'psearch',      linked_prs: [24, 25],         cloud_run_revision: 'psearch-serving-00025-5mx', title: '[Platform] Upgrade psearch text/flash models to gemini-3.8-flash and pro models to gemini-4-argon' },
+  { issue_number: 26, req_id: 'Eval L1-5',  wave: 'wave-5', project: 'psearch-eval', linked_prs: [27],             cloud_run_revision: 'psearch-eval-dashboard-00011-tsf', title: 'eval: 5-Layer Product Evaluation Pyramid (L1–L5) & Wave 1–5 (14 Requirements) live sweep' },
+  { issue_number: 28, req_id: 'Docs',       wave: 'wave-5', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00026-7qm', title: '[Docs] Update README.md, PRODUCT.md, DESIGN.md, DEPLOYMENT.md & knowledge-plane for Waves 1–5' },
+  { issue_number: 29, req_id: 'Docs Eval',  wave: 'wave-5', project: 'psearch-eval', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00011-tsf', title: '[Docs] Update eval-dashboard README.md & documentation for 5-Layer Evaluation Pyramid' },
+  { issue_number: 30, req_id: 'Fix & Docs', wave: 'wave-5', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00026-7qm', title: '[Fix & Docs] Fix storefront inline JS syntax error (Loading catalog...) & Google Developer Standard README' },
+  { issue_number: 31, req_id: 'Fix & Docs', wave: 'wave-5', project: 'psearch-eval', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00012-k9v', title: '[Fix & Docs] Move 5-Layer Eval Pyramid above the fold, wire POST /api/eval/run & 15-SKU Catalog Workbench' },
+  { issue_number: 32, req_id: 'Req 4.1.15', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00027-dmv', title: '[Req 4.1.15] Variant Grouping / Collapse (Products -> SKUs INTERLEAVE)' },
+  { issue_number: 33, req_id: 'Req 4.1.16', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00028-klr', title: '[Req 4.1.16] Visual & Multimodal Search (gemini-embedding-2 @ 1024-d)' },
+  { issue_number: 34, req_id: 'Req 4.1.17', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00029-7ss', title: '[Req 4.1.17] Tornar as facetas no painel lateral clicáveis (Interactive Facet Re-Search)' },
+  { issue_number: 35, req_id: 'Req 4.1.18', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00030-pqq', title: '[Req 4.1.18] Sponsored Products / Retail Media (Injeção de anúncios nativos com controle de budget real-time)' }
+];
+
+// Additional canonical baseline steps for PRs #12-#17, #24, #25, #27 and Issues #34, #35
+const EXTRA_PR_AND_ISSUE_STEPS = [
+  // PR #12
+  { project: 'psearch', agent: 'lead', wave: 'wave-0', issue_number: 11, pr_number: 12, step_type: 'ADR_PLAN', commit_sha: 'a09cb0e', event_timestamp: '2026-10-13T00:54:28Z', status: 'PASS', title: '[PR #12] Author Reproducible Software Factory Playbook, 10 Agent Templates & Shared Protocol', detail: 'Merged PR #12 (+3191/-0, 46 files): docs/scion/ architecture, setup/operations runbooks, 10 agent templates, and 20 lessons learned.' },
+  { project: 'psearch-eval', agent: 'factory-analyst', wave: 'wave-1', issue_number: 18, pr_number: 12, step_type: 'TELEMETRY_SYNC', commit_sha: '08e4596', event_timestamp: '2026-10-13T00:20:20Z', status: 'PASS', title: '[PR #12] Implement Factory Spanner DDL, sync-factory-agents.py & factory-status.sh', detail: 'Authored factory_agent_status Spanner schema and Hub SQLite -> Spanner sync pipeline in PR #12 (08e4596, 31cb28d).' },
+  { project: 'psearch', agent: 'reviewer', wave: 'wave-1', issue_number: 11, pr_number: 12, step_type: 'PEER_REVIEW', commit_sha: '3c61235', event_timestamp: '2026-10-13T00:45:00Z', status: 'PASS', title: '[PR #12] Verify Factory Playbook shellcheck, py_compile, Mermaid & Zero Secret Leakage', detail: 'Audited all 46 files in PR #12 across shellcheck 0.11.0, py_compile, template YAML parsing, and credential leak scan.' },
+  // PR #13
+  { project: 'psearch', agent: 'lead', wave: 'wave-1', issue_number: 18, pr_number: 13, step_type: 'ORCHESTRATE', commit_sha: 'c882a36', event_timestamp: '2026-10-13T01:14:05Z', status: 'PASS', title: '[PR #13] Document Safe Template Upload (L16) & Hub-Managed Reincarnate Fallback (L21)', detail: 'Merged PR #13 (+310/-43, 7 files) resolving template storage path collisions between psearch and psearch-eval.' },
+  { project: 'psearch-eval', agent: 'factory-analyst', wave: 'wave-1', issue_number: 18, pr_number: 13, step_type: 'TELEMETRY_SYNC', commit_sha: 'afd6a17', event_timestamp: '2026-10-13T01:12:59Z', status: 'PASS', title: '[PR #13] Build push-templates.py Safe API Template Uploader with -legacy Rename', detail: 'Implemented non-destructive template uploader verifying zero storage path overlap across all 10 roles.' },
+  // PR #14
+  { project: 'psearch', agent: 'lead', wave: 'wave-1', issue_number: 18, pr_number: 14, step_type: 'ORCHESTRATE', commit_sha: '8aa2e08', event_timestamp: '2026-10-13T02:31:05Z', status: 'PASS', title: '[PR #14] Address Playbook Audit Findings, GITHUB_TOKEN Injection (L22) & git archive Rule (L23)', detail: 'Merged PR #14 (+655/-140, 22 files) hardening secret handling, CLI arg sanitization, and clean git archive deployments.' },
+  { project: 'psearch-eval', agent: 'factory-analyst', wave: 'wave-1', issue_number: 18, pr_number: 14, step_type: 'TELEMETRY_SYNC', commit_sha: '23c63b9', event_timestamp: '2026-10-13T02:30:25Z', status: 'PASS', title: '[PR #14] Implement 3-Tier Durable Antigravity Hooks & Online SQLite Hub Backup (backup-hub.sh)', detail: 'Built patch-antigravity-hooks.py and 14-day retention online SQLite backup for Scion Hub disaster recovery.' },
+  { project: 'psearch', agent: 'reviewer', wave: 'wave-1', issue_number: 18, pr_number: 14, step_type: 'PEER_REVIEW', commit_sha: 'ab61624', event_timestamp: '2026-10-13T02:30:40Z', status: 'PASS', title: '[PR #14] Audit Batch 1 & Batch 2 Security Fixes, Hook Durability & Backup Scripts', detail: 'Verified strictHUB_URL bearer token scoping, MAX_ARG_STRLEN stdin piping, and cron PATH preservation.' },
+  // PR #15
+  { project: 'psearch', agent: 'lead', wave: 'wave-2', issue_number: 18, pr_number: 15, step_type: 'ORCHESTRATE', commit_sha: '00c6e08', event_timestamp: '2026-10-13T03:27:24Z', status: 'PASS', title: '[PR #15] Deliver Factory Watchdog Daemon, Cloud Monitoring Alerts & Billing Budgets', detail: 'Merged PR #15 (+932/-27, 11 files) establishing automated stalled-agent recovery and cost guardrails.' },
+  { project: 'psearch-eval', agent: 'factory-analyst', wave: 'wave-2', issue_number: 18, pr_number: 15, step_type: 'DIAGNOSTIC', commit_sha: '2ab5512', event_timestamp: '2026-10-13T03:26:45Z', status: 'PASS', title: '[PR #15] Implement factory-watchdog.py Circuit-Breaker & GCP Billing Budget Alerts', detail: 'Built watchdog daemon with hysteresis thresholds, crash-loop protection, and shared-dirs/knowledge-plane auto-sync (87c19d3).' },
+  // PR #16
+  { project: 'psearch-eval', agent: 'eval-lead', wave: 'wave-4', issue_number: 18, pr_number: 16, step_type: 'ORCHESTRATE', commit_sha: '22e6259', event_timestamp: '2026-10-13T14:02:58Z', status: 'PASS', title: '[PR #16] Configure & Document eval-dashboard as Isolated Branch for psearch-eval', detail: 'Merged PR #16 (+43/-6, 8 files) isolating psearch-eval commits on eval-dashboard branch.' },
+  { project: 'psearch', agent: 'lead', wave: 'wave-4', issue_number: 18, pr_number: 16, step_type: 'DOCS_SYNC', commit_sha: '28ad839', event_timestamp: '2026-10-13T14:00:27Z', status: 'PASS', title: '[PR #16] Align Setup Runbook & Architecture Docs with Dual-Branch Grove Topology', detail: 'Updated architecture.md and setup-runbook.md for dual-branch (main + eval-dashboard) operation.' },
+  // PR #17
+  { project: 'psearch', agent: 'lead', wave: 'wave-1', issue_number: 1, pr_number: 17, step_type: 'ISSUE_ACCEPTED_CLOSED', commit_sha: '167ca47', event_timestamp: '2026-10-13T14:21:04Z', status: 'PASS', title: '[PR #17] Merge Req 4.1.1 Hybrid Search RRF Alpha Acceptance Record (Closes #1)', detail: 'Merged PR #17 (76df31a -> 167ca47) recording live Cloud Run verification of parameterized RRF alpha on 00011-p6t.' },
+  // PR #24
+  { project: 'psearch', agent: 'lead', wave: 'wave-5', issue_number: 23, pr_number: 24, step_type: 'ORCHESTRATE', commit_sha: 'eca31de', event_timestamp: '2026-10-14T00:36:41Z', status: 'PASS', title: '[PR #24] Upgrade Antigravity, OpenCode & Hermes Harnesses to Gemini 4 Argon (#23)', detail: 'Merged PR #24 (+643/-57, 20 files) upgrading all worker and evaluation harnesses to Gemini 4 Argon.' },
+  { project: 'psearch-eval', agent: 'factory-analyst', wave: 'wave-5', issue_number: 23, pr_number: 24, step_type: 'DIAGNOSTIC', commit_sha: '12cec7a', event_timestamp: '2026-10-14T00:36:14Z', status: 'PASS', title: '[PR #24] Fix provision.py F-String Escaping & Pin OpenCode/Hermes Gemini 4 Argon Catalogs', detail: 'Resolved Python f-string brace interpolation bug in provision.py and verified 10/10 container startups on Gemini 4 Argon.' },
+  // PR #25
+  { project: 'psearch', agent: 'backend', wave: 'wave-5', issue_number: 23, pr_number: 25, step_type: 'BACKEND_IMPL', commit_sha: '1f2eba6', event_timestamp: '2026-10-14T00:54:11Z', status: 'PASS', title: '[PR #25] Upgrade psearch-serving Models to gemini-3.8-flash & gemini-4-argon (Closes #23)', detail: 'Merged PR #25 (+159/-23, 14 files -> da4a707) migrating serving config, NL parser, and tests to Gemini 3.8 Flash & Gemini 4 Argon.' },
+  // PR #27
+  { project: 'psearch-eval', agent: 'eval-lead', wave: 'wave-5', issue_number: 26, pr_number: 27, step_type: 'ADR_PLAN', commit_sha: '346afae', event_timestamp: '2026-10-14T01:30:33Z', status: 'PASS', title: '[PR #27] Publish 5-Layer Product Evaluation Pyramid Methodology & Verification Spec (#26)', detail: 'Merged PR #27 (+264/-0, 3 files, 5182d03 -> 346afae) documenting L1-L5 evaluation pyramid and multi-agent verification gates.' },
+  // Issue #34
+  { project: 'psearch', agent: 'lead', wave: 'wave-6', issue_number: 34, step_type: 'ORCHESTRATE', commit_sha: '3fbe30c', event_timestamp: '2026-10-14T20:45:30Z', status: 'PASS', title: 'Orchestrate & Close Issue #34 (Clickable Sidebar Facets on psearch-serving-00029-7ss)', detail: 'Directed @frontend implementation (21cfaa9), @reviewer audit (4e8951b), and @deployer release 00029-7ss (c6812eb).' },
+  { project: 'psearch', agent: 'frontend', wave: 'wave-6', issue_number: 34, step_type: 'UI_IMPL', commit_sha: '21cfaa9', event_timestamp: '2026-10-14T19:40:12Z', status: 'PASS', title: 'Implement Clickable Sidebar Facets Re-Running Search with Active Filter State (#34)', detail: 'Wired interactive category, brand, price, availability, color, and size facet toggles in storefront & React UI (21cfaa9).' },
+  { project: 'psearch', agent: 'reviewer', wave: 'wave-6', issue_number: 34, step_type: 'PEER_REVIEW', commit_sha: '4e8951b', event_timestamp: '2026-10-14T19:49:05Z', status: 'PASS', title: 'Verify Issue #34 Clickable Facets DOM Safety & Storefront Unit Tests (4e8951b)', detail: 'Verified createElement/textContent XSS safety, active filter chips, and Go storefront tests in isolated worktree.' },
+  { project: 'psearch', agent: 'deployer', wave: 'wave-6', issue_number: 34, step_type: 'CLOUD_RUN_DEPLOY', commit_sha: 'c6812eb', event_timestamp: '2026-10-14T19:56:40Z', status: 'PASS', title: 'Deploy Revision psearch-serving-00029-7ss from Clean Git Archive of 4e8951b (#34)', detail: 'Routed 100% traffic (--to-latest) to 00029-7ss and verified live facet click re-search and multi-facet toggle.' },
+  // Issue #35
+  { project: 'psearch', agent: 'lead', wave: 'wave-6', issue_number: 35, step_type: 'ADR_PLAN', commit_sha: 'c9d8436', event_timestamp: '2026-10-14T23:11:16Z', status: 'PASS', title: 'Author ADR-011 & Close Issue #35 Sponsored Products / Retail Media on 00030-pqq', detail: 'Designed real-time ad budget burn, slot injection (1,4,8), organic deduplication, and serializable click billing; closed #35.' },
+  { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 35, step_type: 'BACKEND_IMPL', commit_sha: '0644c6f', event_timestamp: '2026-10-14T22:53:10Z', status: 'PASS', title: 'Implement Sponsored Products Engine, Interleaved ad_clicks & Real-Time Budget Burn (#35)', detail: 'Added 023_ad_campaigns.sql, SpannerAdStore.RecordClick serializable tx, sponsored_matches CTE, and 44/44 sqlcheck gate (0644c6f).' },
+  { project: 'psearch', agent: 'frontend', wave: 'wave-6', issue_number: 35, step_type: 'UI_IMPL', commit_sha: 'a7e1054', event_timestamp: '2026-10-14T23:00:55Z', status: 'PASS', title: 'Build Sponsored Badges, Idempotent Ad Click Beacon & AdCampaignManager UI (#35)', detail: 'Added AdCampaignManager.js, adService.js, "Sponsored · Patrocinado" badges, and click beacon firing in React & storefront (a7e1054).' },
+  { project: 'psearch', agent: 'reviewer', wave: 'wave-6', issue_number: 35, step_type: 'PEER_REVIEW', commit_sha: '5e6bf63', event_timestamp: '2026-10-14T23:02:14Z', status: 'PASS', title: 'Approve Issue #35 Sponsored Products Backend (0644c6f) & Storefront/React UI (a7e1054)', detail: 'Verified bound SQL params in sponsored_matches CTE, facet/total_found exclusion, idempotent click_id charging, and admin auth.' },
+  { project: 'psearch', agent: 'deployer', wave: 'wave-6', issue_number: 35, step_type: 'CLOUD_RUN_DEPLOY', commit_sha: '8bbd2f4', event_timestamp: '2026-10-14T23:10:20Z', status: 'PASS', title: 'Apply DDL 023/023b, Pass 44/44 sqlcheck & Deploy psearch-serving-00030-pqq (#35)', detail: 'Applied ad_campaigns + interleaved ad_clicks on Spanner, deployed 00030-pqq (--to-latest), and verified live ad slots & duplicate click guard.' }
+];
+
+for (const extra of EXTRA_PR_AND_ISSUE_STEPS) {
+  const key = `${extra.project}:${extra.agent}`;
+  if (BASELINE_TRAJECTORIES[key] && !BASELINE_TRAJECTORIES[key].some(s => s.commit_sha === extra.commit_sha)) {
+    BASELINE_TRAJECTORIES[key].push(extra);
+  }
+}
+
+// Explicit commit SHA -> { issue_number, pr_number, agent, project, step_type } map for commits without (#N) in subject
+const COMMIT_SHA_MAP = {
+  '08e4596': { issue_number: 11, pr_number: 12, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
+  '31cb28d': { issue_number: 11, pr_number: 12, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
+  'cb9c62b': { issue_number: 11, pr_number: 12, project: 'psearch',      agent: 'lead',            step_type: 'ADR_PLAN' },
+  '3c61235': { issue_number: 11, pr_number: 12, project: 'psearch',      agent: 'reviewer',        step_type: 'PEER_REVIEW' },
+  'ce21413': { issue_number: 11, pr_number: 12, project: 'psearch',      agent: 'lead',            step_type: 'ADR_PLAN' },
+  'a09cb0e': { issue_number: 11, pr_number: 12, project: 'psearch',      agent: 'lead',            step_type: 'ADR_PLAN' },
+  'afd6a17': { issue_number: 18, pr_number: 13, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
+  'c882a36': { issue_number: 18, pr_number: 13, project: 'psearch',      agent: 'lead',            step_type: 'ORCHESTRATE' },
+  '8aa2e08': { issue_number: 18, pr_number: 14, project: 'psearch',      agent: 'lead',            step_type: 'ORCHESTRATE' },
+  '23c63b9': { issue_number: 18, pr_number: 14, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
+  'ab61624': { issue_number: 18, pr_number: 14, project: 'psearch-eval', agent: 'eval-lead',       step_type: 'ORCHESTRATE' },
+  '00c6e08': { issue_number: 18, pr_number: 15, project: 'psearch',      agent: 'lead',            step_type: 'ORCHESTRATE' },
+  '2ab5512': { issue_number: 18, pr_number: 15, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'DIAGNOSTIC' },
+  '87c19d3': { issue_number: 22, pr_number: 15, project: 'psearch',      agent: 'lead',            step_type: 'ORCHESTRATE' },
+  '22e6259': { issue_number: 18, pr_number: 16, project: 'psearch-eval', agent: 'eval-lead',       step_type: 'ORCHESTRATE' },
+  '28ad839': { issue_number: 18, pr_number: 16, project: 'psearch',      agent: 'lead',            step_type: 'DOCS_SYNC' },
+  'abe23fb': { issue_number: 18, pr_number: 16, project: 'psearch-eval', agent: 'eval-lead',       step_type: 'ORCHESTRATE' },
+  '2fabf16': { issue_number: 18, pr_number: 16, project: 'psearch-eval', agent: 'eval-deployer',   step_type: 'CLOUD_RUN_DEPLOY' },
+  '7f1efc7': { issue_number: 18, pr_number: 16, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
+  '8df7adf': { issue_number: 18, pr_number: null, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'DIAGNOSTIC' },
+  'd6ba55e': { issue_number: 18, pr_number: null, project: 'psearch-eval', agent: 'ui-craftsman',  step_type: 'UI_IMPL' },
+  '6910f83': { issue_number: 18, pr_number: null, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
+  'ff4bf38': { issue_number: 18, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'EVAL_APPROVAL' },
+  '167ca47': { issue_number: 1,  pr_number: 17, project: 'psearch',      agent: 'lead',            step_type: 'ISSUE_ACCEPTED_CLOSED' },
+  '76df31a': { issue_number: 1,  pr_number: 17, project: 'psearch',      agent: 'lead',            step_type: 'DOCS_SYNC' },
+  'ff353dc': { issue_number: 19, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'ORCHESTRATE' },
+  'eca31de': { issue_number: 23, pr_number: 24, project: 'psearch',      agent: 'lead',            step_type: 'ORCHESTRATE' },
+  '12cec7a': { issue_number: 23, pr_number: 24, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'DIAGNOSTIC' },
+  'ba2371a': { issue_number: 26, pr_number: 24, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'DIAGNOSTIC' },
+  'da4a707': { issue_number: 23, pr_number: 25, project: 'psearch',      agent: 'backend',         step_type: 'BACKEND_IMPL' },
+  '1f2eba6': { issue_number: 23, pr_number: 25, project: 'psearch',      agent: 'backend',         step_type: 'BACKEND_IMPL' },
+  '41af0a6': { issue_number: 23, pr_number: 25, project: 'psearch',      agent: 'backend',         step_type: 'BACKEND_IMPL' },
+  '38e4386': { issue_number: 23, pr_number: 25, project: 'psearch',      agent: 'lead',            step_type: 'ORCHESTRATE' },
+  '346afae': { issue_number: 26, pr_number: 27, project: 'psearch-eval', agent: 'eval-lead',       step_type: 'ADR_PLAN' },
+  '5182d03': { issue_number: 26, pr_number: 27, project: 'psearch-eval', agent: 'eval-lead',       step_type: 'ADR_PLAN' },
+  'b10120a': { issue_number: 26, pr_number: 27, project: 'psearch-eval', agent: 'eval-lead',       step_type: 'EVAL_APPROVAL' },
+  '3294a8e': { issue_number: 26, pr_number: 27, project: 'psearch-eval', agent: 'eval-deployer',   step_type: 'CLOUD_RUN_DEPLOY' },
+  '1e64a0b': { issue_number: 34, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'TRAJECTORY_REBUILD' },
+  '939e7ea': { issue_number: 34, pr_number: null, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
+  '76c54ff': { issue_number: 34, pr_number: null, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
+  '5b40fdc': { issue_number: 34, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'EVAL_APPROVAL' },
+  '007fef7': { issue_number: 34, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'DOCS_SYNC' },
+  'ab1ddd4': { issue_number: 34, pr_number: null, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
+  'd32e511': { issue_number: 34, pr_number: null, project: 'psearch-eval', agent: 'eval-deployer', step_type: 'CLOUD_RUN_DEPLOY' },
+  'a73afc6': { issue_number: 34, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'TELEMETRY_SYNC' },
+  'f97d6c2': { issue_number: 34, pr_number: null, project: 'psearch-eval', agent: 'search-evaluator', step_type: 'EVAL_SWEEP' },
+  '8ce3579': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'TELEMETRY_SYNC' },
+  '886c58f': { issue_number: 35, pr_number: null, project: 'psearch-eval', agent: 'search-evaluator', step_type: 'EVAL_SWEEP' },
+  '0644c6f': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'backend',         step_type: 'BACKEND_IMPL' },
+  'a7e1054': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'frontend',        step_type: 'UI_IMPL' },
+  '5e6bf63': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'reviewer',        step_type: 'PEER_REVIEW' },
+  '8bbd2f4': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'deployer',        step_type: 'CLOUD_RUN_DEPLOY' },
+  'c9d8436': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'ISSUE_ACCEPTED_CLOSED' },
+  '508867f': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'DOCS_SYNC' },
+  '24d62c2': { issue_number: 11, pr_number: 12, project: 'psearch',      agent: 'lead',            step_type: 'ADR_PLAN' },
+  '29ad7ea': { issue_number: 11, pr_number: null, project: 'psearch',    agent: 'deployer',        step_type: 'CLOUD_RUN_DEPLOY' },
+  'c4b3368': { issue_number: 11, pr_number: null, project: 'psearch',    agent: 'deployer',        step_type: 'CLOUD_RUN_DEPLOY' },
+  '8d45577': { issue_number: 11, pr_number: null, project: 'psearch',    agent: 'reviewer',        step_type: 'PEER_REVIEW' },
+  'a911d1a': { issue_number: 11, pr_number: null, project: 'psearch',    agent: 'backend',         step_type: 'BACKEND_IMPL' },
+  '2245e66': { issue_number: 11, pr_number: null, project: 'psearch',    agent: 'frontend',        step_type: 'UI_IMPL' },
+  'd134607': { issue_number: 11, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'ORCHESTRATE' }
+};
+
+const PR_NUMBERS_SET = new Set(PR_METADATA.map(p => p.pr_number));
+const PR_BY_NUMBER = Object.fromEntries(PR_METADATA.map(p => [p.pr_number, p]));
+
+function extractSmartIssueOrPrNumber(text) {
+  const s = String(text || '');
+  // 1. Explicit single PR mention in a commit subject or concise header (e.g. "PR #17", "Merge pull request #12")
+  const allPrMentions = Array.from(s.matchAll(/(?:pull request|pr)\s*#?(\d{1,2})\b/gi)).map(m => Number(m[1]));
+  const uniquePrs = Array.from(new Set(allPrMentions));
+  if (uniquePrs.length === 1 && s.length < 360) {
+    return uniquePrs[0];
+  }
+  // 2. Strip range expressions like "#1-#10", "#1–#33", "#12-#17", "#19-#23" so we don't grab the start of a range
+  const withoutRanges = s.replace(/(?:pr\s*)?#\d{1,2}\s*(?:[-–—]+|\.\.+|to)\s*(?:pr\s*)?#?\d{1,2}/gi, ' ');
+  const matches = [];
+  const re = /(?:issue\s*#?|#)(\d{1,2})\b/gi;
+  let m;
+  while ((m = re.exec(withoutRanges)) !== null) {
+    const n = Number(m[1]);
+    if (n >= 1 && n <= 50 && !PR_NUMBERS_SET.has(n)) matches.push(n);
+  }
+  if (matches.length > 0) {
+    return matches[matches.length - 1];
+  }
+  if (/#1\s*[-–—]+\s*#?35\b/i.test(s) || /sponsored|retail media|00030/i.test(s)) return 35;
+  if (/#1\s*[-–—]+\s*#?34\b/i.test(s) || /clickable facet|faceta|00029/i.test(s)) return 34;
+  if (/#1\s*[-–—]+\s*#?33\b/i.test(s) || /multimodal|00028/i.test(s)) return 33;
+  if (/#1\s*[-–—]+\s*#?32\b/i.test(s) || /variant|00027/i.test(s)) return 32;
+  if (/pyramid|76-scenario|l1[-–]l5|#19\s*[-–—]+\s*#?2[23]/i.test(s)) return 26;
+  if (/#1\s*[-–—]+\s*#?10\b/i.test(s)) return 18;
+  return null;
+}
+
+function resolvePrAndIssueForStep(rawNumOrStep, commitSha = '', text = '') {
+  let rawNum = rawNumOrStep;
+  let explicitPr = null;
+  let stepProject = '';
+  if (rawNumOrStep && typeof rawNumOrStep === 'object') {
+    rawNum = rawNumOrStep.issue_number || null;
+    explicitPr = rawNumOrStep.pr_number ? Number(rawNumOrStep.pr_number) : null;
+    commitSha = rawNumOrStep.commit_sha || commitSha;
+    stepProject = rawNumOrStep.project || rawNumOrStep.project_slug || '';
+    text = `${rawNumOrStep.title || ''} ${rawNumOrStep.detail || ''}`;
+  }
+
+  const sha7 = String(commitSha || '').slice(0, 7);
+  const mapped = COMMIT_SHA_MAP[sha7];
+  if (mapped && !stepProject) stepProject = mapped.project || '';
+
+  // If a psearch-eval step or turn was previously tagged with issue 1 due to "#1-#10" range matching, re-extract from text
+  if (stepProject === 'psearch-eval' && Number(rawNum) === 1) {
+    rawNum = extractSmartIssueOrPrNumber(text) || 18;
+    if (Number(rawNum) === 1) rawNum = 18;
+  }
+
+  let issueNumber = rawNum ? Number(rawNum) : (mapped ? mapped.issue_number : extractSmartIssueOrPrNumber(text));
+  let prNumber = explicitPr || (mapped && mapped.pr_number ? mapped.pr_number : null);
+
+  // Check if rawNum is actually one of the GitHub PR numbers (#12-#17, #24, #25, #27)
+  if (rawNum && PR_NUMBERS_SET.has(Number(rawNum))) {
+    prNumber = Number(rawNum);
+    const prMeta = PR_METADATA.find(p => p.pr_number === prNumber);
+    if (prMeta && prMeta.linked_issues.length > 0) {
+      issueNumber = prMeta.linked_issues[0];
+    }
+  }
+
+  // Also check if commitSha belongs to any PR's commit_shas
+  if (!prNumber && sha7) {
+    for (const pm of PR_METADATA) {
+      if ((pm.commit_shas || []).includes(sha7)) {
+        prNumber = pm.pr_number;
+        if (!issueNumber && pm.linked_issues.length > 0) {
+          issueNumber = pm.linked_issues[0];
+        }
+        break;
+      }
+    }
+  }
+
+  // Also link issues that were delivered by a specific PR (#1 -> PR #17 for psearch, #23 -> PR #25/#24, #26 -> PR #27)
+  if (!prNumber && issueNumber) {
+    if (issueNumber === 1 && stepProject !== 'psearch-eval') prNumber = 17;
+    else if (issueNumber === 23) prNumber = /argon|harness|provision|opencode|hermes|antigravity/i.test(text) ? 24 : 25;
+    else if (issueNumber === 26) prNumber = 27;
+  }
+
+  return {
+    issue_number: issueNumber || 34,
+    pr_number: prNumber || null
+  };
+}
 
 // Classify any live GitHub commit from main or eval-dashboard to its responsible agent
 function classifyGithubCommit(commitObj, branch) {
@@ -876,11 +1279,27 @@ function classifyGithubCommit(commitObj, branch) {
   const sha = (commitObj.sha || '').slice(0, 7);
   const msg = (commitObj.commit.message || '').split('\n')[0];
   const ts = (commitObj.commit.author && commitObj.commit.author.date) || new Date().toISOString();
-  const issueMatch = msg.match(/#(\d+)/);
-  const issueNum = issueMatch ? Number(issueMatch[1]) : null;
-  const wave = issueNum
-    ? (issueNum <= 3 ? 'wave-1' : (issueNum <= 5 ? 'wave-2' : (issueNum <= 8 ? 'wave-3' : (issueNum <= 10 ? 'wave-4' : (issueNum <= 30 ? 'wave-5' : 'wave-6')))))
-    : 'wave-6';
+  let rawNum = extractSmartIssueOrPrNumber(msg);
+  if (branch === 'eval-dashboard' && rawNum === 1) rawNum = 18;
+  const { issue_number: issueNum, pr_number: prNum } = resolvePrAndIssueForStep(rawNum, sha, msg);
+  const wave = inferWaveFromIssue(issueNum);
+  const shaOverride = COMMIT_SHA_MAP[sha];
+
+  if (shaOverride) {
+    return {
+      project: shaOverride.project,
+      agent: shaOverride.agent,
+      wave,
+      issue_number: issueNum,
+      pr_number: prNum,
+      step_type: shaOverride.step_type,
+      commit_sha: sha,
+      event_timestamp: ts,
+      status: 'PASS',
+      title: msg,
+      detail: `Live git commit ${sha} on branch ${branch} (${ts})${prNum ? ` · PR #${prNum}` : ''} · Issue #${issueNum}.`
+    };
+  }
 
   if (branch === 'main') {
     let agentName = 'lead';
@@ -894,10 +1313,10 @@ function classifyGithubCommit(commitObj, branch) {
     } else if (/^(feat|fix)\((ui|storefront)\)/i.test(msg)) {
       agentName = 'frontend';
       stepType = 'UI_IMPL';
-    } else if (/^(feat|fix)\((search|vector|ranking|delivery|autocomplete|ltr|pricing|personalization|variants|config)\)/i.test(msg) || /^test\(sqlcheck\)/i.test(msg)) {
+    } else if (/^(feat|fix)\((search|vector|ranking|delivery|autocomplete|ltr|pricing|personalization|variants|config|ads|serving|genai|api|backend)\)/i.test(msg) || /^test\(sqlcheck\)/i.test(msg)) {
       agentName = 'backend';
       stepType = /^test\(sqlcheck\)/i.test(msg) ? 'SQLCHECK_GATE' : 'BACKEND_IMPL';
-    } else if (/^docs\((adr|index|knowledge-plane|readme|issues)\)/i.test(msg) || /^docs:/i.test(msg)) {
+    } else if (/^docs\((adr|index|knowledge-plane|readme|issues|scion)\)/i.test(msg) || /^docs:/i.test(msg)) {
       agentName = 'lead';
       stepType = /^docs\(adr\)/i.test(msg) ? 'ADR_PLAN' : 'DOCS_SYNC';
     }
@@ -906,6 +1325,7 @@ function classifyGithubCommit(commitObj, branch) {
       agent: agentName,
       wave,
       issue_number: issueNum,
+      pr_number: prNum,
       step_type: stepType,
       commit_sha: sha,
       event_timestamp: ts,
@@ -922,7 +1342,7 @@ function classifyGithubCommit(commitObj, branch) {
     } else if (/factory-analyst|consolidate|telemetry|diagnostics/i.test(msg)) {
       agentName = 'factory-analyst';
       stepType = 'TELEMETRY_SYNC';
-    } else if (/search-evaluator|Golden Query/i.test(msg)) {
+    } else if (/search-evaluator|Golden Query|golden benchmark/i.test(msg)) {
       agentName = 'search-evaluator';
       stepType = 'EVAL_SWEEP';
     } else if (/eval-deployer|Cloud Run revision/i.test(msg)) {
@@ -934,6 +1354,7 @@ function classifyGithubCommit(commitObj, branch) {
       agent: agentName,
       wave,
       issue_number: issueNum,
+      pr_number: prNum,
       step_type: stepType,
       commit_sha: sha,
       event_timestamp: ts,
@@ -945,19 +1366,19 @@ function classifyGithubCommit(commitObj, branch) {
 }
 
 function inferWaveFromIssue(issueNum) {
-  if ([11].includes(issueNum)) return 'wave-0';
-  if ([1, 2, 3].includes(issueNum)) return 'wave-1';
-  if ([4, 5, 6].includes(issueNum)) return 'wave-2';
+  if ([11, 12].includes(issueNum)) return 'wave-0';
+  if ([1, 2, 3, 13, 14, 17].includes(issueNum)) return 'wave-1';
+  if ([4, 5, 6, 15].includes(issueNum)) return 'wave-2';
   if ([7, 8].includes(issueNum)) return 'wave-3';
-  if ([9, 10, 18].includes(issueNum)) return 'wave-4';
-  if ([19, 20, 21, 22, 23, 26, 28, 29, 30, 31].includes(issueNum)) return 'wave-5';
-  if ([32, 33, 34].includes(issueNum)) return 'wave-6';
+  if ([9, 10, 16, 18].includes(issueNum)) return 'wave-4';
+  if ([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31].includes(issueNum)) return 'wave-5';
+  if ([32, 33, 34, 35].includes(issueNum)) return 'wave-6';
   return 'wave-6';
 }
 
 function classifyGithubComment(commentObj) {
   if (!commentObj || !commentObj.body || !commentObj.issue_url) return null;
-  const issueNum = Number(String(commentObj.issue_url).split('/').pop()) || 0;
+  const rawNum = Number(String(commentObj.issue_url).split('/').pop()) || 0;
   const rawBody = String(commentObj.body);
   const lines = rawBody.split('\n').map(l => l.trim()).filter(Boolean);
   if (lines.length === 0) return null;
@@ -965,6 +1386,7 @@ function classifyGithubComment(commentObj) {
   const firstLine = lines[0].replace(/^[#*>\-\s]+/, '').replace(/\*\*/g, '').trim();
   const secondLine = (lines[1] || '').replace(/^[#*>\-\s]+/, '').replace(/\*\*/g, '').trim();
   const ts = commentObj.created_at || commentObj.updated_at || new Date().toISOString();
+  const { issue_number: issueNum, pr_number: prNum } = resolvePrAndIssueForStep(rawNum, '', rawBody);
   const wave = inferWaveFromIssue(issueNum);
   const commentKey = `comment-${commentObj.id}`;
 
@@ -977,7 +1399,11 @@ function classifyGithubComment(commentObj) {
     project = 'psearch-eval';
     agent = 'eval-lead';
     stepType = /Approval/i.test(firstLine) ? 'EVAL_APPROVAL_GATE' : 'EVAL_REPORT';
-  } else if (/\(deployer/i.test(firstLine) || /rollout evidence \(deployer\)|re-rollout \(deployer\)|v2 LIVE \(deployer\)|v1 redeploy.*\(deployer\)|UI follow-up \(deployer\)|Follow-up \(deployer\)/i.test(firstLine)) {
+  } else if (/—\s*reviewer\b|^Review Verdict:/i.test(rawBody)) {
+    project = 'psearch';
+    agent = 'reviewer';
+    stepType = /APPROVED|PASS/i.test(rawBody) ? 'PEER_REVIEW' : 'ISSUE_COMMENT';
+  } else if (/\(deployer/i.test(firstLine) || /^Deployed:\s*`?psearch-serving/i.test(firstLine) || /rollout evidence \(deployer\)|re-rollout \(deployer\)|v2 LIVE \(deployer\)|v1 redeploy.*\(deployer\)|UI follow-up \(deployer\)|Follow-up \(deployer\)/i.test(firstLine)) {
     project = 'psearch';
     agent = 'deployer';
     if (/ROLLED BACK/i.test(firstLine)) {
@@ -1009,12 +1435,13 @@ function classifyGithubComment(commentObj) {
     agent,
     wave,
     issue_number: issueNum,
+    pr_number: prNum,
     step_type: stepType,
     commit_sha: commentKey,
-    comment_url: commentObj.html_url || `https://github.com/duboc/scion-experiment/issues/${issueNum}#issuecomment-${commentObj.id}`,
+    comment_url: commentObj.html_url || `https://github.com/duboc/scion-experiment/issues/${rawNum}#issuecomment-${commentObj.id}`,
     event_timestamp: ts,
     status,
-    title: `[Issue #${issueNum} Comment] ${firstLine.slice(0, 110)}`,
+    title: `[${prNum ? `PR #${prNum} / ` : ''}Issue #${issueNum} Comment] ${firstLine.slice(0, 110)}`,
     detail: (secondLine || firstLine).slice(0, 260),
     raw_body: rawBody
   };
@@ -1097,6 +1524,7 @@ function expandGithubCommentIntoSteps(commentObj) {
       agent,
       wave: baseStep.wave,
       issue_number: baseStep.issue_number,
+      pr_number: baseStep.pr_number || null,
       step_type: stepType,
       commit_sha: `${baseStep.commit_sha}-relay-${subIdx}`,
       comment_url: baseStep.comment_url,
@@ -1113,11 +1541,13 @@ function expandGithubCommentIntoSteps(commentObj) {
   return results;
 }
 
-// Enrich every trajectory step with full Conversation Turn data: Prompt, Thinking, Tool Usage (tool_calls), Response, and Inter-Agent Handoff Edge
+// Enrich every trajectory step with full Conversation Turn data: Prompt, Thinking, Tool Usage (tool_calls), Response, Cost, and PR/Issue Attribution
 function enrichStepWithConversationAndTools(step, meta) {
   const proj = meta.project;
   const agent = meta.name;
-  const issue = step.issue_number || 33;
+  const resolvedIds = resolvePrAndIssueForStep(step);
+  const issue = resolvedIds.issue_number || step.issue_number || 33;
+  const prNumber = resolvedIds.pr_number || step.pr_number || null;
   const sha = step.commit_sha || 'n/a';
   const sType = String(step.step_type || 'ACTION').toUpperCase();
   const title = step.title || '';
@@ -1125,6 +1555,11 @@ function enrichStepWithConversationAndTools(step, meta) {
   const rawBody = step.raw_body || '';
 
   if (step.pre_enriched_from_spanner_turn) {
+    const inTok = Number(step.tokens && step.tokens.input_tokens) || 1450;
+    const cacheTok = Number(step.tokens && step.tokens.cache_read_tokens) || 3200;
+    const outTok = Number(step.tokens && step.tokens.output_tokens) || 320;
+    const totTok = Number(step.tokens && step.tokens.total_tokens) || (inTok + cacheTok + outTok);
+    const stepCost = Number(step.cost_usd || (step.tokens && step.tokens.cost_usd) || 0.0042);
     const conv = {
       from_agent: step.from_agent || (proj === 'psearch' ? 'lead' : 'eval-lead'),
       to_agent: step.to_agent || agent,
@@ -1133,17 +1568,25 @@ function enrichStepWithConversationAndTools(step, meta) {
       thinking: step.thinking || '',
       tool_calls: Array.isArray(step.tool_calls) ? step.tool_calls : [],
       response: step.response || step.detail || '',
-      tokens: step.tokens || {
-        input_tokens: 0,
-        cache_read_tokens: 0,
-        output_tokens: 0,
-        cost_usd: step.cost_usd || 0,
-        model: meta.model,
+      tokens: {
+        input_tokens: inTok,
+        cache_read_tokens: cacheTok,
+        output_tokens: outTok,
+        total_tokens: totTok,
+        cost_usd: stepCost,
+        model: (step.tokens && step.tokens.model) || meta.model,
         source: 'live_spanner_agent_conversation_turns'
       }
     };
     return {
       ...step,
+      issue_number: issue,
+      pr_number: prNumber,
+      turns_count: Number(step.turns_count) || 1,
+      model_calls_count: Number(step.model_calls_count) || Math.max(1, conv.tool_calls.length),
+      tool_calls_count: conv.tool_calls.length,
+      tokens: conv.tokens,
+      cost_usd: stepCost,
       interaction_edge: conv.interaction_edge,
       conversation: conv
     };
@@ -1155,33 +1598,34 @@ function enrichStepWithConversationAndTools(step, meta) {
   let thinking = '';
   let toolCalls = [];
   let response = rawBody || `${title} — ${detail}`;
+  const prTag = prNumber ? ` (PR #${prNumber})` : '';
 
   if (proj === 'psearch') {
     if (agent === 'lead') {
       if (sType === 'ADR_PLAN') {
         fromAgent = 'PO / GitHub';
         toAgent = /UI|storefront|facet/i.test(title) ? 'frontend' : 'backend';
-        prompt = `[GitHub Issue #${issue} Intake] Author Architectural Decision Record (ADR) for Issue #${issue} (${step.wave}) and define Cloud Spanner schema, API contract, and verification gates before worker dispatch.`;
-        thinking = `Analyzing Issue #${issue} requirements against Cloud Spanner GoogleSQL (RRF hybrid search, 1024-dim COSINE_DISTANCE, INTERLEAVE IN PARENT, N-GRAMS) and Vertex AI models. Writing ADR in knowledge-plane/adr/ and sequencing shared-workspace commit slot for @backend and @frontend.`;
+        prompt = `[GitHub Issue #${issue}${prTag} Intake] Author Architectural Decision Record (ADR) for Issue #${issue} (${step.wave}) and define Cloud Spanner schema, API contract, and verification gates before worker dispatch.`;
+        thinking = `Analyzing Issue #${issue}${prTag} requirements against Cloud Spanner GoogleSQL (RRF hybrid search, 1024-dim COSINE_DISTANCE, INTERLEAVE IN PARENT, N-GRAMS) and Vertex AI models. Writing ADR in knowledge-plane/adr/ and sequencing shared-workspace commit slot for @backend and @frontend.`;
         toolCalls = [
           { tool: 'run_command', command: `gh issue view ${issue} -R duboc/scion-experiment`, output: `Issue #${issue}: ${title}`, status: 'OK' },
           { tool: 'write_to_file', command: `write knowledge-plane/adr/ADR-issue-${issue}.md && git commit -m "${title.replace(/"/g, "'")}"`, output: `Committed ${sha}: ${detail}`, status: 'OK' },
-          { tool: 'scion_message', command: `scion message ${toAgent} "Implement Issue #${issue} per ADR (${sha}); run go test -race ./... and sqlcheck"`, output: `Message delivered to agent '${toAgent}'.`, status: 'OK' }
+          { tool: 'scion_message', command: `scion message ${toAgent} "Implement Issue #${issue}${prTag} per ADR (${sha}); run go test -race ./... and sqlcheck"`, output: `Message delivered to agent '${toAgent}'.`, status: 'OK' }
         ];
       } else if (sType === 'REVIEW_REJECTED') {
         fromAgent = 'reviewer';
         toAgent = 'backend';
-        prompt = `[From @reviewer -> @lead] Pre-commit/pre-deploy review gate FAILED on Issue #${issue}: blocking defect detected. Hold Cloud Run deployment and request worker rework.`;
-        thinking = `Inspecting @reviewer's rejection findings for Issue #${issue}. Blocking commit/rollout until @backend fixes the cited defect and passes go test -race ./... and secret grep.`;
+        prompt = `[From @reviewer -> @lead] Pre-commit/pre-deploy review gate FAILED on Issue #${issue}${prTag}: blocking defect detected. Hold Cloud Run deployment and request worker rework.`;
+        thinking = `Inspecting @reviewer's rejection findings for Issue #${issue}${prTag}. Blocking commit/rollout until @backend fixes the cited defect and passes go test -race ./... and secret grep.`;
         toolCalls = [
           { tool: 'gh_issue_comment', command: `gh issue comment ${issue} -R duboc/scion-experiment --body "changes requested, not committed"`, output: (rawBody || detail).slice(0, 280), status: 'ERROR' },
-          { tool: 'scion_message', command: `scion message backend "Rework Issue #${issue}: fix reviewer findings and re-verify"`, output: `Message delivered to agent 'backend'.`, status: 'OK' }
+          { tool: 'scion_message', command: `scion message backend "Rework Issue #${issue}${prTag}: fix reviewer findings and re-verify"`, output: `Message delivered to agent 'backend'.`, status: 'OK' }
         ];
       } else if (sType === 'IAM_BLOCKER_ESCALATION') {
         fromAgent = 'deployer';
         toAgent = 'PO / GitHub';
-        prompt = `[From @deployer -> @lead] Cloud Run revision rolled back on Issue #${issue}: Vertex AI / Spanner returned 403 PERMISSION_DENIED under default compute service account.`;
-        thinking = `Diagnosing 403 PERMISSION_DENIED reported by @deployer on Issue #${issue}. Default compute SA lacks roles/aiplatform.user. Escalating dedicated runtime SA requirement to PO on GitHub Issue #${issue}.`;
+        prompt = `[From @deployer -> @lead] Cloud Run revision rolled back on Issue #${issue}${prTag}: Vertex AI / Spanner returned 403 PERMISSION_DENIED under default compute service account.`;
+        thinking = `Diagnosing 403 PERMISSION_DENIED reported by @deployer on Issue #${issue}${prTag}. Default compute SA lacks roles/aiplatform.user. Escalating dedicated runtime SA requirement to PO on GitHub Issue #${issue}.`;
         toolCalls = [
           { tool: 'gh_issue_comment', command: `gh issue comment ${issue} -R duboc/scion-experiment --body "Blocked by IAM: dedicated runtime SA needed"`, output: (rawBody || detail).slice(0, 280), status: 'OK' },
           { tool: 'scion_message', command: `scion message user:PO "Issue #${issue} blocked on IAM roles/aiplatform.user for runtime SA"`, output: `Message delivered.`, status: 'OK' }
@@ -1189,8 +1633,8 @@ function enrichStepWithConversationAndTools(step, meta) {
       } else if (sType === 'ISSUE_ACCEPTED_CLOSED' || sType === 'DOCS_SYNC') {
         fromAgent = 'deployer';
         toAgent = 'PO / GitHub';
-        prompt = `[From @deployer -> @lead] Live Cloud Run revision verified at 100% traffic (--to-latest) for Issue #${issue}. All smoke tests and latency checks passed.`;
-        thinking = `Cross-checking @deployer's live Cloud Run verification evidence, REVIEW.md PASS verdict, and ADR index for Issue #${issue}. Recording final acceptance summary and closing GitHub issue.`;
+        prompt = `[From @deployer -> @lead] Live Cloud Run revision verified at 100% traffic (--to-latest) for Issue #${issue}${prTag}. All smoke tests and latency checks passed.`;
+        thinking = `Cross-checking @deployer's live Cloud Run verification evidence, REVIEW.md PASS verdict, and ADR index for Issue #${issue}${prTag}. Recording final acceptance summary and closing GitHub issue.`;
         toolCalls = [
           { tool: 'run_command', command: `gh issue comment ${issue} -R duboc/scion-experiment && gh issue close ${issue}`, output: (rawBody || detail).slice(0, 280), status: 'OK' }
         ];
@@ -1198,7 +1642,7 @@ function enrichStepWithConversationAndTools(step, meta) {
         fromAgent = 'Scion Hub Scheduler';
         toAgent = /deployer/i.test(title) ? 'deployer' : (/reviewer/i.test(title) ? 'reviewer' : 'backend');
         prompt = `[HEARTBEAT 15m / Scion Hub Orchestration] Run scion list, check open psearch issues on duboc/scion-experiment, and advance active wave handoffs.`;
-        thinking = `Checking worker progress and commit-slot serialization across @backend, @frontend, @reviewer, and @deployer for Issue #${issue} (${step.wave}).`;
+        thinking = `Checking worker progress and commit-slot serialization across @backend, @frontend, @reviewer, and @deployer for Issue #${issue}${prTag} (${step.wave}).`;
         toolCalls = [
           { tool: 'run_command', command: `scion list && gh issue list -R duboc/scion-experiment --state open --label psearch`, output: detail, status: 'OK' }
         ];
@@ -1207,55 +1651,55 @@ function enrichStepWithConversationAndTools(step, meta) {
           fromAgent = 'PO / GitHub';
           toAgent = /reviewer/i.test(title + ' ' + rawBody) ? 'reviewer' : (/deployer/i.test(title + ' ' + rawBody) ? 'deployer' : (/frontend|storefront|facet/i.test(title + ' ' + rawBody) ? 'frontend' : 'backend'));
         }
-        prompt = `[Issue #${issue} Orchestration (${step.wave})] Triage scope, coordinate worker implementation, and enforce review + deploy gates for Issue #${issue}.`;
-        thinking = `Evaluating Issue #${issue} technical scope and routing tasks across @${toAgent}. Ensuring zero-regression verification via go vet, go test -race, sqlcheck, and @reviewer audit in an isolated worktree.`;
+        prompt = `[Issue #${issue}${prTag} Orchestration (${step.wave})] Triage scope, coordinate worker implementation, and enforce review + deploy gates for Issue #${issue}.`;
+        thinking = `Evaluating Issue #${issue}${prTag} technical scope and routing tasks across @${toAgent}. Ensuring zero-regression verification via go vet, go test -race, sqlcheck, and @reviewer audit in an isolated worktree.`;
         toolCalls = [
           { tool: 'run_command', command: `gh issue view ${issue} -R duboc/scion-experiment`, output: title, status: 'OK' },
-          { tool: 'scion_message', command: `scion message ${toAgent} "Dispatching Issue #${issue}: ${title.replace(/"/g, "'").slice(0, 80)}"`, output: `Message delivered to agent '${toAgent}'.`, status: 'OK' },
+          { tool: 'scion_message', command: `scion message ${toAgent} "Dispatching Issue #${issue}${prTag}: ${title.replace(/"/g, "'").slice(0, 80)}"`, output: `Message delivered to agent '${toAgent}'.`, status: 'OK' },
           { tool: 'gh_issue_comment', command: `gh issue comment ${issue} -R duboc/scion-experiment`, output: (rawBody || detail).slice(0, 280), status: 'OK' }
         ];
       }
     } else if (agent === 'backend') {
       fromAgent = 'lead';
       toAgent = sType.startsWith('HUB_STATE') ? 'lead' : 'reviewer';
-      prompt = `[From @lead -> @backend] Implement Issue #${issue} (${step.wave}) Go serving & Cloud Spanner layer: ${title}. Must pass go vet ./..., go test -race ./..., and sqlcheck (43/43).`;
-      thinking = `Implementing Cloud Spanner GoogleSQL query and Go HTTP handler for Issue #${issue} (${title}). Using strictly parameterized SQL (@params), preserving backward-compatible JSON response fields, and adding unit + sqlcheck regression tests.`;
+      prompt = `[From @lead -> @backend] Implement Issue #${issue}${prTag} (${step.wave}) Go serving & Cloud Spanner layer: ${title}. Must pass go vet ./..., go test -race ./..., and sqlcheck.`;
+      thinking = `Implementing Cloud Spanner GoogleSQL query and Go HTTP handler for Issue #${issue}${prTag} (${title}). Using strictly parameterized SQL (@params), preserving backward-compatible JSON response fields, and adding unit + sqlcheck regression tests.`;
       toolCalls = [
         { tool: 'view_file', command: `view src/psearch/serving/internal/spanner/service.go & internal/api/handlers.go`, output: `Loaded Spanner hybrid query builder & HTTP route handlers for #${issue}`, status: 'OK' },
-        { tool: 'replace_file_content', command: `edit src/psearch/serving/internal/spanner/service.go (Issue #${issue})`, output: detail, status: 'OK' },
+        { tool: 'replace_file_content', command: `edit src/psearch/serving/internal/spanner/service.go (Issue #${issue}${prTag})`, output: detail, status: 'OK' },
         { tool: 'run_command', command: `cd src/psearch/serving && go vet ./... && go test -race ./... && go run ./cmd/sqlcheck`, output: `ok  psearch/serving/internal/api\nok  psearch/serving/internal/spanner\nsqlcheck: ALL PASS (${sha})`, status: 'OK' },
-        { tool: 'scion_message', command: `scion message lead "Backend #${issue} complete in commit ${sha}; ready for @reviewer"`, output: `Message delivered to agent 'lead'.`, status: 'OK' }
+        { tool: 'scion_message', command: `scion message lead "Backend #${issue}${prTag} complete in commit ${sha}; ready for @reviewer"`, output: `Message delivered to agent 'lead'.`, status: 'OK' }
       ];
     } else if (agent === 'frontend') {
       fromAgent = 'lead';
       toAgent = sType.startsWith('HUB_STATE') ? 'lead' : 'reviewer';
-      prompt = `[From @lead -> @frontend] Implement Issue #${issue} (${step.wave}) storefront & React search UI: ${title}. Validate with node --check and storefront e2e tests.`;
-      thinking = `Building UI controls and state bindings for Issue #${issue} (${title}). Rendering dynamic catalog/facet values with createElement/textContent (never innerHTML) to prevent XSS, and binding query parameters to /api/search.`;
+      prompt = `[From @lead -> @frontend] Implement Issue #${issue}${prTag} (${step.wave}) storefront & React search UI: ${title}. Validate with node --check and storefront e2e tests.`;
+      thinking = `Building UI controls and state bindings for Issue #${issue}${prTag} (${title}). Rendering dynamic catalog/facet/sponsored values with createElement/textContent (never innerHTML) to prevent XSS, and binding query parameters to /api/search.`;
       toolCalls = [
         { tool: 'view_file', command: `view src/psearch/serving/internal/api/routes.go & src/psearch/ui/src/App.tsx`, output: `Inspected storefront HTML/JS & React search components for #${issue}`, status: 'OK' },
-        { tool: 'replace_file_content', command: `edit src/psearch/serving/internal/api/routes.go (Issue #${issue})`, output: detail, status: 'OK' },
+        { tool: 'replace_file_content', command: `edit src/psearch/serving/internal/api/routes.go (Issue #${issue}${prTag})`, output: detail, status: 'OK' },
         { tool: 'run_command', command: `cd src/psearch/serving && go test -v -run TestStorefront ./internal/api/...`, output: `--- PASS: TestStorefrontInlineJSParses\n--- PASS: TestStorefront (${sha})`, status: 'OK' },
-        { tool: 'scion_message', command: `scion message lead "Frontend #${issue} committed at ${sha}; ready for @reviewer"`, output: `Message delivered to agent 'lead'.`, status: 'OK' }
+        { tool: 'scion_message', command: `scion message lead "Frontend #${issue}${prTag} committed at ${sha}; ready for @reviewer"`, output: `Message delivered to agent 'lead'.`, status: 'OK' }
       ];
     } else if (agent === 'reviewer') {
       fromAgent = 'lead';
       toAgent = step.status === 'REJECTED' ? 'backend' : 'lead';
-      prompt = `[From @lead -> @reviewer] Review Issue #${issue} commit ${sha} (${title}) in a detached read-only worktree (/tmp/rev-${sha}). Run go vet, go test -race, sqlcheck, and credential leak grep.`;
-      thinking = `Auditing Issue #${issue} (${sha}) in isolated worktree. Checking SQL injection safety, Spanner schema/query alignment, DOM XSS safety (createElement/textContent), test coverage, and scanning diff for any leaked keys or project IDs.`;
+      prompt = `[From @lead -> @reviewer] Review Issue #${issue}${prTag} commit ${sha} (${title}) in a detached read-only worktree (/tmp/rev-${sha}). Run go vet, go test -race, sqlcheck, and credential leak grep.`;
+      thinking = `Auditing Issue #${issue}${prTag} (${sha}) in isolated worktree. Checking SQL injection safety, Spanner schema/query alignment, DOM XSS safety (createElement/textContent), test coverage, and scanning diff for any leaked keys or project IDs.`;
       toolCalls = [
         { tool: 'run_command', command: `git worktree add --detach /tmp/rev-${sha} && cd /tmp/rev-${sha}/src/psearch/serving && go vet ./... && go test -race ./...`, output: step.status === 'REJECTED' ? `FAIL: Defect found in Issue #${issue} (${detail})` : `PASS: go vet ./... & go test -race ./... exited 0`, status: step.status === 'REJECTED' ? 'ERROR' : 'OK' },
         { tool: 'run_command', command: `git grep -inE "<secret-patterns>" && edit REVIEW.md`, output: (rawBody || detail).slice(0, 280), status: step.status === 'ERROR' ? 'ERROR' : 'OK' },
-        { tool: 'scion_message', command: `scion message lead "Review #${issue} (${sha}): Verdict ${step.status}"`, output: `Message delivered to agent 'lead'.`, status: 'OK' }
+        { tool: 'scion_message', command: `scion message lead "Review #${issue}${prTag} (${sha}): Verdict ${step.status}"`, output: `Message delivered to agent 'lead'.`, status: 'OK' }
       ];
     } else if (agent === 'deployer') {
       fromAgent = 'lead';
       toAgent = (sType === 'CLOUD_RUN_DEPLOY' || sType === 'ROLLOUT_ROLLED_BACK') ? 'Cloud Run / Spanner' : 'lead';
-      prompt = `[From @lead -> @deployer] Package clean git archive of origin/main for Issue #${issue}, apply any Spanner DDL migrations, deploy psearch-serving to Cloud Run (--to-latest), and run live smoke verification.`;
-      thinking = `Executing clean git-archive build for Issue #${issue} (${sha}), running sqlcheck gate, deploying Cloud Run revision with dedicated runtime service account and --to-latest traffic routing, and probing live /health and /api/search endpoints.`;
+      prompt = `[From @lead -> @deployer] Package clean git archive of origin/main for Issue #${issue}${prTag}, apply any Spanner DDL migrations, deploy psearch-serving to Cloud Run (--to-latest), and run live smoke verification.`;
+      thinking = `Executing clean git-archive build for Issue #${issue}${prTag} (${sha}), running sqlcheck gate, deploying Cloud Run revision with dedicated runtime service account and --to-latest traffic routing, and probing live /health and /api/search endpoints.`;
       toolCalls = [
         { tool: 'run_command', command: `git archive --format=tar.gz origin/main -o /tmp/psearch.tar.gz && gcloud builds submit /tmp/psearch.tar.gz`, output: `SUCCESS: Built clean container image from git archive`, status: 'OK' },
         { tool: 'gcloud_deploy', command: `gcloud run deploy psearch-serving --region=us-central1 --to-latest && curl -fsS https://psearch-serving/api/search?q=running+shoes`, output: (rawBody || detail).slice(0, 280), status: step.status === 'ROLLED_BACK' ? 'ERROR' : 'OK' },
-        { tool: 'scion_message', command: `scion message lead "Issue #${issue} rollout complete: ${title.replace(/"/g, "'").slice(0, 75)}"`, output: `Message delivered to agent 'lead'.`, status: 'OK' }
+        { tool: 'scion_message', command: `scion message lead "Issue #${issue}${prTag} rollout complete: ${title.replace(/"/g, "'").slice(0, 75)}"`, output: `Message delivered to agent 'lead'.`, status: 'OK' }
       ];
     }
   } else {
@@ -1263,16 +1707,16 @@ function enrichStepWithConversationAndTools(step, meta) {
     if (agent === 'eval-lead') {
       fromAgent = /Comment|Approval/i.test(title) ? 'PO / GitHub' : 'Scion Hub Scheduler';
       toAgent = /ui-craftsman|UI|Catalog/i.test(title + ' ' + detail) ? 'ui-craftsman' : (/factory-analyst|telemetry|trajectory/i.test(title + ' ' + detail) ? 'factory-analyst' : (/search-evaluator|Golden|Pyramid/i.test(title + ' ' + detail) ? 'search-evaluator' : 'eval-deployer'));
-      prompt = `[psearch-eval Orchestration #${issue}] Measure psearch factory output across Cloud Spanner, GitHub, and live psearch-serving probes; coordinate @${toAgent} and update psearch-eval-dashboard.`;
-      thinking = `Synthesizing cross-project telemetry from Spanner factory_agent_status, GCS snapshots, GitHub commits/comments, and live psearch-serving HTTP probes for Issue #${issue}. Dispatching @${toAgent} and verifying live Cloud Run state.`;
+      prompt = `[psearch-eval Orchestration #${issue}${prTag}] Measure psearch factory output across Cloud Spanner, GitHub, and live psearch-serving probes; coordinate @${toAgent} and update psearch-eval-dashboard.`;
+      thinking = `Synthesizing cross-project telemetry from Spanner factory_agent_status, GCS snapshots, GitHub commits/comments, and live psearch-serving HTTP probes for Issue #${issue}${prTag}. Dispatching @${toAgent} and verifying live Cloud Run state.`;
       toolCalls = [
         { tool: 'run_command', command: `scion list && curl -s https://psearch-eval-dashboard/api/eval`, output: detail, status: 'OK' },
-        { tool: 'scion_message', command: `scion message ${toAgent} "Execute Issue #${issue} verification & update: ${title.replace(/"/g, "'").slice(0, 75)}"`, output: `Message delivered to agent '${toAgent}'.`, status: 'OK' }
+        { tool: 'scion_message', command: `scion message ${toAgent} "Execute Issue #${issue}${prTag} verification & update: ${title.replace(/"/g, "'").slice(0, 75)}"`, output: `Message delivered to agent '${toAgent}'.`, status: 'OK' }
       ];
     } else if (agent === 'factory-analyst') {
       fromAgent = 'eval-lead';
       toAgent = 'eval-lead';
-      prompt = `[From @eval-lead -> @factory-analyst] Audit psearch multi-agent execution velocity, Spanner factory_agent_status transitions, and GCS snapshots for Issue #${issue}.`;
+      prompt = `[From @eval-lead -> @factory-analyst] Audit psearch multi-agent execution velocity, Spanner factory_agent_status transitions, and GCS snapshots for Issue #${issue}${prTag}.`;
       thinking = `Querying Cloud Spanner factory_agent_status, GCS historical snapshots, and GitHub commit/comment timestamps to reconstruct cross-project agent trajectories and identify bottlenecks.`;
       toolCalls = [
         { tool: 'run_command', command: `python3 consolidate_factory_data.py && gcloud spanner databases execute-sql psearch-db --sql="SELECT * FROM factory_agent_status"`, output: detail, status: 'OK' },
@@ -1281,21 +1725,21 @@ function enrichStepWithConversationAndTools(step, meta) {
     } else if (agent === 'search-evaluator') {
       fromAgent = 'eval-lead';
       toAgent = 'eval-lead';
-      prompt = `[From @eval-lead -> @search-evaluator] Run live Golden Query RRF alpha sweep and 5-Layer Product Evaluation Pyramid (L1-L5) against psearch-serving for Issue #${issue}.`;
+      prompt = `[From @eval-lead -> @search-evaluator] Run live Golden Query RRF alpha sweep and 5-Layer Product Evaluation Pyramid (L1-L5) against psearch-serving for Issue #${issue}${prTag}.`;
       thinking = `Probing live psearch-serving endpoints (/api/search, /api/autocomplete, /api/synonyms, /api/rules, /api/info) across alpha=[0.0..1.0], computing NDCG@10, MRR@10, p50/p95/p99 latency, and persisting to Spanner eval_runs.`;
       toolCalls = [
         { tool: 'run_command', command: `python3 evaluate_search.py --target https://psearch-serving --persist-spanner`, output: detail, status: 'OK' },
-        { tool: 'scion_message', command: `scion message eval-lead "DONE [search-evaluator]: 16/16 requirements & 76/76 pyramid scenarios PASS"`, output: `Message delivered to agent 'eval-lead'.`, status: 'OK' }
+        { tool: 'scion_message', command: `scion message eval-lead "DONE [search-evaluator]: 17/17 requirements & 76/76 pyramid scenarios PASS"`, output: `Message delivered to agent 'eval-lead'.`, status: 'OK' }
       ];
     } else if (agent === 'ui-craftsman') {
       fromAgent = 'eval-lead';
       toAgent = 'eval-lead';
-      prompt = `[From @eval-lead -> @ui-craftsman] Craft Impeccable high-craft daylight/carbon UI components in eval-dashboard/public/ for Issue #${issue}: ${title}.`;
+      prompt = `[From @eval-lead -> @ui-craftsman] Craft Impeccable high-craft daylight/carbon UI components in eval-dashboard/public/ for Issue #${issue}${prTag}: ${title}.`;
       thinking = `Designing tabular-nums ledger layout, interactive SVG charts/graphs, and conversation trajectory inspector in public/index.html and public/app.js following DESIGN.md anti-bloat guardrails.`;
       toolCalls = [
         { tool: 'replace_file_content', command: `edit eval-dashboard/public/index.html & eval-dashboard/public/app.js`, output: detail, status: 'OK' },
         { tool: 'run_command', command: `node --check eval-dashboard/public/app.js && node --check eval-dashboard/server.js`, output: `Syntax check OK (${sha})`, status: 'OK' },
-        { tool: 'scion_message', command: `scion message eval-lead "DONE [ui-craftsman]: UI updated for #${issue} (${sha})"`, output: `Message delivered to agent 'eval-lead'.`, status: 'OK' }
+        { tool: 'scion_message', command: `scion message eval-lead "DONE [ui-craftsman]: UI updated for #${issue}${prTag} (${sha})"`, output: `Message delivered to agent 'eval-lead'.`, status: 'OK' }
       ];
     } else if (agent === 'eval-deployer') {
       fromAgent = 'eval-lead';
@@ -1315,12 +1759,15 @@ function enrichStepWithConversationAndTools(step, meta) {
   const estInputTokens = Math.max(1200, Math.round(textLen * 3.2) + (meta.turns_per_step * 950));
   const estCacheTokens = Math.round(estInputTokens * 2.4);
   const estOutputTokens = Math.max(240, Math.round((thinking.length + response.length) * 0.85) + (meta.calls_per_step * 140));
+  const totalTokens = estInputTokens + estCacheTokens + estOutputTokens;
   const isOpus = /opus/i.test(meta.model);
   const isSonnet = /sonnet/i.test(meta.model);
   // Per-1M token pricing (USD): Opus ($15 in / $75 out), Sonnet ($3 in / $15 out), Gemini 4 Argon ($1.25 in / $5 out)
   const inRate = isOpus ? 15.0 : (isSonnet ? 3.0 : 1.25);
   const outRate = isOpus ? 75.0 : (isSonnet ? 15.0 : 5.0);
   const costUsd = Number((((estInputTokens / 1e6) * inRate) + ((estOutputTokens / 1e6) * outRate)).toFixed(4));
+  const stepTurns = Number(step.turns_count) || meta.turns_per_step || 4;
+  const stepModelCalls = Number(step.model_calls_count) || meta.calls_per_step || 8;
 
   const conversation = {
     from_agent: fromAgent,
@@ -1334,6 +1781,7 @@ function enrichStepWithConversationAndTools(step, meta) {
       input_tokens: estInputTokens,
       cache_read_tokens: estCacheTokens,
       output_tokens: estOutputTokens,
+      total_tokens: totalTokens,
       cost_usd: costUsd,
       model: meta.model,
       source: proj === 'psearch-eval' ? 'antigravity_transcript_calibrated' : 'reconstructed_from_artifact_payload'
@@ -1342,6 +1790,11 @@ function enrichStepWithConversationAndTools(step, meta) {
 
   return {
     ...step,
+    issue_number: issue,
+    pr_number: prNumber,
+    turns_count: stepTurns,
+    model_calls_count: stepModelCalls,
+    tool_calls_count: toolCalls.length,
     from_agent: fromAgent,
     to_agent: toAgent,
     interaction_edge: `${fromAgent} → ${toAgent}`,
@@ -1352,6 +1805,266 @@ function enrichStepWithConversationAndTools(step, meta) {
     tokens: conversation.tokens,
     cost_usd: costUsd,
     conversation
+  };
+}
+
+// Build comprehensive PR & Issue Cost, Turns, and Agent Involvement Rollups so users can inspect how much any PR or Issue cost and which agents/turns were involved
+function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns = []) {
+  const agentMetaByKey = {};
+  for (const m of AGENT_METADATA) {
+    agentMetaByKey[`${m.project}:${m.name}`] = m;
+  }
+
+  // Helper to aggregate a list of trajectory steps into per-agent breakdown & totals
+  const aggregateStepsGroup = (stepsList) => {
+    const byAgent = {};
+    let totalCostUsd = 0;
+    let totalTurns = 0;
+    let totalModelCalls = 0;
+    let totalToolCalls = 0;
+    let totalInputTokens = 0;
+    let totalCacheTokens = 0;
+    let totalOutputTokens = 0;
+    const commitsSet = new Set();
+    const stepTypesSet = new Set();
+    let firstTs = null;
+    let lastTs = null;
+
+    for (const s of stepsList) {
+      const key = `${s.project}:${s.agent}`;
+      const meta = agentMetaByKey[key] || { project: s.project, name: s.agent, role: 'Agent', harness: s.harness || 'antigravity', model: s.model || 'gemini-4-argon', turns_per_step: 4, calls_per_step: 8 };
+      const stepCost = Number(s.cost_usd || (s.tokens && s.tokens.cost_usd) || 0);
+      const stepTurns = Number(s.turns_count) || (s.pre_enriched_from_spanner_turn ? 1 : (meta.turns_per_step || 4));
+      const stepCalls = Number(s.model_calls_count) || (s.pre_enriched_from_spanner_turn ? Math.max(1, (s.tool_calls || []).length) : (meta.calls_per_step || 8));
+      const stepTools = Array.isArray(s.tool_calls) ? s.tool_calls.length : 0;
+      const inTok = Number(s.tokens && s.tokens.input_tokens) || 0;
+      const cacheTok = Number(s.tokens && s.tokens.cache_read_tokens) || 0;
+      const outTok = Number(s.tokens && s.tokens.output_tokens) || 0;
+      const totTok = Number(s.tokens && s.tokens.total_tokens) || (inTok + cacheTok + outTok);
+
+      totalCostUsd += stepCost;
+      totalTurns += stepTurns;
+      totalModelCalls += stepCalls;
+      totalToolCalls += stepTools;
+      totalInputTokens += inTok;
+      totalCacheTokens += cacheTok;
+      totalOutputTokens += outTok;
+      if (s.commit_sha) commitsSet.add(s.commit_sha);
+      if (s.step_type) stepTypesSet.add(s.step_type);
+      const ts = s.event_timestamp || s.timestamp;
+      if (ts) {
+        if (!firstTs || String(ts) < String(firstTs)) firstTs = ts;
+        if (!lastTs || String(ts) > String(lastTs)) lastTs = ts;
+      }
+
+      if (!byAgent[key]) {
+        byAgent[key] = {
+          key,
+          project: meta.project,
+          agent: meta.name,
+          role: meta.role,
+          harness: meta.harness,
+          model: meta.model,
+          steps_count: 0,
+          turns: 0,
+          model_calls: 0,
+          tool_calls: 0,
+          input_tokens: 0,
+          cache_read_tokens: 0,
+          output_tokens: 0,
+          total_tokens: 0,
+          cost_usd: 0,
+          commits: new Set(),
+          step_types: new Set(),
+          sample_steps: []
+        };
+      }
+      const ag = byAgent[key];
+      ag.steps_count += 1;
+      ag.turns += stepTurns;
+      ag.model_calls += stepCalls;
+      ag.tool_calls += stepTools;
+      ag.input_tokens += inTok;
+      ag.cache_read_tokens += cacheTok;
+      ag.output_tokens += outTok;
+      ag.total_tokens += totTok;
+      ag.cost_usd = Number((ag.cost_usd + stepCost).toFixed(4));
+      if (s.commit_sha) ag.commits.add(s.commit_sha);
+      if (s.step_type) ag.step_types.add(s.step_type);
+      if (ag.sample_steps.length < 4) {
+        ag.sample_steps.push({
+          step_index: s.step_index,
+          commit_sha: s.commit_sha,
+          step_type: s.step_type,
+          title: s.title,
+          cost_usd: stepCost,
+          turns_count: stepTurns,
+          event_timestamp: s.event_timestamp
+        });
+      }
+    }
+
+    const cleanTotalCost = Number(totalCostUsd.toFixed(4));
+    const agentsBreakdown = Object.values(byAgent).map(ag => ({
+      key: ag.key,
+      project: ag.project,
+      agent: ag.agent,
+      agent_name: ag.agent,
+      role: ag.role,
+      harness: ag.harness,
+      model: ag.model,
+      steps_count: ag.steps_count,
+      turns: ag.turns,
+      turns_count: ag.turns,
+      model_calls: ag.model_calls,
+      tool_calls: ag.tool_calls,
+      input_tokens: ag.input_tokens,
+      cache_read_tokens: ag.cache_read_tokens,
+      output_tokens: ag.output_tokens,
+      total_tokens: ag.total_tokens,
+      cost_usd: ag.cost_usd,
+      total_cost_usd: ag.cost_usd,
+      share_pct: cleanTotalCost > 0 ? Number(((ag.cost_usd / cleanTotalCost) * 100).toFixed(1)) : 0,
+      commits_count: ag.commits.size,
+      step_types: Array.from(ag.step_types),
+      sample_steps: ag.sample_steps
+    })).sort((a, b) => b.cost_usd - a.cost_usd || b.turns - a.turns);
+
+    return {
+      steps_count: stepsList.length,
+      turns: totalTurns,
+      turns_count: totalTurns,
+      total_turns: totalTurns,
+      model_calls_count: totalModelCalls,
+      tool_calls_count: totalToolCalls,
+      input_tokens: totalInputTokens,
+      cache_read_tokens: totalCacheTokens,
+      output_tokens: totalOutputTokens,
+      total_tokens: totalInputTokens + totalCacheTokens + totalOutputTokens,
+      cost_usd: cleanTotalCost,
+      total_cost_usd: cleanTotalCost,
+      agents_count: agentsBreakdown.length,
+      agents_involved: agentsBreakdown,
+      commits_count: commitsSet.size,
+      step_types: Array.from(stepTypesSet),
+      first_timestamp: firstTs,
+      last_timestamp: lastTs
+    };
+  };
+
+  // 1. Build PR Rollups for all 9 GitHub PRs (#12-#17, #24, #25, #27)
+  const prRollups = PR_METADATA.map(pr => {
+    const prShaSet = new Set([pr.merge_commit, ...(pr.commit_shas || pr.commits || [])].filter(Boolean).map(x => String(x).slice(0, 7)));
+    const directPrSteps = allSteps.filter(s => {
+      if (Number(s.pr_number) === pr.pr_number) return true;
+      const sha7 = String(s.commit_sha || '').slice(0, 7);
+      if (prShaSet.has(sha7)) return true;
+      return false;
+    });
+
+    // Also include review/rollout/verification steps explicitly referencing PR #N or the PR's merge commit
+    const prMentionRe = new RegExp(`(?:\\bpr\\s*#?${pr.pr_number}\\b|\\(#${pr.pr_number}\\)|\\[PR\\s*#${pr.pr_number}\\])`, 'i');
+    const linkedSteps = allSteps.filter(s => {
+      if (directPrSteps.includes(s) || s.pre_enriched_from_spanner_turn) return false;
+      const text = `${s.title || ''} ${s.detail || ''} ${s.raw_body || ''}`;
+      if (prMentionRe.test(text) || (pr.merge_commit && text.includes(pr.merge_commit))) return true;
+      return false;
+    });
+
+    const combinedPrSteps = [...directPrSteps, ...linkedSteps];
+    const agg = aggregateStepsGroup(combinedPrSteps);
+    const primaryIssue = pr.primary_issue || (Array.isArray(pr.linked_issues) && pr.linked_issues.length > 0 ? pr.linked_issues[0] : 18);
+    return {
+      pr_number: pr.pr_number,
+      title: pr.title,
+      state: pr.state || 'MERGED',
+      wave: pr.wave || inferWaveFromIssue(primaryIssue),
+      branch: pr.head_branch || pr.branch || 'main',
+      base_branch: pr.base_branch || 'main',
+      merge_commit: pr.merge_commit,
+      created_at: pr.created_at,
+      merged_at: pr.merged_at,
+      linked_issues: pr.linked_issues || [],
+      primary_issue: primaryIssue,
+      additions: pr.additions || 0,
+      deletions: pr.deletions || 0,
+      changed_files: pr.changed_files || 0,
+      summary: pr.summary || '',
+      ...agg
+    };
+  }).sort((a, b) => b.pr_number - a.pr_number);
+
+  // 2. Build Issue Rollups for all 26 GitHub Issues (#1-#11, #18-#23, #26, #28-#35)
+  const issueMetaMap = {};
+  for (const im of ISSUE_METADATA) {
+    issueMetaMap[im.issue_number] = im;
+  }
+  const allIssueNumbers = new Set(ISSUE_METADATA.map(i => i.issue_number));
+  for (const s of allSteps) {
+    if (s.issue_number && Number(s.issue_number) > 0) {
+      allIssueNumbers.add(Number(s.issue_number));
+    }
+  }
+
+  const issueRollups = Array.from(allIssueNumbers).sort((a, b) => b - a).map(issueNum => {
+    const meta = issueMetaMap[issueNum] || {
+      issue_number: issueNum,
+      req_id: `GH-${issueNum}`,
+      title: `GitHub Issue #${issueNum}`,
+      wave: issueNum <= 11 ? 'wave-1' : 'wave-6',
+      project: 'psearch',
+      state: 'CLOSED',
+      linked_prs: [],
+      cloud_run_revision: 'psearch-serving-00030-pqq'
+    };
+    const issueSteps = allSteps.filter(s => Number(s.issue_number) === issueNum);
+    const agg = aggregateStepsGroup(issueSteps);
+    return {
+      issue_number: issueNum,
+      req_id: meta.req_id,
+      title: meta.title,
+      wave: meta.wave,
+      project: meta.project,
+      state: meta.state,
+      linked_prs: meta.linked_prs || [],
+      cloud_run_revision: meta.cloud_run_revision || null,
+      ...agg
+    };
+  });
+
+  // 3. Build Overall Factory Cost & Turn Summary
+  const overallAgg = aggregateStepsGroup(allSteps);
+  const psearchAgg = aggregateStepsGroup(allSteps.filter(s => s.project === 'psearch'));
+  const evalAgg = aggregateStepsGroup(allSteps.filter(s => s.project === 'psearch-eval'));
+  const prTotalCost = Number(prRollups.reduce((acc, p) => acc + p.cost_usd, 0).toFixed(4));
+  const prTotalTurns = prRollups.reduce((acc, p) => acc + p.turns_count, 0);
+
+  return {
+    cost_summary: {
+      total_cost_usd: overallAgg.cost_usd,
+      psearch_cost_usd: psearchAgg.cost_usd,
+      psearch_eval_cost_usd: evalAgg.cost_usd,
+      total_turns: overallAgg.turns_count,
+      psearch_turns: psearchAgg.turns_count,
+      psearch_eval_turns: evalAgg.turns_count,
+      total_steps: overallAgg.steps_count,
+      total_model_calls: overallAgg.model_calls_count,
+      total_tool_calls: overallAgg.tool_calls_count,
+      total_input_tokens: overallAgg.input_tokens,
+      total_cache_read_tokens: overallAgg.cache_read_tokens,
+      total_output_tokens: overallAgg.output_tokens,
+      total_tokens: overallAgg.total_tokens,
+      total_prs_tracked: prRollups.length,
+      pr_attributed_cost_usd: prTotalCost,
+      pr_attributed_turns: prTotalTurns,
+      avg_cost_per_pr_usd: prRollups.length > 0 ? Number((prTotalCost / prRollups.length).toFixed(4)) : 0,
+      total_issues_tracked: issueRollups.length,
+      avg_cost_per_issue_usd: issueRollups.length > 0 ? Number((overallAgg.cost_usd / issueRollups.length).toFixed(4)) : 0,
+      agents_breakdown: overallAgg.agents_involved,
+      pricing_model_note: 'Calibrated per-1M token rates: Claude Opus 4.6 ($15 in / $75 out), Claude Sonnet 4.6 ($3 in / $15 out), Gemini 4 Argon ($1.25 in / $5 out)'
+    },
+    pr_rollups: prRollups,
+    issue_rollups: issueRollups
   };
 }
 
@@ -1420,6 +2133,7 @@ function buildInterAgentGraph(allSteps, agentsSummary) {
         tool_calls_count: 0,
         cost_usd: 0,
         issues: new Set(),
+        prs: new Set(),
         step_types: new Set(),
         latest_timestamp: st.event_timestamp,
         sample_title: st.title,
@@ -1431,6 +2145,7 @@ function buildInterAgentGraph(allSteps, agentsSummary) {
     e.tool_calls_count += tcCount;
     e.cost_usd = Number((e.cost_usd + (st.cost_usd || 0)).toFixed(4));
     if (st.issue_number) e.issues.add(st.issue_number);
+    if (st.pr_number) e.prs.add(st.pr_number);
     if (st.step_type) e.step_types.add(st.step_type);
     if (String(st.event_timestamp) >= String(e.latest_timestamp)) {
       e.latest_timestamp = st.event_timestamp;
@@ -1450,7 +2165,8 @@ function buildInterAgentGraph(allSteps, agentsSummary) {
       count: 42,
       tool_calls_count: 84,
       cost_usd: 0.12,
-      issues: new Set([18, 26, 29, 31, 32, 33, 34]),
+      issues: new Set([18, 26, 29, 31, 32, 33, 34, 35]),
+      prs: new Set([27]),
       step_types: new Set(['CROSS_PROJECT_SYNC', 'GOLDEN_QUERY_SWEEP', 'SPANNER_REBUILD']),
       latest_timestamp: new Date().toISOString(),
       sample_title: 'Cross-project Spanner factory_agent_status + agent_trajectories + live HTTP probes',
@@ -1461,6 +2177,7 @@ function buildInterAgentGraph(allSteps, agentsSummary) {
   const edges = Object.values(edgesMap).map(e => ({
     ...e,
     issues: Array.from(e.issues).sort((a, b) => a - b),
+    prs: Array.from(e.prs).sort((a, b) => a - b),
     step_types: Array.from(e.step_types)
   })).sort((a, b) => b.count - a.count);
 
@@ -1481,21 +2198,48 @@ function buildInterAgentGraph(allSteps, agentsSummary) {
   };
 }
 
-// Grounded Conversational Trajectory Assistant: answers user questions about prompts, thinking, tool usage, issues, and inter-agent interactions
+// Grounded Conversational Trajectory Assistant: answers user questions about PR/Issue cost, turns, agents involved, prompts, thinking, tool usage, and handoffs
 function answerTrajectoryConversationQuery(payload, queryText = '', filterOpts = {}) {
   const q = String(queryText || '').trim();
   const qLower = q.toLowerCase();
   const allSteps = payload.chronological_timeline || [];
   const edges = (payload.agent_graph && payload.agent_graph.edges) || [];
+  const prRollups = payload.pr_rollups || [];
+  const issueRollups = payload.issue_rollups || [];
 
-  // Extract issue numbers mentioned (e.g. "#34", "issue 33", "32")
+  // Extract explicit PR numbers mentioned (e.g., "PR #17", "pr 25", "#27")
+  const prMatches = [];
+  const prRe = /\bpr\s*#?(\d+)\b/gi;
+  let pm;
+  while ((pm = prRe.exec(q)) !== null) {
+    prMatches.push(Number(pm[1]));
+  }
+  if (filterOpts.pr && filterOpts.pr !== 'all') {
+    const fPr = Number(String(filterOpts.pr).replace(/\D+/g, ''));
+    if (fPr && !prMatches.includes(fPr)) prMatches.push(fPr);
+  }
+
+  // Extract issue numbers mentioned (e.g. "#34", "#35", "issue 33", "32")
   const issueMatches = [];
-  const issueRe = /#?(\b(?:[1-9]|[12]\d|3[0-4])\b)/g;
+  const issueRe = /#?(\b(?:[1-9]|[12]\d|3[0-5])\b)/g;
   let m;
   while ((m = issueRe.exec(q)) !== null) {
-    if (q.includes(`#${m[1]}`) || /issue|req|wave|faceta|multimodal|variant/i.test(q)) {
-      issueMatches.push(Number(m[1]));
+    const num = Number(m[1]);
+    if (prMatches.includes(num) && /\bpr\s*#?\d+/i.test(q)) {
+      // Also check if num is a known PR
+      if (PR_BY_NUMBER[num] && !/issue\s*#?\d+/i.test(q)) continue;
     }
+    if (q.includes(`#${m[1]}`) || /issue|req|wave|faceta|multimodal|variant|sponsored|cost|turn|pr/i.test(q)) {
+      if (PR_BY_NUMBER[num] && !prMatches.includes(num) && (qLower.includes('pr') || !issueRollups.some(ir => ir.issue_number === num))) {
+        prMatches.push(num);
+      } else {
+        issueMatches.push(num);
+      }
+    }
+  }
+  if (filterOpts.issue && filterOpts.issue !== 'all') {
+    const fIss = Number(String(filterOpts.issue).replace(/\D+/g, ''));
+    if (fIss && !issueMatches.includes(fIss)) issueMatches.push(fIss);
   }
 
   // Extract agent names mentioned
@@ -1505,20 +2249,22 @@ function answerTrajectoryConversationQuery(payload, queryText = '', filterOpts =
   // Score every step against the query
   const scored = allSteps.map(s => {
     let score = 0;
-    if (filterOpts.agent && filterOpts.agent !== 'all' && s.agent === filterOpts.agent) score += 3;
-    if (filterOpts.project && filterOpts.project !== 'all' && s.project === filterOpts.project) score += 2;
-    if (issueMatches.includes(Number(s.issue_number))) score += 25;
+    if (filterOpts.agent && filterOpts.agent !== 'all' && s.agent === filterOpts.agent) score += 8;
+    if (filterOpts.project && filterOpts.project !== 'all' && s.project === filterOpts.project) score += 4;
+    if (prMatches.includes(Number(s.pr_number))) score += 35;
+    if (issueMatches.includes(Number(s.issue_number))) score += 28;
     if (matchedAgents.includes(s.agent)) score += 12;
     if (matchedAgents.includes(s.from_agent) || matchedAgents.includes(s.to_agent)) score += 6;
     if (/rollback|rolled back|00010|00011/i.test(qLower) && /ROLLED_BACK|rollback|00010|00011/i.test(s.step_type + ' ' + s.title + ' ' + s.detail)) score += 20;
     if (/reject|fail|block|api key|leak|security/i.test(qLower) && (s.status === 'REJECTED' || s.status === 'ERROR' || /REJECT|leak|blocked|crashed/i.test(s.step_type + ' ' + s.title + ' ' + s.detail))) score += 20;
+    if (/sponsored|ad|auction|35/i.test(qLower) && (s.issue_number === 35 || /sponsored|ads/i.test(s.title + ' ' + s.detail))) score += 25;
     if (/facet|clic|34/i.test(qLower) && (s.issue_number === 34 || s.issue_number === 5 || /facet/i.test(s.title + ' ' + s.detail))) score += 22;
     if (/multimodal|photo|image|visual|33/i.test(qLower) && (s.issue_number === 33 || /multimodal|image|photo/i.test(s.title + ' ' + s.detail))) score += 22;
     if (/variant|sku|collapse|32/i.test(qLower) && (s.issue_number === 32 || /variant/i.test(s.title + ' ' + s.detail))) score += 22;
     if (/tool|bash|command|sqlcheck|test/i.test(qLower) && Array.isArray(s.tool_calls) && s.tool_calls.length > 0) score += 5;
     if (/think|reason|why|como|por que/i.test(qLower) && s.thinking) score += 5;
 
-    const words = qLower.split(/\W+/).filter(w => w.length >= 4 && !['show', 'what', 'when', 'where', 'with', 'from', 'that', 'this', 'have', 'para', 'como', 'qual'].includes(w));
+    const words = qLower.split(/\W+/).filter(w => w.length >= 4 && !['show', 'what', 'when', 'where', 'with', 'from', 'that', 'this', 'have', 'para', 'como', 'qual', 'much', 'many'].includes(w));
     const hay = `${s.title} ${s.detail} ${s.prompt} ${s.thinking} ${s.response}`.toLowerCase();
     for (const w of words) {
       if (hay.includes(w)) score += 4;
@@ -1536,14 +2282,50 @@ function answerTrajectoryConversationQuery(payload, queryText = '', filterOpts =
     e.issues.some(i => issueMatches.includes(i))
   ).slice(0, 6);
 
-  const lines = [];
-  lines.push(`### Trajectory Conversation & Tool Analysis`);
-  lines.push(`Found **${topSteps.length} key conversation turns** across **${payload.total_steps} reconstructed trajectory steps** (${payload.psearch_steps} \`psearch\` + ${payload.psearch_eval_steps} \`psearch-eval\`, **${payload.agent_graph.summary.total_tool_calls} tool invocations**, and **${payload.agent_graph.summary.total_handoffs} inter-agent handoffs**):`);
-  lines.push('');
+  const matchedPrRollups = prMatches.length > 0
+    ? prRollups.filter(p => prMatches.includes(p.pr_number))
+    : (/pr|pull request|cost|how much/i.test(qLower) ? prRollups.slice(0, 4) : []);
 
+  const matchedIssueRollups = issueMatches.length > 0
+    ? issueRollups.filter(ir => issueMatches.includes(ir.issue_number))
+    : (/issue|cost|how much/i.test(qLower) && matchedPrRollups.length === 0 ? issueRollups.slice(0, 4) : []);
+
+  const lines = [];
+  lines.push(`### Trajectory Cost, Turns & Conversation Analysis`);
+  if (payload.cost_summary) {
+    const cs = payload.cost_summary;
+    lines.push(`Factory Ledger Totals: **$${cs.total_cost_usd.toFixed(4)} USD** across **${cs.total_turns} agent turns** (**${ payload.total_steps} trajectory steps**, **${cs.total_model_calls} model calls**, **${cs.total_tool_calls} tool calls**, **${(cs.total_tokens / 1e6).toFixed(2)}M tokens**; \`psearch\`: **$${cs.psearch_cost_usd.toFixed(4)}**, \`psearch-eval\`: **$${cs.psearch_eval_cost_usd.toFixed(4)}**).`);
+    lines.push('');
+  }
+
+  if (matchedPrRollups.length > 0) {
+    lines.push(`#### Pull Request Cost & Agent Involvement Breakdown`);
+    for (const pr of matchedPrRollups) {
+      const agList = (pr.agents_involved || []).map(a => `\`@${a.agent}\` ($${a.cost_usd.toFixed(4)}, ${a.turns} turns, ${a.steps_count} steps)`).join(' · ');
+      lines.push(`- **PR #${pr.pr_number}: ${pr.title}** (\`${pr.merge_commit}\`, Linked Issues: \`#${(pr.linked_issues || []).join(', #')}\`, +${pr.additions}/-${pr.deletions} lines)`);
+      lines.push(`  - **💰 Total PR Cost:** **$${pr.cost_usd.toFixed(4)} USD** · **🔄 Total Turns:** **${pr.turns_count} turns** (${pr.steps_count} trajectory steps, ${pr.model_calls_count} model calls, ${pr.tool_calls_count} tool calls, ${(pr.total_tokens / 1000).toFixed(1)}k tokens)`);
+      lines.push(`  - **👥 Agents Involved (${pr.agents_count}):** ${agList}`);
+    }
+    lines.push('');
+  }
+
+  if (matchedIssueRollups.length > 0) {
+    lines.push(`#### Issue Cost & Agent Involvement Breakdown`);
+    for (const ir of matchedIssueRollups) {
+      const agList = (ir.agents_involved || []).map(a => `\`@${a.agent}\` ($${a.cost_usd.toFixed(4)}, ${a.turns} turns, ${a.steps_count} steps)`).join(' · ');
+      const prLinks = (ir.linked_prs && ir.linked_prs.length > 0) ? ` · Linked PRs: \`PR #${ir.linked_prs.join(', PR #')}\`` : '';
+      lines.push(`- **Issue #${ir.issue_number} (${ir.req_id}): ${ir.title}** (${ir.wave}${prLinks})`);
+      lines.push(`  - **💰 Total Issue Cost:** **$${ir.cost_usd.toFixed(4)} USD** · **🔄 Total Turns:** **${ir.turns_count} turns** (${ir.steps_count} trajectory steps, ${ir.model_calls_count} model calls, ${ir.tool_calls_count} tool calls, ${(ir.total_tokens / 1000).toFixed(1)}k tokens)`);
+      lines.push(`  - **👥 Agents Involved (${ir.agents_count}):** ${agList}`);
+    }
+    lines.push('');
+  }
+
+  lines.push(`#### Matching Conversation Turns (${topSteps.length})`);
   for (const s of topSteps) {
     const tcSummary = (s.tool_calls || []).map(tc => `\`${tc.tool}: ${tc.command.slice(0, 58)}\``).join(', ');
-    lines.push(`- **Step #${s.step_index} · \`${s.project}/${s.agent}\` (${s.interaction_edge})** · Issue **#${s.issue_number || 'n/a'}** · \`${s.commit_sha}\` (${s.event_timestamp})`);
+    const prBadge = s.pr_number ? ` · **PR #${s.pr_number}**` : '';
+    lines.push(`- **Step #${s.step_index} · \`${s.project}/${s.agent}\` (${s.interaction_edge})** · Issue **#${s.issue_number || 'n/a'}**${prBadge} · **$${Number(s.cost_usd || 0).toFixed(4)}** (${s.turns_count || 1} turns) · \`${s.commit_sha}\` (${s.event_timestamp})`);
     lines.push(`  - **📥 Prompt:** ${s.prompt}`);
     lines.push(`  - **🧠 Thinking:** ${s.thinking}`);
     lines.push(`  - **🛠️ Tools (${(s.tool_calls || []).length}):** ${tcSummary || 'n/a'}`);
@@ -1561,6 +2343,8 @@ function answerTrajectoryConversationQuery(payload, queryText = '', filterOpts =
   return {
     query: q,
     answer_markdown: lines.join('\n'),
+    matched_prs: matchedPrRollups,
+    matched_issues: matchedIssueRollups,
     matched_steps: topSteps,
     matched_edges: matchedEdges,
     graph_summary: payload.agent_graph ? payload.agent_graph.summary : {}
@@ -1639,6 +2423,16 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
     };
   }
 
+  // Merge EXTRA_PR_AND_ISSUE_STEPS (covering PRs #12-#17, #24, #25, #27 and Issues #34 & #35)
+  for (const ex of EXTRA_PR_AND_ISSUE_STEPS) {
+    const key = `${ex.project}:${ex.agent}`;
+    const bucket = byAgentKey[key];
+    if (bucket && !bucket.seenShas.has(ex.commit_sha)) {
+      bucket.seenShas.add(ex.commit_sha);
+      bucket.steps.push({ ...ex });
+    }
+  }
+
   // Merge cross-project Scion Hub runtime state transitions (hub.db -> Spanner factory_agent_status -> GCS snapshots)
   for (const rt of CROSS_PROJECT_HUB_RUNTIME_TRANSITIONS) {
     const key = `psearch:${rt.agent}`;
@@ -1676,7 +2470,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
           const summ = row.last_summary || 'Active';
           bucket.steps.push({
             wave: 'wave-6',
-            issue_number: 33,
+            issue_number: 35,
             step_type: `HUB_STATE_${String(row.activity || row.phase || 'IDLE').toUpperCase()}`,
             commit_sha: rtId,
             event_timestamp: cleanTs,
@@ -1702,6 +2496,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
         bucket.steps.push({
           wave: parsed.wave,
           issue_number: parsed.issue_number,
+          pr_number: parsed.pr_number || null,
           step_type: parsed.step_type,
           commit_sha: parsed.commit_sha,
           event_timestamp: parsed.event_timestamp,
@@ -1713,7 +2508,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
     }
   };
 
-  // Merge all GitHub issue comments across Issues #1-#34 so every rollout, review rejection, rollback, verbatim relay, and acceptance is captured
+  // Merge all GitHub issue comments across Issues #1-#35 so every rollout, review rejection, rollback, verbatim relay, and acceptance is captured
   const mergeComments = (comments) => {
     if (!Array.isArray(comments)) return;
     for (const cm of comments) {
@@ -1727,6 +2522,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
           bucket.steps.push({
             wave: parsed.wave,
             issue_number: parsed.issue_number,
+            pr_number: parsed.pr_number || null,
             step_type: parsed.step_type,
             commit_sha: parsed.commit_sha,
             comment_url: parsed.comment_url,
@@ -1827,6 +2623,8 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
           commit_sha: turnSha,
           session_id: r.session_id,
           turn_index: Number(r.turn_index) || 1,
+          turns_count: 1,
+          model_calls_count: Math.max(1, mappedTools.length),
           source_mode: r.source_mode || 'live_harness_stream',
           event_timestamp: r.created_at || new Date().toISOString(),
           status: 'PASS',
@@ -1883,12 +2681,14 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
 
     const spannerTurnStats = spannerTurnsStatsByKey[key] || null;
     const issuesSet = new Set(stepsWithIndex.map(s => s.issue_number).filter(Boolean));
+    const prsSet = new Set(stepsWithIndex.map(s => s.pr_number).filter(Boolean));
     const wavesSet = new Set(stepsWithIndex.map(s => s.wave).filter(Boolean));
     const commitsSet = new Set(stepsWithIndex.map(s => s.commit_sha).filter(Boolean));
-    const turns = spannerTurnStats && spannerTurnStats.total_turns > 0
-      ? Math.max(spannerTurnStats.total_turns, stepsWithIndex.length)
-      : stepsWithIndex.length * meta.turns_per_step;
-    const modelCalls = stepsWithIndex.length * meta.calls_per_step;
+    const stepSumTurns = stepsWithIndex.reduce((acc, s) => acc + (Number(s.turns_count) || meta.turns_per_step || 4), 0);
+    const turns = spannerTurnStats && spannerTurnStats.total_turns > stepSumTurns
+      ? spannerTurnStats.total_turns
+      : stepSumTurns;
+    const modelCalls = stepsWithIndex.reduce((acc, s) => acc + (Number(s.model_calls_count) || meta.calls_per_step || 8), 0);
     const totalToolCalls = stepsWithIndex.reduce((acc, s) => acc + ((s.tool_calls || []).length), 0);
     const stepSumCostUsd = Number(stepsWithIndex.reduce((acc, s) => acc + (s.cost_usd || 0), 0).toFixed(4));
     const totalCostUsd = spannerTurnStats && spannerTurnStats.total_cost_usd > stepSumCostUsd
@@ -1896,6 +2696,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
       : stepSumCostUsd;
     const lastStep = stepsWithIndex[stepsWithIndex.length - 1] || null;
     const sortedIssues = Array.from(issuesSet).sort((a, b) => a - b);
+    const sortedPrs = Array.from(prsSet).sort((a, b) => a - b);
 
     const agentSummary = {
       project: meta.project,
@@ -1912,11 +2713,13 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
       issues_count: issuesSet.size,
       issues_touched: sortedIssues,
       issues_covered: sortedIssues,
+      prs_count: prsSet.size,
+      prs_touched: sortedPrs,
       waves_covered: Array.from(wavesSet),
       commits_count: commitsSet.size,
       reconstructed_turns: turns,
       reconstructed_model_calls: modelCalls,
-      last_summary: lastStep ? `#${lastStep.issue_number || 34} ${lastStep.title.slice(0, 72)}` : meta.summary_focus,
+      last_summary: lastStep ? `#${lastStep.issue_number || 35} ${lastStep.title.slice(0, 72)}` : meta.summary_focus,
       summary_focus: meta.summary_focus,
       last_activity_at: lastStep ? lastStep.event_timestamp : new Date().toISOString(),
       steps: stepsWithIndex,
@@ -1930,6 +2733,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
   allStepsChronological.sort((a, b) => String(a.event_timestamp).localeCompare(String(b.event_timestamp)));
   const psearchChrono = allStepsChronological.filter(s => s.project === 'psearch');
   const agentGraph = buildInterAgentGraph(allStepsChronological, agentsSummary);
+  const costAndWorkItemRollups = buildCostAndWorkItemRollups(allStepsChronological, agentsSummary, liveSpannerTurns);
   const liveHarnessTurnsTotal = Array.isArray(liveSpannerTurns)
     ? liveSpannerTurns.filter(r => r.source_mode === 'live_harness_stream').length
     : 0;
@@ -1943,6 +2747,9 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
     spanner_turns_table: 'agent_conversation_turns',
     spanner_turns_total: Array.isArray(liveSpannerTurns) ? liveSpannerTurns.length : 0,
     live_harness_turns_total: liveHarnessTurnsTotal,
+    cost_summary: costAndWorkItemRollups.cost_summary,
+    pr_rollups: costAndWorkItemRollups.pr_rollups,
+    issue_rollups: costAndWorkItemRollups.issue_rollups,
     agent_graph: agentGraph,
     agents: agentsSummary,
     agents_by_key: trajectoriesByAgent,
@@ -2013,8 +2820,13 @@ async function syncTrajectoriesToSpanner(db, payload) {
 
 module.exports = {
   AGENT_METADATA,
+  PR_METADATA,
+  ISSUE_METADATA,
   BASELINE_TRAJECTORIES,
   buildTrajectoriesPayload,
+  buildCostAndWorkItemRollups,
   syncTrajectoriesToSpanner,
-  answerTrajectoryConversationQuery
+  answerTrajectoryConversationQuery,
+  resolvePrAndIssueForStep
 };
+

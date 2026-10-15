@@ -902,14 +902,14 @@
       </div>
     </section>
 
-    <!-- Per-Agent Execution Trajectory Inspector, Inter-Agent Graph & Conversational Explorer (psearch + psearch-eval) -->
-    <section class="ledger-frame" id="section-trajectories" aria-label="Agent Execution Trajectory Inspector, Inter-Agent Graph, and Conversational Explorer">
+    <!-- Per-Agent Execution Trajectory Inspector, PR/Issue Cost & Turn Drill-Down, Inter-Agent Graph & Conversational Explorer (psearch + psearch-eval) -->
+    <section class="ledger-frame" id="section-trajectories" aria-label="Agent Execution Trajectory Inspector, PR and Issue Cost Analytics, Inter-Agent Graph, and Conversational Explorer">
       <div class="zone">
         <div class="zone-header" style="flex-wrap:wrap;gap:0.75rem;">
           <div>
-            <h2>Agent Conversation Trajectory, Tool Usage, Thinking &amp; Inter-Agent Graph</h2>
+            <h2>Agent Conversation Trajectory, PR &amp; Issue Cost Ledger, Tool Usage &amp; Inter-Agent Graph</h2>
             <div class="mono" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;" id="traj-subtitle">
-              Full prompts, chain-of-thought thinking, tool invocations, verbatim agent handoffs (#1–#34), and directed inter-agent graph persisted in Cloud Spanner (agent_trajectories)
+              Evaluate agent turns &amp; USD cost across Issues (#1–#35) and Pull Requests (PR #12–#27), inspect per-PR/Issue agent involvement, and explore full prompts, thinking traces &amp; tool calls in Cloud Spanner
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
@@ -921,6 +921,83 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
               <span id="btn-rebuild-trajectories-label">Rebuild &amp; Sync Trajectories</span>
             </button>
+          </div>
+        </div>
+
+        <!-- NEW: PR & Issue Cost, Turns & Multi-Agent Drill-Down Explorer -->
+        <div id="traj-cost-explorer" style="border-bottom:1px solid var(--border-hairline);background:var(--bg-canvas);">
+          <!-- Cost & Turn Summary Banner + PR / Issue Ledger Mode Switcher -->
+          <div style="padding:0.65rem 1.25rem;border-bottom:1px solid var(--border-hairline);background:var(--bg-subtle);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0.75rem;">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.85rem;">
+              <span class="mono" style="font-size:0.78rem;font-weight:700;color:var(--text-primary);">💰 PR &amp; Issue Cost, Turns &amp; Agent Involvement Explorer</span>
+              <span class="mono" id="traj-cost-banner-summary" style="font-size:0.74rem;color:var(--text-secondary);">
+                Total Factory Cost: -- · Total Turns: -- · Tracked PRs: 9 (PR #12–#27) · Tracked Issues: 26 (#1–#35)
+              </span>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
+              <span class="mono" style="font-size:0.72rem;color:var(--text-muted);">Drill-Down Ledger:</span>
+              <div class="filter-group" role="group" aria-label="Switch between Pull Request Cost Ledger and Issue Cost Ledger">
+                <button type="button" id="btn-cost-mode-pr" class="filter-btn" aria-pressed="true" onclick="switchCostLedgerMode('pr')">Pull Requests (9 PRs · #12–#27)</button>
+                <button type="button" id="btn-cost-mode-issue" class="filter-btn" aria-pressed="false" onclick="switchCostLedgerMode('issue')">GitHub Issues (26 Issues · #1–#35)</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Split-2: Left = PR / Issue Cost & Turn Table | Right = Selected PR / Issue Deep-Dive Card (Cost, Turns & Per-Agent Breakdown) -->
+          <div class="split-2">
+            <!-- Left: Interactive PR / Issue Cost & Turn Table -->
+            <div class="zone" style="border-right:1px solid var(--border-hairline);">
+              <div class="zone-header" style="background:var(--bg-surface);padding:0.55rem 1.1rem;">
+                <h3 id="cost-ledger-table-title" style="margin:0;font-size:0.82rem;font-weight:600;">Pull Request Cost, Turns &amp; Agent Ledger (Click Any Row to Dig In &amp; Filter Turns)</h3>
+                <span class="mono" id="cost-ledger-table-meta" style="font-size:0.7rem;color:var(--text-muted);">9 Merged PRs · Cost &amp; Turn Attribution</span>
+              </div>
+              <div class="zone-body table-wrap" style="max-height:290px;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th id="th-cost-workitem">PR</th>
+                      <th>Title, Branch &amp; Linked Issues</th>
+                      <th>Total Cost</th>
+                      <th>Turns / Steps</th>
+                      <th>Agents Involved</th>
+                      <th>Inspect</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbody-cost-workitems"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Right: Deep-Dive Inspector for Selected PR or Issue -->
+            <div class="zone" style="display:flex;flex-direction:column;background:var(--bg-surface);">
+              <div class="zone-header" style="background:var(--bg-surface);padding:0.55rem 1.1rem;">
+                <div>
+                  <h3 id="drilldown-workitem-title" style="margin:0;font-size:0.84rem;font-weight:700;color:var(--text-primary);">Select a Pull Request or Issue to Inspect Cost, Turns &amp; Agents</h3>
+                  <div class="mono" id="drilldown-workitem-meta" style="font-size:0.7rem;color:var(--text-muted);margin-top:0.15rem;">Per-agent USD cost, turns, model calls, tool calls, and token breakdown</div>
+                </div>
+                <div id="drilldown-workitem-actions" style="display:flex;gap:0.4rem;align-items:center;"></div>
+              </div>
+              <div id="drilldown-workitem-kpis" style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border-hairline);background:var(--bg-subtle);">
+                <!-- Populated dynamically with Total Cost ($ USD), Total Turns, Agents Involved, and Model/Tool Calls -->
+              </div>
+              <div class="zone-body table-wrap" style="max-height:215px;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Agent &amp; Project</th>
+                      <th>Harness &amp; Model</th>
+                      <th>Turns</th>
+                      <th>Steps</th>
+                      <th>Calls / Tools</th>
+                      <th>Tokens</th>
+                      <th>Agent Cost ($ USD)</th>
+                      <th>Cost Share</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbody-drilldown-agents"></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -944,19 +1021,19 @@
           <!-- Right: Interactive "Converse with the Trajectory" Explorer -->
           <div class="zone" style="display:flex;flex-direction:column;">
             <div class="zone-header" style="background:var(--bg-subtle);padding:0.6rem 1.25rem;">
-              <h3 style="margin:0;font-size:0.85rem;font-weight:600;">Converse with the Trajectory — Inspect Prompts, Thinking, Tools &amp; Handoffs</h3>
-              <span class="mono" style="font-size:0.72rem;color:var(--accent-primary);">Grounded on 275+ Reconstructed Steps</span>
+              <h3 style="margin:0;font-size:0.85rem;font-weight:600;">Converse with the Trajectory — Inspect PR/Issue Cost, Prompts, Thinking &amp; Tools</h3>
+              <span class="mono" style="font-size:0.72rem;color:var(--accent-primary);">Grounded on All PRs (#12–#27) &amp; Issues (#1–#35)</span>
             </div>
             <div style="padding:0.65rem 1rem;border-bottom:1px solid var(--border-hairline);background:var(--bg-surface);display:flex;flex-direction:column;gap:0.5rem;">
               <div style="display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;">
                 <span class="mono" style="font-size:0.7rem;color:var(--text-muted);">Quick Queries:</span>
+                <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('How much did PR #17, PR #25, and Issue #35 cost, and how many turns and agents were involved?')">💰 PR #17, PR #25 &amp; #35 Cost &amp; Agents</button>
                 <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Show @lead, @reviewer, and @deployer prompts, thinking and tool calls on #34 clickable facets')">#34 Clickable Facets (Prompts &amp; Tools)</button>
-                <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Show @backend and @frontend thinking and tool usage on #33 visual multimodal search')">#33 Multimodal Search (@backend/@frontend)</button>
+                <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Show @backend and @frontend thinking, cost and tool usage on #35 sponsored products')">#35 Sponsored Products (@backend/@frontend)</button>
                 <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Why did @reviewer reject #2 API key leak and @deployer roll back Wave 1 00010?')">Wave 1 Rollback &amp; #2 Review Gate</button>
-                <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Show @backend and @reviewer thinking and SQL tool checks on #32 variant grouping')">#32 Variant Grouping SQL &amp; Tools</button>
               </div>
               <form onsubmit="submitTrajectoryChat(event)" style="display:flex;gap:0.5rem;">
-                <input id="traj-chat-input" class="input" type="text" value="Show @lead, @reviewer, and @deployer prompts, thinking and tool calls on #34 clickable facets" placeholder="Ask about any agent's prompts, thinking, tool calls, issues (#1-#34), or handoffs..." style="flex:1;" />
+                <input id="traj-chat-input" class="input" type="text" value="How much did PR #17, PR #25, and Issue #35 cost, and how many turns and agents were involved?" placeholder="Ask how much a PR or Issue cost, how many turns/agents were involved, or inspect prompts/thinking..." style="flex:1;" />
                 <button type="submit" id="btn-traj-chat" class="btn btn-primary">Ask Trajectory</button>
               </form>
             </div>
@@ -966,47 +1043,71 @@
           </div>
         </div>
 
-        <!-- Per-Agent Filter Selector Bar -->
-        <div style="padding:0.75rem 1.25rem;border-bottom:1px solid var(--border-hairline);background:var(--bg-subtle);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0.75rem;">
-          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;">
-            <span class="mono" style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);margin-right:0.25rem;">psearch Agents:</span>
-            <div class="filter-group" id="traj-agent-pills-psearch" role="group" aria-label="Select psearch agent trajectory">
-              <button type="button" class="filter-btn" data-traj-key="psearch:lead" aria-pressed="true" onclick="selectTrajectoryView('psearch', 'lead', this)">@lead</button>
-              <button type="button" class="filter-btn" data-traj-key="psearch:backend" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'backend', this)">@backend</button>
-              <button type="button" class="filter-btn" data-traj-key="psearch:frontend" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'frontend', this)">@frontend</button>
-              <button type="button" class="filter-btn" data-traj-key="psearch:reviewer" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'reviewer', this)">@reviewer</button>
-              <button type="button" class="filter-btn" data-traj-key="psearch:deployer" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'deployer', this)">@deployer</button>
-              <button type="button" class="filter-btn" data-traj-key="psearch:all" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'all', this)">All psearch (Chronological)</button>
+        <!-- Per-Agent, PR & Issue Filter Selector Bar -->
+        <div id="traj-filter-bar" style="padding:0.75rem 1.25rem;border-bottom:1px solid var(--border-hairline);background:var(--bg-subtle);display:flex;flex-direction:column;gap:0.65rem;">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0.75rem;">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;">
+              <span class="mono" style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);margin-right:0.25rem;">psearch Agents:</span>
+              <div class="filter-group" id="traj-agent-pills-psearch" role="group" aria-label="Select psearch agent trajectory">
+                <button type="button" class="filter-btn" data-traj-key="psearch:lead" aria-pressed="true" onclick="selectTrajectoryView('psearch', 'lead', this)">@lead</button>
+                <button type="button" class="filter-btn" data-traj-key="psearch:backend" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'backend', this)">@backend</button>
+                <button type="button" class="filter-btn" data-traj-key="psearch:frontend" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'frontend', this)">@frontend</button>
+                <button type="button" class="filter-btn" data-traj-key="psearch:reviewer" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'reviewer', this)">@reviewer</button>
+                <button type="button" class="filter-btn" data-traj-key="psearch:deployer" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'deployer', this)">@deployer</button>
+                <button type="button" class="filter-btn" data-traj-key="psearch:all" aria-pressed="false" onclick="selectTrajectoryView('psearch', 'all', this)">All psearch (Chronological)</button>
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;">
+              <span class="mono" style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);margin-right:0.25rem;">psearch-eval Agents:</span>
+              <div class="filter-group" id="traj-agent-pills-eval" role="group" aria-label="Select psearch-eval agent trajectory">
+                <button type="button" class="filter-btn" data-traj-key="psearch-eval:eval-lead" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'eval-lead', this)">@eval-lead</button>
+                <button type="button" class="filter-btn" data-traj-key="psearch-eval:search-evaluator" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'search-evaluator', this)">@search-evaluator</button>
+                <button type="button" class="filter-btn" data-traj-key="psearch-eval:factory-analyst" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'factory-analyst', this)">@factory-analyst</button>
+                <button type="button" class="filter-btn" data-traj-key="psearch-eval:ui-craftsman" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'ui-craftsman', this)">@ui-craftsman</button>
+                <button type="button" class="filter-btn" data-traj-key="psearch-eval:eval-deployer" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'eval-deployer', this)">@eval-deployer</button>
+                <button type="button" class="filter-btn" data-traj-key="all:all" aria-pressed="false" onclick="selectTrajectoryView('all', 'all', this)">All 10 Agents</button>
+              </div>
             </div>
           </div>
-          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;">
-            <span class="mono" style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);margin-right:0.25rem;">psearch-eval Agents:</span>
-            <div class="filter-group" id="traj-agent-pills-eval" role="group" aria-label="Select psearch-eval agent trajectory">
-              <button type="button" class="filter-btn" data-traj-key="psearch-eval:eval-lead" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'eval-lead', this)">@eval-lead</button>
-              <button type="button" class="filter-btn" data-traj-key="psearch-eval:search-evaluator" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'search-evaluator', this)">@search-evaluator</button>
-              <button type="button" class="filter-btn" data-traj-key="psearch-eval:factory-analyst" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'factory-analyst', this)">@factory-analyst</button>
-              <button type="button" class="filter-btn" data-traj-key="psearch-eval:ui-craftsman" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'ui-craftsman', this)">@ui-craftsman</button>
-              <button type="button" class="filter-btn" data-traj-key="psearch-eval:eval-deployer" aria-pressed="false" onclick="selectTrajectoryView('psearch-eval', 'eval-deployer', this)">@eval-deployer</button>
-              <button type="button" class="filter-btn" data-traj-key="all:all" aria-pressed="false" onclick="selectTrajectoryView('all', 'all', this)">All 10 Agents</button>
+
+          <!-- Filter by Pull Request & Filter by Issue Bar -->
+          <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0.75rem;padding-top:0.55rem;border-top:1px solid var(--border-hairline);">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.65rem;flex:1;">
+              <div style="display:flex;align-items:center;gap:0.4rem;">
+                <label for="traj-filter-pr" class="mono" style="font-size:0.74rem;font-weight:700;color:var(--text-primary);white-space:nowrap;">Filter by PR:</label>
+                <select id="traj-filter-pr" class="mono" style="font-size:0.74rem;padding:0.28rem 0.55rem;min-width:250px;" onchange="onTrajectoryPrFilterChange(this.value)">
+                  <option value="all">All Pull Requests (PR #12–#27)</option>
+                </select>
+              </div>
+              <div style="display:flex;align-items:center;gap:0.4rem;">
+                <label for="traj-filter-issue" class="mono" style="font-size:0.74rem;font-weight:700;color:var(--text-primary);white-space:nowrap;">Filter by Issue:</label>
+                <select id="traj-filter-issue" class="mono" style="font-size:0.74rem;padding:0.28rem 0.55rem;min-width:270px;" onchange="onTrajectoryIssueFilterChange(this.value)">
+                  <option value="all">All GitHub Issues (#1–#35)</option>
+                </select>
+              </div>
+              <button type="button" id="btn-clear-traj-workitem-filters" class="btn mono" style="padding:0.24rem 0.55rem;font-size:0.72rem;display:none;" onclick="clearTrajectoryWorkItemFilters()">Clear PR / Issue Filter &times;</button>
+            </div>
+            <div class="mono" id="traj-filtered-cost-pill" style="font-size:0.74rem;font-weight:600;color:var(--accent-primary);">
+              Showing Cost &amp; Turn Ledger
             </div>
           </div>
         </div>
 
-        <!-- Selected Agent Summary Strip -->
+        <!-- Selected Agent / PR / Issue Summary Strip -->
         <div class="inspector-strip" id="trajectory-agent-summary">
           <span>Viewing Trajectory: <strong class="mono">@lead (psearch)</strong> — Factory Tech Lead &amp; Architecture Orchestrator</span>
-          <span class="mono">Steps: -- · Issues: #1–#34 · Commits &amp; Tool Traces</span>
+          <span class="mono">Steps: -- · Issues: #1–#35 · PRs: #12–#27 · Cost &amp; Tool Traces</span>
         </div>
 
-        <!-- Step-by-Step Conversation & Tool Trajectory Table -->
+        <!-- Step-by-Step Conversation, Cost & Tool Trajectory Table -->
         <div class="zone-body table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Step</th>
                 <th>Agent &amp; Handoff Edge</th>
-                <th>Wave / Issue</th>
-                <th>Action &amp; Cost</th>
+                <th>Wave / Issue / PR</th>
+                <th>Action, Turns &amp; Cost ($ USD)</th>
                 <th>Artifact</th>
                 <th>Timestamp (UTC)</th>
                 <th>Conversation Turn: Incoming Prompt, Thinking Trace, Tool Usage &amp; Outcome</th>
@@ -1020,6 +1121,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=20261014-v4"></script>
+  <script src="app.js?v=20261015-v5"></script>
 </body>
 </html>

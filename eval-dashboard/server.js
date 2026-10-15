@@ -4,7 +4,16 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
-const { AGENT_METADATA, buildTrajectoriesPayload, syncTrajectoriesToSpanner, answerTrajectoryConversationQuery } = require('./trajectories');
+const {
+  AGENT_METADATA,
+  PR_METADATA,
+  ISSUE_METADATA,
+  buildTrajectoriesPayload,
+  buildCostAndWorkItemRollups,
+  syncTrajectoriesToSpanner,
+  answerTrajectoryConversationQuery,
+  resolvePrAndIssueForStep
+} = require('./trajectories');
 const { upsertTurnsBatch, shipLocalContainerTurns, syncAllTrajectoriesAndTurnsToSpanner } = require('./ship-harness-turns');
 
 process.env.SPANNER_ENABLE_PROXIED_GCP_METRICS = 'false';
@@ -108,20 +117,25 @@ app.get('/api/backlog', async (req, res) => {
       return await resp.json();
     };
 
-    const [issues, mainCommits, evalCommits, branches, openPrs] = await Promise.all([
-      fetchGithub('/issues?state=all&per_page=30'),
-      fetchGithub('/commits?sha=main&per_page=10'),
-      fetchGithub('/commits?sha=eval-dashboard&per_page=10'),
+    const [issues, mainCommits, evalCommits, branches, allPrs] = await Promise.all([
+      fetchGithub('/issues?state=all&per_page=50'),
+      fetchGithub('/commits?sha=main&per_page=15'),
+      fetchGithub('/commits?sha=eval-dashboard&per_page=15'),
       fetchGithub('/branches'),
-      fetchGithub('/pulls?state=open')
+      fetchGithub('/pulls?state=all&per_page=30')
     ]);
 
+    const prsList = Array.isArray(allPrs) ? allPrs : [];
     const data = {
       issues: Array.isArray(issues) ? issues : [],
       main_commits: Array.isArray(mainCommits) ? mainCommits : [],
       eval_commits: Array.isArray(evalCommits) ? evalCommits : [],
       branches: Array.isArray(branches) ? branches : [],
-      open_prs: Array.isArray(openPrs) ? openPrs : [],
+      open_prs: prsList.filter(p => p.state === 'open'),
+      merged_prs: prsList.filter(p => p.state === 'closed'),
+      all_prs: prsList,
+      pr_metadata: PR_METADATA,
+      issue_metadata: ISSUE_METADATA,
       error: null,
       cached_at: new Date(now).toISOString()
     };
@@ -137,6 +151,10 @@ app.get('/api/backlog', async (req, res) => {
       eval_commits: [],
       branches: [],
       open_prs: [],
+      merged_prs: [],
+      all_prs: [],
+      pr_metadata: PR_METADATA,
+      issue_metadata: ISSUE_METADATA,
       error: err.message,
       cached_at: new Date(now).toISOString()
     });
@@ -193,10 +211,12 @@ app.get('/api/agents', async (req, res) => {
         model_calls: calls,
         live_spanner_turns_count: trajAgent.live_spanner_turns_count || 0,
         spanner_persisted_turns_count: trajAgent.spanner_persisted_turns_count || 0,
+        total_cost_usd: trajAgent.total_cost_usd || 0,
         last_summary: summary,
         active_issue: summary,
         trajectory_steps_count: trajAgent.steps_count || 0,
         issues_covered: trajAgent.issues_covered || [],
+        prs_touched: trajAgent.prs_touched || [],
         commits_count: trajAgent.commits_count || 0,
         waves_covered: trajAgent.waves_covered || [],
         updated_at: r.updated_at,
@@ -210,6 +230,7 @@ app.get('/api/agents', async (req, res) => {
     res.json({
       projects: projects,
       agents: agents,
+      cost_summary: trajPayload.cost_summary,
       source: 'spanner',
       updated_at: new Date().toISOString()
     });
@@ -255,7 +276,7 @@ async function fetchSpannerConversationTurns(db, forceRefresh = false) {
   }
 }
 
-// Helper to fetch live GitHub commits and issue comments for trajectory reconstruction
+// Helper to fetch live GitHub commits (both pages of main = 145 commits) and issue comments for trajectory reconstruction
 async function fetchLiveCommitsForTrajectories(forceRefresh = false) {
   const now = Date.now();
   if (!forceRefresh && trajGithubCache && (now - trajGithubCacheTime < TRAJ_GITHUB_CACHE_TTL_MS)) {
@@ -280,19 +301,132 @@ async function fetchLiveCommitsForTrajectories(forceRefresh = false) {
       return [];
     }
   };
-  const [mainCommits, evalCommits, commentsPage1, commentsPage2] = await Promise.all([
-    fetchGithubArray('/commits?sha=main&per_page=100'),
+  const [mainCommitsPage1, mainCommitsPage2, evalCommits, commentsPage1, commentsPage2] = await Promise.all([
+    fetchGithubArray('/commits?sha=main&per_page=100&page=1'),
+    fetchGithubArray('/commits?sha=main&per_page=100&page=2'),
     fetchGithubArray('/commits?sha=eval-dashboard&per_page=100'),
     fetchGithubArray('/issues/comments?per_page=100&page=1'),
     fetchGithubArray('/issues/comments?per_page=100&page=2')
   ]);
+  const mainCommits = [...mainCommitsPage1, ...mainCommitsPage2];
   const issueComments = [...commentsPage1, ...commentsPage2];
   trajGithubCache = { mainCommits, evalCommits, issueComments };
   trajGithubCacheTime = now;
   return trajGithubCache;
 }
 
-// GET /api/trajectories - Returns per-agent and chronological execution trajectories across psearch and psearch-eval
+// Helper to filter trajectory steps by project, agent, issue_number, or pr_number and compute filtered cost/turn/agent summary
+function filterStepsAndBuildSummary(payload, queryParams = {}) {
+  const filterProject = queryParams.project && queryParams.project !== 'all' ? String(queryParams.project) : '';
+  const filterAgent = queryParams.agent && queryParams.agent !== 'all' ? String(queryParams.agent) : '';
+  const filterIssue = queryParams.issue && queryParams.issue !== 'all' ? Number(String(queryParams.issue).replace(/\D+/g, '')) : null;
+  const filterPr = queryParams.pr && queryParams.pr !== 'all' ? Number(String(queryParams.pr).replace(/\D+/g, '')) : null;
+
+  const prMeta = filterPr ? (payload.pr_rollups || []).find(p => p.pr_number === filterPr) : null;
+  const prShaSet = prMeta
+    ? new Set([prMeta.merge_commit, ...((PR_METADATA.find(p => p.pr_number === filterPr) || {}).commit_shas || [])].filter(Boolean).map(x => String(x).slice(0, 7)))
+    : null;
+  const prMentionRe = filterPr
+    ? new RegExp(`(?:\\bpr\\s*#?${filterPr}\\b|\\(#${filterPr}\\)|\\[PR\\s*#${filterPr}\\])`, 'i')
+    : null;
+
+  const filteredSteps = (payload.chronological_timeline || []).filter(s => {
+    if (filterProject && s.project !== filterProject) return false;
+    if (filterAgent && s.agent !== filterAgent) return false;
+    if (filterIssue && Number(s.issue_number) !== filterIssue) return false;
+    if (filterPr) {
+      const sha7 = String(s.commit_sha || '').slice(0, 7);
+      const text = `${s.title || ''} ${s.detail || ''} ${s.raw_body || ''}`;
+      const matchDirect = Number(s.pr_number) === filterPr || (prShaSet && prShaSet.has(sha7));
+      const matchText = (prMentionRe && prMentionRe.test(text)) || (prMeta && prMeta.merge_commit && text.includes(prMeta.merge_commit));
+      if (!matchDirect && !matchText) return false;
+    }
+    return true;
+  });
+
+  const byAgent = {};
+  let totalCostUsd = 0;
+  let totalTurns = 0;
+  let totalModelCalls = 0;
+  let totalToolCalls = 0;
+  let totalTokens = 0;
+
+  for (const s of filteredSteps) {
+    const key = `${s.project}:${s.agent}`;
+    const c = Number(s.cost_usd || 0);
+    const t = Number(s.turns_count) || 4;
+    const mc = Number(s.model_calls_count) || 8;
+    const tc = Array.isArray(s.tool_calls) ? s.tool_calls.length : 0;
+    const tok = Number(s.tokens && s.tokens.total_tokens) || 0;
+
+    totalCostUsd += c;
+    totalTurns += t;
+    totalModelCalls += mc;
+    totalToolCalls += tc;
+    totalTokens += tok;
+
+    if (!byAgent[key]) {
+      byAgent[key] = {
+        key,
+        project: s.project,
+        agent: s.agent,
+        agent_name: s.agent,
+        harness: s.harness,
+        model: s.model,
+        steps_count: 0,
+        turns: 0,
+        turns_count: 0,
+        model_calls: 0,
+        tool_calls: 0,
+        total_tokens: 0,
+        cost_usd: 0,
+        total_cost_usd: 0
+      };
+    }
+    byAgent[key].steps_count += 1;
+    byAgent[key].turns += t;
+    byAgent[key].turns_count += t;
+    byAgent[key].model_calls += mc;
+    byAgent[key].tool_calls += tc;
+    byAgent[key].total_tokens += tok;
+    byAgent[key].cost_usd = Number((byAgent[key].cost_usd + c).toFixed(4));
+    byAgent[key].total_cost_usd = byAgent[key].cost_usd;
+  }
+
+  const cleanCost = Number(totalCostUsd.toFixed(4));
+  const agentsInvolved = Object.values(byAgent).map(a => ({
+    ...a,
+    share_pct: cleanCost > 0 ? Number(((a.cost_usd / cleanCost) * 100).toFixed(1)) : 0
+  })).sort((a, b) => b.cost_usd - a.cost_usd || b.turns - a.turns);
+
+  return {
+    filters_applied: {
+      project: filterProject || 'all',
+      agent: filterAgent || 'all',
+      issue: filterIssue || 'all',
+      pr: filterPr || 'all'
+    },
+    selected_pr: filterPr ? (payload.pr_rollups || []).find(p => p.pr_number === filterPr) || null : null,
+    selected_issue: filterIssue ? (payload.issue_rollups || []).find(i => i.issue_number === filterIssue) || null : null,
+    filtered_cost_summary: {
+      steps_count: filteredSteps.length,
+      turns: totalTurns,
+      turns_count: totalTurns,
+      total_turns: totalTurns,
+      model_calls_count: totalModelCalls,
+      tool_calls_count: totalToolCalls,
+      total_tokens: totalTokens,
+      cost_usd: cleanCost,
+      total_cost_usd: cleanCost,
+      agents_count: agentsInvolved.length,
+      agents_involved: agentsInvolved
+    },
+    steps: filteredSteps,
+    filtered_timeline: filteredSteps
+  };
+}
+
+// GET /api/trajectories - Returns per-agent and chronological execution trajectories across psearch and psearch-eval, plus PR/Issue cost & turn rollups
 app.get('/api/trajectories', async (req, res) => {
   try {
     const forceLive = req.query.live === 'true';
@@ -334,19 +468,50 @@ app.get('/api/trajectories', async (req, res) => {
       selectedAgent = payload.agents.find(a => a.name === filterAgent) || null;
     }
 
+    const filterResult = filterStepsAndBuildSummary(payload, req.query);
+
     return res.json({
       ...payload,
       spanner_table: 'agent_trajectories',
       spanner_turns_table: 'agent_conversation_turns',
       spanner_persisted_steps: spannerRowCount,
       spanner_persisted_turns: spannerTurns.length,
-      selected_agent: selectedAgent
+      selected_agent: selectedAgent,
+      ...filterResult
     });
   } catch (err) {
     console.error('Error building trajectories payload:', err.message);
     return res.status(500).json({ error: err.message });
   }
 });
+
+// GET /api/trajectories/prs (and /api/trajectories/cost-analytics) - Dedicated PR & Issue Cost, Turns, and Agent Drill-Down Explorer API
+const handlePrAndIssueCostAnalytics = async (req, res) => {
+  try {
+    const forceLive = req.query.live === 'true';
+    const db = getSpannerDatabase();
+    const [{ mainCommits, evalCommits, issueComments }, spannerTurns] = await Promise.all([
+      fetchLiveCommitsForTrajectories(forceLive),
+      fetchSpannerConversationTurns(db, forceLive)
+    ]);
+    const payload = buildTrajectoriesPayload(mainCommits, evalCommits, issueComments, [], spannerTurns);
+    const filterResult = filterStepsAndBuildSummary(payload, req.query);
+
+    return res.json({
+      status: 'ok',
+      rebuilt_at: payload.rebuilt_at,
+      cost_summary: payload.cost_summary,
+      pr_rollups: payload.pr_rollups,
+      issue_rollups: payload.issue_rollups,
+      ...filterResult
+    });
+  } catch (err) {
+    console.error('GET /api/trajectories/prs error:', err.message);
+    return res.status(500).json({ status: 'error', error: err.message });
+  }
+};
+app.get('/api/trajectories/prs', handlePrAndIssueCostAnalytics);
+app.get('/api/trajectories/cost-analytics', handlePrAndIssueCostAnalytics);
 
 // POST /api/trajectories/rebuild - Rebuilds all psearch & psearch-eval agent trajectories and syncs local harness turns to Cloud Spanner
 app.post('/api/trajectories/rebuild', async (req, res) => {
@@ -406,55 +571,103 @@ app.post('/api/trajectories/rebuild', async (req, res) => {
   }
 });
 
-// GET /api/trajectories/turns - Direct query of Cloud Spanner agent_conversation_turns across psearch & psearch-eval
+// GET /api/trajectories/turns - Direct query of Cloud Spanner agent_conversation_turns across psearch & psearch-eval (supports ?issue= & ?pr= filtering + cost breakdown)
 app.get('/api/trajectories/turns', async (req, res) => {
   try {
     const db = getSpannerDatabase();
     const forceLive = req.query.live === 'true';
-    const allTurns = await fetchSpannerConversationTurns(db, forceLive);
+    const allTurnsRaw = await fetchSpannerConversationTurns(db, forceLive);
     const filterProject = req.query.project || '';
     const filterAgent = req.query.agent || '';
     const filterSource = req.query.source_mode || '';
+    const filterIssue = req.query.issue && req.query.issue !== 'all' ? Number(String(req.query.issue).replace(/\D+/g, '')) : null;
+    const filterPr = req.query.pr && req.query.pr !== 'all' ? Number(String(req.query.pr).replace(/\D+/g, '')) : null;
     const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit || '500', 10)));
+
+    const allTurns = allTurnsRaw.map(t => {
+      const resolved = resolvePrAndIssueForStep({
+        issue_number: t.issue_number,
+        project_slug: t.project_slug,
+        title: t.prompt_text || '',
+        detail: t.response_text || ''
+      });
+      return {
+        ...t,
+        issue_number: resolved.issue_number || t.issue_number || 34,
+        pr_number: resolved.pr_number || null
+      };
+    });
 
     const filtered = allTurns.filter(t => {
       if (filterProject && filterProject !== 'all' && t.project_slug !== filterProject) return false;
       if (filterAgent && filterAgent !== 'all' && t.agent_name !== filterAgent) return false;
       if (filterSource && filterSource !== 'all' && t.source_mode !== filterSource) return false;
+      if (filterIssue && Number(t.issue_number) !== filterIssue) return false;
+      if (filterPr && Number(t.pr_number) !== filterPr) return false;
       return true;
     });
 
-    const summaryByAgent = {};
-    for (const t of allTurns) {
-      const k = `${t.project_slug}/${t.agent_name}`;
-      if (!summaryByAgent[k]) {
-        summaryByAgent[k] = {
-          project_slug: t.project_slug,
-          agent_name: t.agent_name,
-          harness: t.harness,
-          model: t.model,
-          total_turns: 0,
-          live_harness_turns: 0,
-          reconstructed_turns: 0,
-          total_tokens: 0,
-          total_cost_usd: 0
-        };
+    const buildTurnsSummaryMap = (rows) => {
+      const map = {};
+      for (const t of rows) {
+        const k = `${t.project_slug}/${t.agent_name}`;
+        if (!map[k]) {
+          map[k] = {
+            project_slug: t.project_slug,
+            agent_name: t.agent_name,
+            agent: t.agent_name,
+            harness: t.harness,
+            model: t.model,
+            turns: 0,
+            total_turns: 0,
+            live_harness_turns: 0,
+            reconstructed_turns: 0,
+            total_tokens: 0,
+            cost_usd: 0,
+            total_cost_usd: 0
+          };
+        }
+        const s = map[k];
+        s.turns += 1;
+        s.total_turns += 1;
+        if (t.source_mode === 'live_harness_stream') s.live_harness_turns += 1;
+        else s.reconstructed_turns += 1;
+        s.total_tokens += Number(t.total_tokens) || 0;
+        s.total_cost_usd = Number((s.total_cost_usd + (Number(t.cost_usd) || 0)).toFixed(4));
+        s.cost_usd = s.total_cost_usd;
       }
-      const s = summaryByAgent[k];
-      s.total_turns += 1;
-      if (t.source_mode === 'live_harness_stream') s.live_harness_turns += 1;
-      else s.reconstructed_turns += 1;
-      s.total_tokens += Number(t.total_tokens) || 0;
-      s.total_cost_usd = Number((s.total_cost_usd + (Number(t.cost_usd) || 0)).toFixed(4));
-    }
+      return Object.values(map).sort((a, b) => b.total_cost_usd - a.total_cost_usd || b.total_turns - a.total_turns);
+    };
+
+    const filteredAgentsSummary = buildTurnsSummaryMap(filtered);
+    const filteredTotalCost = Number(filtered.reduce((acc, t) => acc + (Number(t.cost_usd) || 0), 0).toFixed(4));
+    const filteredTotalTokens = filtered.reduce((acc, t) => acc + (Number(t.total_tokens) || 0), 0);
+    const summaryObj = {
+      turns: filtered.length,
+      total_turns: filtered.length,
+      total_tokens: filteredTotalTokens,
+      cost_usd: filteredTotalCost,
+      total_cost_usd: filteredTotalCost,
+      agents_count: filteredAgentsSummary.length,
+      agents_involved: filteredAgentsSummary
+    };
 
     return res.json({
       status: 'ok',
       spanner_table: 'agent_conversation_turns',
       total_turns_in_spanner: allTurns.length,
       live_harness_turns_in_spanner: allTurns.filter(t => t.source_mode === 'live_harness_stream').length,
+      filters_applied: {
+        project: filterProject || 'all',
+        agent: filterAgent || 'all',
+        issue: filterIssue || 'all',
+        pr: filterPr || 'all',
+        source_mode: filterSource || 'all'
+      },
       filtered_count: filtered.length,
-      agents_summary: Object.values(summaryByAgent),
+      filtered_cost_summary: summaryObj,
+      turns_summary: summaryObj,
+      agents_summary: buildTurnsSummaryMap(allTurns),
       turns: filtered.slice(-limit)
     });
   } catch (err) {
@@ -499,7 +712,7 @@ app.post('/api/trajectories/turns', async (req, res) => {
   }
 });
 
-// POST /api/trajectories/chat - Conversational Trajectory Explorer (answers questions about prompts, thinking, tool usage, issues, and inter-agent handoffs)
+// POST /api/trajectories/chat - Conversational Trajectory Explorer (answers questions about PR/Issue cost, turns, agents, prompts, thinking, tool usage, and handoffs)
 app.post('/api/trajectories/chat', async (req, res) => {
   const start = Date.now();
   try {
@@ -526,7 +739,8 @@ app.post('/api/trajectories/chat', async (req, res) => {
     const result = answerTrajectoryConversationQuery(payload, queryText, {
       project: body.project || 'all',
       agent: body.agent || 'all',
-      issue: body.issue || null
+      issue: body.issue || null,
+      pr: body.pr || null
     });
     return res.json({
       status: 'ok',
@@ -559,7 +773,7 @@ app.get('/api/trajectories/graph', async (req, res) => {
   }
 });
 
-// Canonical 17 Biggy Search requirements template with unmeasured baseline
+// Canonical 18 Biggy Search requirements template with unmeasured baseline
 const defaultUnmeasuredRequirements = [
   { issue_number: 1, code: '4.1.1', title: 'Busca Híbrida (Dynamic RRF Alpha)', wave: 'wave-1', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
   { issue_number: 2, code: '4.1.2', title: 'Busca Vetorial (1024-dim, Blue/Green, Cache)', wave: 'wave-1', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
@@ -577,7 +791,8 @@ const defaultUnmeasuredRequirements = [
   { issue_number: 22, code: '4.1.14', title: 'B2B / Contract Pricing & Exclusive Assortment (INTERLEAVE)', wave: 'wave-5', owner_agent: '@backend', status: 'not measured', latency_ms: null, evidence: null },
   { issue_number: 32, code: '4.1.15', title: 'Variant Grouping / Collapse (Products -> SKUs INTERLEAVE)', wave: 'wave-6', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
   { issue_number: 33, code: '4.1.16', title: 'Visual & Multimodal Search (gemini-embedding-2 @ 1024d + Text Fusion)', wave: 'wave-6', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null },
-  { issue_number: 34, code: '4.1.17', title: 'Facetas Clicáveis no Painel Lateral (Interactive Filter Toggle & Chips)', wave: 'wave-6', owner_agent: '@frontend · @lead', status: 'not measured', latency_ms: null, evidence: null }
+  { issue_number: 34, code: '4.1.17', title: 'Facetas Clicáveis no Painel Lateral (Interactive Filter Toggle & Chips)', wave: 'wave-6', owner_agent: '@frontend · @lead', status: 'not measured', latency_ms: null, evidence: null },
+  { issue_number: 35, code: '4.1.18', title: 'Sponsored Products / Retail Media (Injeção de Anúncios Nativos com Budget Real-Time)', wave: 'wave-6', owner_agent: '@backend · @frontend', status: 'not measured', latency_ms: null, evidence: null }
 ];
 
 const DEFAULT_CATALOG_SUMMARY = {
