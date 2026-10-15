@@ -1075,7 +1075,7 @@ const ISSUE_METADATA = [
   { issue_number: 33, req_id: 'Req 4.1.16', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00028-klr', title: '[Req 4.1.16] Visual & Multimodal Search (gemini-embedding-2 @ 1024-d)' },
   { issue_number: 34, req_id: 'Req 4.1.17', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00029-7ss', title: '[Req 4.1.17] Tornar as facetas no painel lateral clicáveis (Interactive Facet Re-Search)' },
   { issue_number: 35, req_id: 'Req 4.1.18', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00030-pqq', title: '[Req 4.1.18] Sponsored Products / Retail Media (Injeção de anúncios nativos com controle de budget real-time)' },
-  { issue_number: 36, req_id: 'FinOps #36', wave: 'wave-6', project: 'psearch-eval', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00024', title: 'feat(eval-dashboard): Scion-native zero-extra-cost PR/Issue FinOps & stateful turn attribution engine' }
+  { issue_number: 36, req_id: 'FinOps #36', wave: 'wave-6', project: 'psearch-eval', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00024-nt2', title: 'feat(eval-dashboard): Scion-native zero-extra-cost PR/Issue FinOps & stateful turn attribution engine' }
 ];
 
 // Additional canonical baseline steps for PRs #12-#17, #24, #25, #27 and Issues #34, #35, #36
@@ -1188,6 +1188,7 @@ const COMMIT_SHA_MAP = {
   '508867f': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'DOCS_SYNC' },
   'c148a6f': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'ADR_PLAN' },
   '0a850c9': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'BACKEND_IMPL' },
+  'adc37f7': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-deployer', step_type: 'CLOUD_RUN_DEPLOY' },
   'ea9d6e4': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
   '2f2702a': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'ui-craftsman',  step_type: 'UI_IMPL' },
   '24d62c2': { issue_number: 11, pr_number: 12, project: 'psearch',      agent: 'lead',            step_type: 'ADR_PLAN' },
