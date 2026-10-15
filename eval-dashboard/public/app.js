@@ -1206,25 +1206,28 @@
       spannerBadge.innerHTML = '<span class="badge-dot"></span>Spanner Synced (' + spannerCnt + ' steps in agent_trajectories · ' + spannerTurnsCnt + ' turns / ' + liveHarnessCnt + ' live harness in agent_conversation_turns)';
     }
 
+    const allChrono = Array.isArray(cachedTrajectories.chronological_timeline) ? cachedTrajectories.chronological_timeline : [];
     let stepsToRender = [];
     if (selectedInteractionEdge !== 'all') {
-      const allChrono = Array.isArray(cachedTrajectories.chronological_timeline) ? cachedTrajectories.chronological_timeline : [];
       stepsToRender = allChrono.filter(st => {
         const normFrom = (st.from_agent === 'Scion Hub Scheduler') ? 'PO / GitHub' : (st.from_agent || st.agent);
         const edgeId = normFrom + ' → ' + (st.to_agent || 'lead');
         return edgeId === selectedInteractionEdge || st.interaction_edge === selectedInteractionEdge;
       });
     } else if (selectedTrajectoryProject === 'psearch' && selectedTrajectoryAgent === 'all') {
-      stepsToRender = Array.isArray(cachedTrajectories.psearch_chronological) ? cachedTrajectories.psearch_chronological : [];
+      stepsToRender = Array.isArray(cachedTrajectories.psearch_chronological)
+        ? cachedTrajectories.psearch_chronological
+        : allChrono.filter(st => st.project === 'psearch');
     } else if (selectedTrajectoryProject === 'all' && selectedTrajectoryAgent === 'all') {
-      stepsToRender = Array.isArray(cachedTrajectories.chronological_timeline) ? cachedTrajectories.chronological_timeline : [];
+      stepsToRender = allChrono;
     } else {
       const key = selectedTrajectoryProject + ':' + selectedTrajectoryAgent;
-      const agentObj = (cachedTrajectories.agents_by_key && cachedTrajectories.agents_by_key[key]) ||
-        cachedTrajectories.agents.find(a => a.project === selectedTrajectoryProject && a.name === selectedTrajectoryAgent);
+      const agentObj = cachedTrajectories.agents.find(a => a.project === selectedTrajectoryProject && a.name === selectedTrajectoryAgent) ||
+        (cachedTrajectories.agents_by_key && cachedTrajectories.agents_by_key[key]);
 
       if (agentObj) {
-        stepsToRender = (agentObj.trajectory || []).map(st => ({
+        const rawList = Array.isArray(agentObj.steps) ? agentObj.steps : (Array.isArray(agentObj.trajectory) ? agentObj.trajectory : allChrono.filter(st => st.project === selectedTrajectoryProject && st.agent === selectedTrajectoryAgent));
+        stepsToRender = rawList.map(st => ({
           ...st,
           project: agentObj.project,
           agent_name: agentObj.name,

@@ -399,7 +399,8 @@ function filterStepsAndBuildSummary(payload, queryParams = {}) {
     share_pct: cleanCost > 0 ? Number(((a.cost_usd / cleanCost) * 100).toFixed(1)) : 0
   })).sort((a, b) => b.cost_usd - a.cost_usd || b.turns - a.turns);
 
-  return {
+  const hasActiveFilter = Boolean(filterProject || filterAgent || filterIssue || filterPr);
+  const resObj = {
     filters_applied: {
       project: filterProject || 'all',
       agent: filterAgent || 'all',
@@ -420,10 +421,13 @@ function filterStepsAndBuildSummary(payload, queryParams = {}) {
       total_cost_usd: cleanCost,
       agents_count: agentsInvolved.length,
       agents_involved: agentsInvolved
-    },
-    steps: filteredSteps,
-    filtered_timeline: filteredSteps
+    }
   };
+  if (hasActiveFilter) {
+    resObj.steps = filteredSteps;
+    resObj.filtered_timeline = filteredSteps;
+  }
+  return resObj;
 }
 
 // GET /api/trajectories - Returns per-agent and chronological execution trajectories across psearch and psearch-eval, plus PR/Issue cost & turn rollups

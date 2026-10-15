@@ -1560,14 +1560,15 @@ function enrichStepWithConversationAndTools(step, meta) {
     const outTok = Number(step.tokens && step.tokens.output_tokens) || 320;
     const totTok = Number(step.tokens && step.tokens.total_tokens) || (inTok + cacheTok + outTok);
     const stepCost = Number(step.cost_usd || (step.tokens && step.tokens.cost_usd) || 0.0042);
-    const conv = {
-      from_agent: step.from_agent || (proj === 'psearch' ? 'lead' : 'eval-lead'),
-      to_agent: step.to_agent || agent,
-      interaction_edge: `${step.from_agent || 'PO / GitHub'} → ${step.to_agent || agent}`,
-      prompt: step.prompt || '',
-      thinking: step.thinking || '',
-      tool_calls: Array.isArray(step.tool_calls) ? step.tool_calls : [],
-      response: step.response || step.detail || '',
+    const toolList = Array.isArray(step.tool_calls) ? step.tool_calls : [];
+    const edge = `${step.from_agent || 'PO / GitHub'} → ${step.to_agent || agent}`;
+    return {
+      ...step,
+      issue_number: issue,
+      pr_number: prNumber,
+      turns_count: Number(step.turns_count) || 1,
+      model_calls_count: Number(step.model_calls_count) || Math.max(1, toolList.length),
+      tool_calls_count: toolList.length,
       tokens: {
         input_tokens: inTok,
         cache_read_tokens: cacheTok,
@@ -1576,19 +1577,9 @@ function enrichStepWithConversationAndTools(step, meta) {
         cost_usd: stepCost,
         model: (step.tokens && step.tokens.model) || meta.model,
         source: 'live_spanner_agent_conversation_turns'
-      }
-    };
-    return {
-      ...step,
-      issue_number: issue,
-      pr_number: prNumber,
-      turns_count: Number(step.turns_count) || 1,
-      model_calls_count: Number(step.model_calls_count) || Math.max(1, conv.tool_calls.length),
-      tool_calls_count: conv.tool_calls.length,
-      tokens: conv.tokens,
+      },
       cost_usd: stepCost,
-      interaction_edge: conv.interaction_edge,
-      conversation: conv
+      interaction_edge: edge
     };
   }
 
@@ -1769,23 +1760,14 @@ function enrichStepWithConversationAndTools(step, meta) {
   const stepTurns = Number(step.turns_count) || meta.turns_per_step || 4;
   const stepModelCalls = Number(step.model_calls_count) || meta.calls_per_step || 8;
 
-  const conversation = {
-    from_agent: fromAgent,
-    to_agent: toAgent,
-    interaction_edge: `${fromAgent} → ${toAgent}`,
-    prompt,
-    thinking,
-    tool_calls: toolCalls,
-    response,
-    tokens: {
-      input_tokens: estInputTokens,
-      cache_read_tokens: estCacheTokens,
-      output_tokens: estOutputTokens,
-      total_tokens: totalTokens,
-      cost_usd: costUsd,
-      model: meta.model,
-      source: proj === 'psearch-eval' ? 'antigravity_transcript_calibrated' : 'reconstructed_from_artifact_payload'
-    }
+  const tokensObj = {
+    input_tokens: estInputTokens,
+    cache_read_tokens: estCacheTokens,
+    output_tokens: estOutputTokens,
+    total_tokens: totalTokens,
+    cost_usd: costUsd,
+    model: meta.model,
+    source: proj === 'psearch-eval' ? 'antigravity_transcript_calibrated' : 'reconstructed_from_artifact_payload'
   };
 
   return {
@@ -1801,10 +1783,9 @@ function enrichStepWithConversationAndTools(step, meta) {
     prompt,
     thinking,
     tool_calls: toolCalls,
-    response,
-    tokens: conversation.tokens,
-    cost_usd: costUsd,
-    conversation
+    response: String(response || '').slice(0, 900),
+    tokens: tokensObj,
+    cost_usd: costUsd
   };
 }
 
@@ -2582,7 +2563,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
         return { r, score };
       });
       scored.sort((a, b) => (b.score - a.score) || String(b.r.created_at).localeCompare(String(a.r.created_at)));
-      const selectedRows = scored.slice(0, 16).map(x => x.r).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+      const selectedRows = scored.slice(0, 8).map(x => x.r).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
 
       for (const r of selectedRows) {
         const sidShort = String(r.session_id || 'sess').slice(0, 8);
@@ -2596,18 +2577,18 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
         } catch (_) {
           rawTools = [];
         }
-        const mappedTools = (Array.isArray(rawTools) ? rawTools : []).map(tc => ({
-          tool: tc.tool || 'tool',
-          command: tc.args_preview || tc.command || tc.summary || tc.action || tc.tool || '',
-          output: tc.output_preview || tc.output || (r.tool_output_text ? String(r.tool_output_text).slice(0, 500) : 'Executed via harness'),
+        const mappedTools = (Array.isArray(rawTools) ? rawTools : []).slice(0, 5).map(tc => ({
+          tool: String(tc.tool || 'tool').slice(0, 48),
+          command: String(tc.args_preview || tc.command || tc.summary || tc.action || tc.tool || '').slice(0, 180),
+          output: String(tc.output_preview || tc.output || (r.tool_output_text ? String(r.tool_output_text).slice(0, 220) : 'Executed via harness')).slice(0, 220),
           status: String(tc.status || 'OK').toUpperCase() === 'WARN' ? 'WARN' : 'OK'
         }));
 
         const shortFrom = normalizeShortGraphAgent(r.from_agent, bucket.meta.project === 'psearch' ? 'lead' : 'eval-lead');
         const shortTo = normalizeShortGraphAgent(r.to_agent, bucket.meta.name);
-        const cleanPrompt = String(r.prompt_text || '').trim();
-        const cleanThinking = String(r.thinking_text || '').trim();
-        const cleanResponse = String(r.response_text || '').trim();
+        const cleanPrompt = String(r.prompt_text || '').trim().slice(0, 480);
+        const cleanThinking = String(r.thinking_text || '').trim().slice(0, 480);
+        const cleanResponse = String(r.response_text || '').trim().slice(0, 560);
         const titlePreview = (cleanPrompt || cleanResponse || `Harness turn #${r.turn_index}`).replace(/\s+/g, ' ').slice(0, 88);
 
         const inTok = Number(r.input_tokens) || 0;
@@ -2624,12 +2605,12 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
           session_id: r.session_id,
           turn_index: Number(r.turn_index) || 1,
           turns_count: 1,
-          model_calls_count: Math.max(1, mappedTools.length),
+          model_calls_count: Math.max(1, Array.isArray(rawTools) ? rawTools.length : mappedTools.length),
           source_mode: r.source_mode || 'live_harness_stream',
           event_timestamp: r.created_at || new Date().toISOString(),
           status: 'PASS',
           title: `[⚡ Spanner Turn #${r.turn_index}] ${titlePreview}`,
-          detail: cleanResponse.slice(0, 420) || cleanThinking.slice(0, 420) || titlePreview,
+          detail: cleanResponse.slice(0, 320) || cleanThinking.slice(0, 320) || titlePreview,
           from_agent: shortFrom,
           to_agent: shortTo,
           prompt: cleanPrompt || titlePreview,
@@ -2672,7 +2653,8 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
         source_mode: s.source_mode || 'reconstructed_github_spanner',
         action_type: s.step_type || s.action_type || 'ACTION',
         timestamp: s.event_timestamp || s.timestamp,
-        ...s
+        ...s,
+        raw_body: s.raw_body ? String(s.raw_body).slice(0, 420) : undefined
       };
       const enriched = enrichStepWithConversationAndTools(baseStepObj, meta);
       allStepsChronological.push(enriched);
@@ -2698,7 +2680,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
     const sortedIssues = Array.from(issuesSet).sort((a, b) => a - b);
     const sortedPrs = Array.from(prsSet).sort((a, b) => a - b);
 
-    const agentSummary = {
+    const agentMetaSummary = {
       project: meta.project,
       name: meta.name,
       role: meta.role,
@@ -2721,17 +2703,15 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
       reconstructed_model_calls: modelCalls,
       last_summary: lastStep ? `#${lastStep.issue_number || 35} ${lastStep.title.slice(0, 72)}` : meta.summary_focus,
       summary_focus: meta.summary_focus,
-      last_activity_at: lastStep ? lastStep.event_timestamp : new Date().toISOString(),
-      steps: stepsWithIndex,
-      trajectory: stepsWithIndex
+      last_activity_at: lastStep ? lastStep.event_timestamp : new Date().toISOString()
     };
 
-    agentsSummary.push(agentSummary);
-    trajectoriesByAgent[key] = agentSummary;
+    agentsSummary.push(agentMetaSummary);
+    trajectoriesByAgent[key] = agentMetaSummary;
   }
 
   allStepsChronological.sort((a, b) => String(a.event_timestamp).localeCompare(String(b.event_timestamp)));
-  const psearchChrono = allStepsChronological.filter(s => s.project === 'psearch');
+  const psearchStepsCount = allStepsChronological.filter(s => s.project === 'psearch').length;
   const agentGraph = buildInterAgentGraph(allStepsChronological, agentsSummary);
   const costAndWorkItemRollups = buildCostAndWorkItemRollups(allStepsChronological, agentsSummary, liveSpannerTurns);
   const liveHarnessTurnsTotal = Array.isArray(liveSpannerTurns)
@@ -2742,8 +2722,8 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
     rebuilt_at: new Date().toISOString(),
     total_agents: agentsSummary.length,
     total_steps: allStepsChronological.length,
-    psearch_steps: psearchChrono.length,
-    psearch_eval_steps: allStepsChronological.filter(s => s.project === 'psearch-eval').length,
+    psearch_steps: psearchStepsCount,
+    psearch_eval_steps: allStepsChronological.length - psearchStepsCount,
     spanner_turns_table: 'agent_conversation_turns',
     spanner_turns_total: Array.isArray(liveSpannerTurns) ? liveSpannerTurns.length : 0,
     live_harness_turns_total: liveHarnessTurnsTotal,
@@ -2753,10 +2733,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
     agent_graph: agentGraph,
     agents: agentsSummary,
     agents_by_key: trajectoriesByAgent,
-    trajectories: trajectoriesByAgent,
-    psearch_chronological: psearchChrono,
-    chronological_timeline: allStepsChronological,
-    chronological_feed: allStepsChronological
+    chronological_timeline: allStepsChronological
   };
 }
 
@@ -2764,11 +2741,8 @@ async function syncTrajectoriesToSpanner(db, payload) {
   if (!db || !payload) return { synced: false };
 
   await db.runTransactionAsync(async (tx) => {
+    const allSteps = Array.isArray(payload.chronological_timeline) ? payload.chronological_timeline : [];
     for (const agentSummary of payload.agents) {
-      const key = `${agentSummary.project}:${agentSummary.name}`;
-      const traj = payload.trajectories[key];
-      if (!traj) continue;
-
       // Update factory_agent_status with reconstructed turns, model_calls, and latest summary
       await tx.runUpdate({
         sql: `UPDATE factory_agent_status
@@ -2786,8 +2760,12 @@ async function syncTrajectoriesToSpanner(db, payload) {
         }
       });
 
+      const agentSteps = Array.isArray(agentSummary.steps)
+        ? agentSummary.steps
+        : allSteps.filter(s => s.project === agentSummary.project && s.agent === agentSummary.name);
+
       // Upsert each step in agent_trajectories
-      for (const step of traj.steps) {
+      for (const step of agentSteps) {
         await tx.runUpdate({
           sql: `INSERT OR UPDATE INTO agent_trajectories
                 (project_slug, agent_name, step_index, wave, issue_number, step_type, commit_sha, title, detail, status, event_timestamp, updated_at)
