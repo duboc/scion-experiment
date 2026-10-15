@@ -506,6 +506,178 @@
       color: var(--text-primary);
       margin-right: 0.75rem;
     }
+    /* Issue #37: Sticky Workspace Lens Switcher & Active Crossfilter Strip */
+    .lens-bar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-strong);
+      padding: 0.5rem 2rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+    .lens-tabs {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      align-items: center;
+    }
+    .lens-tab {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 0.32rem 0.7rem;
+      border: 1px solid var(--border-hairline);
+      background: var(--bg-subtle);
+      color: var(--text-secondary);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.12s ease;
+    }
+    .lens-tab:hover {
+      border-color: var(--accent-primary);
+      color: var(--text-primary);
+    }
+    .lens-tab[aria-pressed="true"] {
+      background: var(--accent-primary);
+      border-color: var(--accent-primary);
+      color: #fff;
+    }
+    .crossfilter-strip {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.38rem;
+    }
+    .crossfilter-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.32rem;
+      padding: 0.18rem 0.52rem;
+      border-radius: 3px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: var(--accent-tint);
+      border: 1px solid var(--accent-primary);
+      color: var(--accent-primary);
+      cursor: pointer;
+    }
+    .crossfilter-pill:hover {
+      opacity: 0.85;
+    }
+    /* Issue #37: 2-Track FinOps Marimekko Conservation Bar & Inline Sparkbars */
+    .finops-marimekko-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid var(--border-hairline);
+      background: var(--bg-surface);
+    }
+    @media (max-width: 1024px) {
+      .finops-marimekko-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .finops-track-card {
+      border: 1px solid var(--border-hairline);
+      border-radius: 4px;
+      padding: 0.6rem 0.8rem;
+      background: var(--bg-canvas);
+    }
+    .finops-track-bar {
+      display: flex;
+      width: 100%;
+      height: 22px;
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      background: var(--bg-subtle);
+      margin: 0.42rem 0;
+    }
+    .finops-seg {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.66rem;
+      font-weight: 700;
+      color: #fff;
+      white-space: nowrap;
+      overflow: hidden;
+      cursor: pointer;
+      transition: filter 0.12s ease, opacity 0.12s ease;
+    }
+    .finops-seg:hover {
+      filter: brightness(1.08);
+    }
+    .finops-seg.is-muted {
+      opacity: 0.35;
+    }
+    .sparkbar-track {
+      width: 100%;
+      height: 6px;
+      background: var(--bg-subtle);
+      border-radius: 2px;
+      overflow: hidden;
+      display: flex;
+      margin-top: 0.22rem;
+      border: 1px solid var(--border-hairline);
+    }
+    .sparkbar-prod {
+      height: 100%;
+      background: var(--status-pass);
+    }
+    .sparkbar-rework {
+      height: 100%;
+      background: var(--accent-primary);
+    }
+    /* Issue #37: 10-Agent Swimlane Waterfall & Context Cache-Bloat Curve */
+    .swimlane-bloat-split {
+      display: grid;
+      grid-template-columns: 1.55fr 1fr;
+      border-bottom: 1px solid var(--border-hairline);
+      background: var(--bg-surface);
+    }
+    @media (max-width: 1120px) {
+      .swimlane-bloat-split {
+        grid-template-columns: 1fr;
+      }
+    }
+    /* Issue #37: Pinned Turn & Attribution Inspector Drawer */
+    .turn-inspector-drawer {
+      border-bottom: 1px solid var(--border-strong);
+      background: var(--bg-elevated);
+      padding: 0.85rem 1.25rem;
+    }
+    .inspector-trace-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.65rem;
+      margin-top: 0.6rem;
+    }
+    @media (max-width: 1200px) {
+      .inspector-trace-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    .inspector-trace-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-hairline);
+      border-radius: 4px;
+      padding: 0.55rem 0.7rem;
+      font-size: 0.74rem;
+      line-height: 1.42;
+      max-height: 185px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
@@ -543,6 +715,20 @@
       </button>
     </div>
   </header>
+
+  <!-- Sticky Workspace Lens Switcher & Active Crossfilter Pill Bar (Issue #37) -->
+  <nav id="workspace-lens-bar" class="lens-bar" aria-label="Workspace Lens Switcher and Active Crossfilters">
+    <div class="lens-tabs" role="group" aria-label="Select Workspace Lens">
+      <span class="mono" style="font-size:0.72rem;font-weight:700;color:var(--text-muted);margin-right:0.25rem;">LENS:</span>
+      <button type="button" class="lens-tab" data-lens="all" aria-pressed="true" onclick="switchWorkspaceLens('all')">All Views (Executive)</button>
+      <button type="button" class="lens-tab" data-lens="finops" aria-pressed="false" onclick="switchWorkspaceLens('finops')">1. FinOps, Swimlane &amp; Trajectories</button>
+      <button type="button" class="lens-tab" data-lens="pyramid" aria-pressed="false" onclick="switchWorkspaceLens('pyramid')">2. 5-Layer Pyramid &amp; Search Workbench</button>
+      <button type="button" class="lens-tab" data-lens="topology" aria-pressed="false" onclick="switchWorkspaceLens('topology')">3. Factory Topology &amp; Diagnostics</button>
+    </div>
+    <div id="active-crossfilter-pills" class="crossfilter-strip">
+      <span class="mono" style="font-size:0.7rem;color:var(--text-muted);">Crossfilter: All Factory Activity (Unfiltered)</span>
+    </div>
+  </nav>
 
   <main class="workbench">
     <!-- Asymmetric Focal Strip: Relevance Readout + Alpha Curve SVG + Operational Ledger -->
@@ -915,7 +1101,7 @@
           <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
             <span id="traj-spanner-badge" class="badge badge--pass"><span class="badge-dot"></span>Spanner Synced</span>
             <button type="button" id="btn-toggle-conv-trace" class="btn" onclick="toggleAllTrajectoryTraces()">
-              <span id="btn-toggle-conv-trace-label">Collapse Prompts / Thinking / Tools</span>
+              <span id="btn-toggle-conv-trace-label">Expand Inline Prompts / Thinking</span>
             </button>
             <button type="button" id="btn-rebuild-trajectories" class="btn btn-primary" onclick="rebuildAgentTrajectories()">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -931,17 +1117,20 @@
             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.85rem;">
               <span class="mono" style="font-size:0.78rem;font-weight:700;color:var(--text-primary);">💰 PR &amp; Issue Cost, Turns &amp; Agent Involvement Explorer</span>
               <span class="mono" id="traj-cost-banner-summary" style="font-size:0.74rem;color:var(--text-secondary);">
-                Total Factory Cost: -- · Total Turns: -- · Tracked PRs: 9 (PR #12–#27) · Tracked Issues: 26 (#1–#35)
+                Total Factory Cost: -- · Total Turns: -- · Tracked PRs: 9 (PR #12–#27) · Tracked Issues: 27 (#1–#37)
               </span>
             </div>
             <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
               <span class="mono" style="font-size:0.72rem;color:var(--text-muted);">Drill-Down Ledger:</span>
               <div class="filter-group" role="group" aria-label="Switch between Pull Request Cost Ledger and Issue Cost Ledger">
                 <button type="button" id="btn-cost-mode-pr" class="filter-btn" aria-pressed="true" onclick="switchCostLedgerMode('pr')">Pull Requests (9 PRs · #12–#27)</button>
-                <button type="button" id="btn-cost-mode-issue" class="filter-btn" aria-pressed="false" onclick="switchCostLedgerMode('issue')">GitHub Issues (26 Issues · #1–#35)</button>
+                <button type="button" id="btn-cost-mode-issue" class="filter-btn" aria-pressed="false" onclick="switchCostLedgerMode('issue')">GitHub Issues (27 Issues · #1–#37)</button>
               </div>
             </div>
           </div>
+
+          <!-- Issue #37: Interactive 2-Track FinOps Marimekko Conservation Bar (Click Any Segment to Crossfilter) -->
+          <div id="finops-conservation-visual" class="finops-marimekko-grid" aria-label="2-Track FinOps Cost Conservation Decomposition"></div>
 
           <!-- Split-2: Left = PR / Issue Cost & Turn Table | Right = Selected PR / Issue Deep-Dive Card (Cost, Turns & Per-Agent Breakdown) -->
           <div class="split-2">
@@ -1001,6 +1190,39 @@
           </div>
         </div>
 
+        <!-- Issue #37: 10-Agent Swimlane Execution Waterfall & Context Cache-Bloat Curve (Pure SVG) -->
+        <div id="traj-swimlane-and-bloat-panel" class="swimlane-bloat-split">
+          <div class="zone" style="border-right:1px solid var(--border-hairline);">
+            <div class="zone-header" style="background:var(--bg-subtle);padding:0.55rem 1.15rem;">
+              <div>
+                <h3 style="margin:0;font-size:0.84rem;font-weight:600;">10-Agent Swimlane Execution Waterfall (Waves 0–6 · Click Any Step Block to Inspect)</h3>
+                <div class="mono" style="font-size:0.69rem;color:var(--text-muted);margin-top:0.12rem;">Synchronized chronological execution spans colored by FinOps bucket: Productive (Emerald) · Rework/Rollback (Amber) · Heartbeat Tax (Slate)</div>
+              </div>
+              <div class="filter-group" role="group" aria-label="Filter by FinOps Cost Bucket">
+                <button type="button" class="filter-btn" id="btn-bucket-all" aria-pressed="true" onclick="filterByCostBucket('all')">All Buckets</button>
+                <button type="button" class="filter-btn" id="btn-bucket-productive" aria-pressed="false" onclick="filterByCostBucket('productive')">Productive</button>
+                <button type="button" class="filter-btn" id="btn-bucket-rework" aria-pressed="false" onclick="filterByCostBucket('rework')">Rework</button>
+                <button type="button" class="filter-btn" id="btn-bucket-heartbeat" aria-pressed="false" onclick="filterByCostBucket('heartbeat_tax')">Heartbeat Tax</button>
+              </div>
+            </div>
+            <div style="padding:0.45rem 0.75rem;background:var(--bg-surface);">
+              <svg id="traj-swimlane-svg" viewBox="0 0 880 265" style="width:100%;height:auto;max-height:265px;display:block;" aria-label="10-Agent Swimlane Execution Waterfall"></svg>
+            </div>
+          </div>
+          <div class="zone">
+            <div class="zone-header" style="background:var(--bg-subtle);padding:0.55rem 1.15rem;">
+              <div>
+                <h3 style="margin:0;font-size:0.84rem;font-weight:600;">Context Cache-Bloat Curve (<span class="mono">cache_read_tokens</span> vs. Step Index)</h3>
+                <div class="mono" id="traj-bloat-curve-meta" style="font-size:0.69rem;color:var(--text-muted);margin-top:0.12rem;">Linear regression slope (+tok/step) &amp; context-window cache growth diagnosis</div>
+              </div>
+              <span class="mono" id="traj-bloat-ratio-badge" style="font-size:0.72rem;font-weight:700;color:var(--accent-primary);">--x Bloat</span>
+            </div>
+            <div style="padding:0.45rem 0.75rem;background:var(--bg-surface);">
+              <svg id="traj-bloat-curve-svg" viewBox="0 0 540 265" style="width:100%;height:auto;max-height:265px;display:block;" aria-label="Context Cache-Bloat Curve"></svg>
+            </div>
+          </div>
+        </div>
+
         <!-- Split View: Left = Directed Inter-Agent Handoff Graph | Right = Converse with the Trajectory -->
         <div class="split-2" style="border-bottom:1px solid var(--border-hairline);">
           <!-- Left: Directed Inter-Agent Communication & Handoff Graph -->
@@ -1022,7 +1244,7 @@
           <div class="zone" style="display:flex;flex-direction:column;">
             <div class="zone-header" style="background:var(--bg-subtle);padding:0.6rem 1.25rem;">
               <h3 style="margin:0;font-size:0.85rem;font-weight:600;">Converse with the Trajectory — Inspect PR/Issue Cost, Prompts, Thinking &amp; Tools</h3>
-              <span class="mono" style="font-size:0.72rem;color:var(--accent-primary);">Grounded on All PRs (#12–#27) &amp; Issues (#1–#35)</span>
+              <span class="mono" style="font-size:0.72rem;color:var(--accent-primary);">Grounded on All PRs (#12–#27) &amp; Issues (#1–#37)</span>
             </div>
             <div style="padding:0.65rem 1rem;border-bottom:1px solid var(--border-hairline);background:var(--bg-surface);display:flex;flex-direction:column;gap:0.5rem;">
               <div style="display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;">
@@ -1082,7 +1304,7 @@
               <div style="display:flex;align-items:center;gap:0.4rem;">
                 <label for="traj-filter-issue" class="mono" style="font-size:0.74rem;font-weight:700;color:var(--text-primary);white-space:nowrap;">Filter by Issue:</label>
                 <select id="traj-filter-issue" class="mono" style="font-size:0.74rem;padding:0.28rem 0.55rem;min-width:270px;" onchange="onTrajectoryIssueFilterChange(this.value)">
-                  <option value="all">All GitHub Issues (#1–#35)</option>
+                  <option value="all">All GitHub Issues (#1–#37)</option>
                 </select>
               </div>
               <button type="button" id="btn-clear-traj-workitem-filters" class="btn mono" style="padding:0.24rem 0.55rem;font-size:0.72rem;display:none;" onclick="clearTrajectoryWorkItemFilters()">Clear PR / Issue Filter &times;</button>
@@ -1096,8 +1318,11 @@
         <!-- Selected Agent / PR / Issue Summary Strip -->
         <div class="inspector-strip" id="trajectory-agent-summary">
           <span>Viewing Trajectory: <strong class="mono">@lead (psearch)</strong> — Factory Tech Lead &amp; Architecture Orchestrator</span>
-          <span class="mono">Steps: -- · Issues: #1–#35 · PRs: #12–#27 · Cost &amp; Tool Traces</span>
+          <span class="mono">Steps: -- · Issues: #1–#37 · PRs: #12–#27 · Cost &amp; Tool Traces</span>
         </div>
+
+        <!-- Issue #37: Pinned Turn & Attribution Inspector Drawer (Details-on-Demand) -->
+        <div id="traj-step-inspector-drawer" class="turn-inspector-drawer" aria-label="Selected Turn and Attribution Inspector"></div>
 
         <!-- Step-by-Step Conversation, Cost & Tool Trajectory Table -->
         <div class="zone-body table-wrap">
@@ -1110,7 +1335,7 @@
                 <th>Action, Turns &amp; Cost ($ USD)</th>
                 <th>Artifact</th>
                 <th>Timestamp (UTC)</th>
-                <th>Conversation Turn: Incoming Prompt, Thinking Trace, Tool Usage &amp; Outcome</th>
+                <th>Conversation Turn: Summary &amp; Inspector Trigger</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -1121,6 +1346,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=20261015-v5"></script>
+  <script src="app.js?v=20261015-v6"></script>
 </body>
 </html>

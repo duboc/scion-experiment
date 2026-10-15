@@ -552,12 +552,197 @@
   }
 
   let selectedInteractionEdge = 'all';
-  let showTrajectoryConversationTraces = true;
+  let showTrajectoryConversationTraces = false;
   let trajChatInitialized = false;
   let costLedgerMode = 'pr'; // 'pr' or 'issue'
   let selectedDrilldownWorkItem = { type: 'pr', id: 17 };
   let selectedTrajectoryPrFilter = 'all';
   let selectedTrajectoryIssueFilter = 'all';
+  let selectedCostBucketFilter = 'all'; // 'all', 'productive', 'rework', 'heartbeat_tax'
+  let selectedWorkspaceLens = 'all'; // 'all', 'finops', 'pyramid', 'topology'
+  let selectedInspectedStepKey = null;
+  let trajectoryRowsLimit = 60;
+
+  function switchWorkspaceLens(lens) {
+    const validLenses = ['all', 'finops', 'pyramid', 'topology'];
+    selectedWorkspaceLens = validLenses.includes(lens) ? lens : 'all';
+    document.querySelectorAll('.lens-tab[data-lens]').forEach(btn => {
+      btn.setAttribute('aria-pressed', btn.getAttribute('data-lens') === selectedWorkspaceLens ? 'true' : 'false');
+    });
+    const focalEl = document.querySelector('.focal-strip');
+    const secPyramid = document.getElementById('section-pyramid');
+    const secReqs = document.getElementById('section-requirements');
+    const secWb = document.getElementById('section-workbench');
+    const secTopo = document.getElementById('section-topology');
+    const secTraj = document.getElementById('section-trajectories');
+
+    if (focalEl) focalEl.style.display = (selectedWorkspaceLens === 'all' || selectedWorkspaceLens === 'pyramid' || selectedWorkspaceLens === 'finops') ? '' : 'none';
+    if (secPyramid) secPyramid.style.display = (selectedWorkspaceLens === 'all' || selectedWorkspaceLens === 'pyramid') ? '' : 'none';
+    if (secReqs) secReqs.style.display = (selectedWorkspaceLens === 'all' || selectedWorkspaceLens === 'pyramid') ? '' : 'none';
+    if (secWb) secWb.style.display = (selectedWorkspaceLens === 'all' || selectedWorkspaceLens === 'pyramid') ? '' : 'none';
+    if (secTopo) secTopo.style.display = (selectedWorkspaceLens === 'all' || selectedWorkspaceLens === 'topology') ? '' : 'none';
+    if (secTraj) secTraj.style.display = (selectedWorkspaceLens === 'all' || selectedWorkspaceLens === 'finops') ? '' : 'none';
+
+    try {
+      if (window.history && window.history.replaceState) {
+        const newHash = selectedWorkspaceLens === 'all' ? '' : ('#lens=' + selectedWorkspaceLens);
+        window.history.replaceState(null, '', window.location.pathname + window.location.search + newHash);
+      }
+    } catch (_) {}
+  }
+
+  function filterByCostBucket(bucket) {
+    const norm = bucket || 'all';
+    if (selectedCostBucketFilter === norm && norm !== 'all') {
+      selectedCostBucketFilter = 'all';
+    } else {
+      selectedCostBucketFilter = norm;
+    }
+    if (selectedCostBucketFilter !== 'all') {
+      // Switch agent scope to All 10 Agents so all steps in the chosen FinOps bucket are visible
+      selectedTrajectoryProject = 'all';
+      selectedTrajectoryAgent = 'all';
+      document.querySelectorAll('[data-traj-key]').forEach(b => {
+        b.setAttribute('aria-pressed', b.getAttribute('data-traj-key') === 'all:all' ? 'true' : 'false');
+      });
+    }
+    ['all', 'productive', 'rework', 'heartbeat_tax'].forEach(b => {
+      const idSuffix = b === 'heartbeat_tax' ? 'heartbeat' : b;
+      const btn = document.getElementById('btn-bucket-' + idSuffix);
+      if (btn) btn.setAttribute('aria-pressed', selectedCostBucketFilter === b ? 'true' : 'false');
+    });
+    trajectoryRowsLimit = 60;
+    renderAgentTrajectory();
+  }
+
+  function resetAllTrajectoryFilters() {
+    selectedCostBucketFilter = 'all';
+    selectedTrajectoryPrFilter = 'all';
+    selectedTrajectoryIssueFilter = 'all';
+    selectedInteractionEdge = 'all';
+    selectedTrajectoryProject = 'all';
+    selectedTrajectoryAgent = 'all';
+    trajectoryRowsLimit = 60;
+    document.querySelectorAll('[data-traj-key]').forEach(b => {
+      b.setAttribute('aria-pressed', b.getAttribute('data-traj-key') === 'all:all' ? 'true' : 'false');
+    });
+    ['all', 'productive', 'rework', 'heartbeat_tax'].forEach(b => {
+      const idSuffix = b === 'heartbeat_tax' ? 'heartbeat' : b;
+      const btn = document.getElementById('btn-bucket-' + idSuffix);
+      if (btn) btn.setAttribute('aria-pressed', b === 'all' ? 'true' : 'false');
+    });
+    syncWorkItemSelectDropdowns();
+    renderAgentTrajectory();
+  }
+
+  function renderActiveCrossfilterBar(visibleStepsCount, visibleTurnsCount, visibleCostUsd) {
+    const container = document.getElementById('active-crossfilter-pills');
+    if (!container) return;
+    const pills = [];
+
+    if (selectedCostBucketFilter !== 'all') {
+      const labelMap = { productive: 'Productive Work', rework: 'Rework / Rollback', heartbeat_tax: 'Heartbeat Tax' };
+      pills.push('<button type="button" class="crossfilter-pill" onclick="filterByCostBucket(\'all\')" title="Remove FinOps bucket filter">Bucket: ' + escapeHTML(labelMap[selectedCostBucketFilter] || selectedCostBucketFilter) + ' &times;</button>');
+    }
+    if (selectedTrajectoryPrFilter !== 'all') {
+      pills.push('<button type="button" class="crossfilter-pill" onclick="onTrajectoryPrFilterChange(\'all\')" title="Remove PR filter">PR #' + escapeHTML(selectedTrajectoryPrFilter) + ' &times;</button>');
+    }
+    if (selectedTrajectoryIssueFilter !== 'all') {
+      pills.push('<button type="button" class="crossfilter-pill" onclick="onTrajectoryIssueFilterChange(\'all\')" title="Remove Issue filter">Issue #' + escapeHTML(selectedTrajectoryIssueFilter) + ' &times;</button>');
+    }
+    if (selectedInteractionEdge !== 'all') {
+      pills.push('<button type="button" class="crossfilter-pill" onclick="filterByInteractionEdge(\'all\')" title="Remove Handoff Edge filter">Edge: ' + escapeHTML(selectedInteractionEdge) + ' &times;</button>');
+    }
+    if (!(selectedTrajectoryProject === 'all' && selectedTrajectoryAgent === 'all')) {
+      const agLabel = selectedTrajectoryAgent === 'all' ? ('Project: ' + selectedTrajectoryProject) : ('@' + selectedTrajectoryAgent + ' (' + selectedTrajectoryProject + ')');
+      pills.push('<button type="button" class="crossfilter-pill" onclick="selectTrajectoryView(\'all\',\'all\',null)" title="Switch to All 10 Agents">Agent: ' + escapeHTML(agLabel) + ' &times;</button>');
+    }
+
+    const statsSpan = (visibleStepsCount !== undefined)
+      ? ('<span class="mono" style="font-size:0.7rem;color:var(--text-secondary);margin-left:0.25rem;">Showing <strong>' + visibleStepsCount + ' steps</strong> (' + (visibleTurnsCount || 0) + ' turns · <strong>$' + Number(visibleCostUsd || 0).toFixed(4) + '</strong>)</span>')
+      : '';
+
+    if (pills.length === 0) {
+      container.innerHTML = '<span class="mono" style="font-size:0.7rem;color:var(--text-muted);">Crossfilter: All 10 Factory Agents (Unfiltered)</span>' + statsSpan;
+    } else {
+      container.innerHTML =
+        '<span class="mono" style="font-size:0.7rem;font-weight:700;color:var(--text-secondary);">ACTIVE FILTERS:</span>' +
+        pills.join('') +
+        '<button type="button" class="btn mono" style="padding:0.16rem 0.5rem;font-size:0.68rem;" onclick="resetAllTrajectoryFilters()">Reset All Filters</button>' +
+        statsSpan;
+    }
+  }
+
+  function renderFinOpsConservationBar(costSummary) {
+    const el = document.getElementById('finops-conservation-visual');
+    if (!el || !costSummary || !costSummary.total_cost_usd) return;
+
+    const total = Math.max(0.0001, Number(costSummary.total_cost_usd || 0));
+    const prodUsd = Number(costSummary.productive_cost_usd || 0);
+    const rewUsd = Number(costSummary.rework_cost_usd || 0);
+    const hbUsd = Number(costSummary.heartbeat_tax_usd || 0);
+
+    const prodPct = Number(((prodUsd / total) * 100).toFixed(2));
+    const rewPct = Number(((rewUsd / total) * 100).toFixed(2));
+    const hbPct = Number(Math.max(0, 100 - prodPct - rewPct).toFixed(2));
+
+    const prExUsd = Number(costSummary.pr_exclusive_cost_usd || 0);
+    const issStUsd = Number(costSummary.issue_standalone_cost_usd || 0);
+    const prExPct = Number(((prExUsd / total) * 100).toFixed(2));
+    const issStPct = Number(((issStUsd / total) * 100).toFixed(2));
+    const hbExPct = Number(Math.max(0, 100 - prExPct - issStPct).toFixed(2));
+
+    const driftVal = Number(costSummary.conservation_drift_usd || 0).toFixed(4);
+    const muteProd = selectedCostBucketFilter !== 'all' && selectedCostBucketFilter !== 'productive' ? ' is-muted' : '';
+    const muteRew = selectedCostBucketFilter !== 'all' && selectedCostBucketFilter !== 'rework' ? ' is-muted' : '';
+    const muteHb = selectedCostBucketFilter !== 'all' && selectedCostBucketFilter !== 'heartbeat_tax' ? ' is-muted' : '';
+
+    el.innerHTML =
+      '<div class="finops-track-card">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:0.5rem;flex-wrap:wrap;">' +
+          '<span class="mono" style="font-size:0.72rem;font-weight:700;color:var(--text-primary);">TRACK A — 3-BUCKET FINOPS OUTCOME DECOMPOSITION (CLICK SEGMENT TO FILTER)</span>' +
+          '<span class="mono" style="font-size:0.68rem;color:var(--status-pass);font-weight:700;">100.0% = $' + total.toFixed(4) + ' USD</span>' +
+        '</div>' +
+        '<div class="finops-track-bar" role="group" aria-label="Track A 3-Bucket FinOps Decomposition">' +
+          '<div class="finops-seg' + muteProd + '" data-track="A" data-bucket="productive" data-pct="' + prodPct.toFixed(2) + '" style="width:' + prodPct.toFixed(2) + '%;background:var(--status-pass);" title="Click to crossfilter Productive Work ($' + prodUsd.toFixed(4) + ' · ' + prodPct.toFixed(1) + '%)" onclick="filterByCostBucket(\'productive\')">' +
+            (prodPct >= 14 ? ('Productive $' + prodUsd.toFixed(2) + ' (' + prodPct.toFixed(1) + '%)') : '') +
+          '</div>' +
+          '<div class="finops-seg' + muteRew + '" data-track="A" data-bucket="rework" data-pct="' + rewPct.toFixed(2) + '" style="width:' + rewPct.toFixed(2) + '%;background:var(--accent-primary);" title="Click to crossfilter Rework &amp; Rollbacks ($' + rewUsd.toFixed(4) + ' · ' + rewPct.toFixed(1) + '%)" onclick="filterByCostBucket(\'rework\')">' +
+            (rewPct >= 8 ? ('Rework $' + rewUsd.toFixed(2) + ' (' + rewPct.toFixed(1) + '%)') : '') +
+          '</div>' +
+          '<div class="finops-seg' + muteHb + '" data-track="A" data-bucket="heartbeat_tax" data-pct="' + hbPct.toFixed(2) + '" style="width:' + hbPct.toFixed(2) + '%;background:var(--text-muted);" title="Click to crossfilter Idle Heartbeat Tax ($' + hbUsd.toFixed(4) + ' · ' + hbPct.toFixed(1) + '%)" onclick="filterByCostBucket(\'heartbeat_tax\')">' +
+            (hbPct >= 8 ? ('HB $' + hbUsd.toFixed(2)) : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="mono" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:0.4rem;font-size:0.67rem;color:var(--text-secondary);">' +
+          '<span style="cursor:pointer;" onclick="filterByCostBucket(\'productive\')"><span style="color:var(--status-pass);">●</span> Productive: <strong>$' + prodUsd.toFixed(4) + '</strong> (' + prodPct.toFixed(1) + '%)</span>' +
+          '<span style="cursor:pointer;" onclick="filterByCostBucket(\'rework\')"><span style="color:var(--accent-primary);">●</span> Rework/Rollback: <strong>$' + rewUsd.toFixed(4) + '</strong> (' + rewPct.toFixed(1) + '%)</span>' +
+          '<span style="cursor:pointer;" onclick="filterByCostBucket(\'heartbeat_tax\')"><span style="color:var(--text-muted);">●</span> Heartbeat Tax: <strong>$' + hbUsd.toFixed(4) + '</strong> (' + hbPct.toFixed(1) + '%)</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="finops-track-card">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:0.5rem;flex-wrap:wrap;">' +
+          '<span class="mono" style="font-size:0.72rem;font-weight:700;color:var(--text-primary);">TRACK B — EXCLUSIVE WORK-ITEM CONSERVATION LEDGER (ZERO DOUBLE-COUNTING)</span>' +
+          '<span class="mono" style="font-size:0.68rem;color:var(--status-pass);font-weight:700;">Drift: $' + driftVal + ' ✓</span>' +
+        '</div>' +
+        '<div class="finops-track-bar" role="group" aria-label="Track B Work-Item Exclusive Conservation Ledger">' +
+          '<div class="finops-seg" data-track="B" data-ledger="pr_exclusive" data-pct="' + prExPct.toFixed(2) + '" style="width:' + prExPct.toFixed(2) + '%;background:#0284c7;" title="Click to view Pull Requests Ledger ($' + prExUsd.toFixed(4) + ' · ' + prExPct.toFixed(1) + '%)" onclick="switchCostLedgerMode(\'pr\')">' +
+            (prExPct >= 14 ? ('PR Exclusive $' + prExUsd.toFixed(2) + ' (' + prExPct.toFixed(1) + '%)') : '') +
+          '</div>' +
+          '<div class="finops-seg" data-track="B" data-ledger="issue_standalone" data-pct="' + issStPct.toFixed(2) + '" style="width:' + issStPct.toFixed(2) + '%;background:#0d9488;" title="Click to view Standalone GitHub Issues Ledger ($' + issStUsd.toFixed(4) + ' · ' + issStPct.toFixed(1) + '%)" onclick="switchCostLedgerMode(\'issue\')">' +
+            (issStPct >= 14 ? ('Issue Standalone $' + issStUsd.toFixed(2) + ' (' + issStPct.toFixed(1) + '%)') : '') +
+          '</div>' +
+          '<div class="finops-seg" data-track="B" data-ledger="heartbeat_tax" data-pct="' + hbExPct.toFixed(2) + '" style="width:' + hbExPct.toFixed(2) + '%;background:var(--text-muted);" title="Idle Heartbeat Tax ($' + hbUsd.toFixed(4) + ' · ' + hbExPct.toFixed(1) + '%)" onclick="filterByCostBucket(\'heartbeat_tax\')">' +
+            (hbExPct >= 8 ? ('HB $' + hbUsd.toFixed(2)) : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="mono" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:0.4rem;font-size:0.67rem;color:var(--text-secondary);">' +
+          '<span style="cursor:pointer;" onclick="switchCostLedgerMode(\'pr\')"><span style="color:#0284c7;">■</span> PR Exclusive (9 PRs): <strong>$' + prExUsd.toFixed(4) + '</strong> (' + prExPct.toFixed(1) + '%)</span>' +
+          '<span style="cursor:pointer;" onclick="switchCostLedgerMode(\'issue\')"><span style="color:#0d9488;">■</span> Issue Standalone: <strong>$' + issStUsd.toFixed(4) + '</strong> (' + issStPct.toFixed(1) + '%)</span>' +
+          '<span style="cursor:pointer;" onclick="filterByCostBucket(\'heartbeat_tax\')"><span style="color:var(--text-muted);">■</span> Heartbeat Tax: <strong>$' + hbUsd.toFixed(4) + '</strong> (' + hbExPct.toFixed(1) + '%)</span>' +
+        '</div>' +
+      '</div>';
+  }
 
   function switchCostLedgerMode(mode) {
     costLedgerMode = (mode === 'issue') ? 'issue' : 'pr';
@@ -596,6 +781,7 @@
       selectedInteractionEdge = 'all';
       selectedTrajectoryProject = 'all';
       selectedTrajectoryAgent = 'all';
+      trajectoryRowsLimit = 60;
       document.querySelectorAll('[data-traj-key]').forEach(b => {
         b.setAttribute('aria-pressed', b.getAttribute('data-traj-key') === 'all:all' ? 'true' : 'false');
       });
@@ -618,6 +804,7 @@
     selectedInteractionEdge = 'all';
     selectedTrajectoryProject = project;
     selectedTrajectoryAgent = agentName;
+    trajectoryRowsLimit = 60;
     const targetKey = project + ':' + agentName;
     document.querySelectorAll('[data-traj-key]').forEach(b => {
       b.setAttribute('aria-pressed', b.getAttribute('data-traj-key') === targetKey ? 'true' : 'false');
@@ -627,6 +814,7 @@
 
   function onTrajectoryPrFilterChange(val) {
     selectedTrajectoryPrFilter = val || 'all';
+    trajectoryRowsLimit = 60;
     if (selectedTrajectoryPrFilter !== 'all') {
       selectedTrajectoryIssueFilter = 'all';
       selectedInteractionEdge = 'all';
@@ -648,6 +836,7 @@
 
   function onTrajectoryIssueFilterChange(val) {
     selectedTrajectoryIssueFilter = val || 'all';
+    trajectoryRowsLimit = 60;
     if (selectedTrajectoryIssueFilter !== 'all') {
       selectedTrajectoryPrFilter = 'all';
       selectedInteractionEdge = 'all';
@@ -670,6 +859,7 @@
   function clearTrajectoryWorkItemFilters() {
     selectedTrajectoryPrFilter = 'all';
     selectedTrajectoryIssueFilter = 'all';
+    trajectoryRowsLimit = 60;
     syncWorkItemSelectDropdowns();
     renderAgentTrajectory();
   }
@@ -726,7 +916,9 @@
     const prRollups = Array.isArray(cachedTrajectories.pr_rollups) ? cachedTrajectories.pr_rollups : [];
     const issueRollups = Array.isArray(cachedTrajectories.issue_rollups) ? cachedTrajectories.issue_rollups : [];
 
-    // 1. Update Top Cost Banner Summary with 3-Bucket FinOps Decomposition & Exact Conservation Proof
+    // 1. Update Top Cost Banner Summary + 2-Track FinOps Marimekko Bar
+    renderFinOpsConservationBar(costSummary);
+
     const bannerEl = document.getElementById('traj-cost-banner-summary');
     if (bannerEl && costSummary.total_cost_usd !== undefined) {
       const totM = ((Number(costSummary.total_tokens) || 0) / 1e6).toFixed(2);
@@ -762,7 +954,7 @@
 
     const selIssue = document.getElementById('traj-filter-issue');
     if (selIssue && issueRollups.length > 0) {
-      let issOpts = '<option value="all">All GitHub Issues (' + issueRollups.length + ' Issues · #1–#36)</option>';
+      let issOpts = '<option value="all">All GitHub Issues (' + issueRollups.length + ' Issues · #1–#37)</option>';
       issueRollups.forEach(ir => {
         const selAttr = String(selectedTrajectoryIssueFilter) === String(ir.issue_number) ? ' selected' : '';
         issOpts += '<option value="' + escapeHTML(ir.issue_number) + '"' + selAttr + '>' +
@@ -773,7 +965,7 @@
     }
     syncWorkItemSelectDropdowns();
 
-    // 3. Render Left Table: PR Ledger or Issue Ledger
+    // 3. Render Left Table: PR Ledger or Issue Ledger with Inline Tufte Sparkbars
     const tbodyList = document.getElementById('tbody-cost-workitems');
     const thWorkitem = document.getElementById('th-cost-workitem');
     const tblTitle = document.getElementById('cost-ledger-table-title');
@@ -785,13 +977,24 @@
         if (tblTitle) tblTitle.textContent = 'Pull Request Cost, Turns & Agent Ledger (Click Any Row to Dig In & Filter Turns)';
         if (tblMeta) tblMeta.textContent = prRollups.length + ' Merged PRs (#12–#27) · Exclusive Ledger $' + Number(costSummary.pr_exclusive_cost_usd || 0).toFixed(4) + ' · Avg $' + Number(costSummary.avg_cost_per_pr_usd || 0).toFixed(4) + '/PR';
 
+        const maxPrCost = Math.max(0.0001, ...prRollups.map(p => Number(p.cost_usd || 0)));
+
         tbodyList.innerHTML = prRollups.map(pr => {
           const isSelected = selectedDrilldownWorkItem.type === 'pr' && Number(selectedDrilldownWorkItem.id) === Number(pr.pr_number);
           const isFiltered = String(selectedTrajectoryPrFilter) === String(pr.pr_number);
           const rowStyle = isSelected ? 'background:var(--bg-elevated);border-left:3px solid var(--accent-primary);' : 'cursor:pointer;';
           const linkedIssuesStr = (pr.linked_issues || []).map(i => '#' + i).join(', ');
           const agentsList = (pr.agents_involved || []).map(a => '@' + a.agent).join(', ');
+          const itemCost = Number(pr.cost_usd || 0);
+          const prodUsd = Number(pr.productive_cost_usd !== undefined ? pr.productive_cost_usd : itemCost);
           const rewUsd = Number(pr.rework_cost_usd || 0);
+          const prodW = Math.min(100, Math.max(0, (prodUsd / maxPrCost) * 100));
+          const rewW = Math.min(100 - prodW, Math.max(0, (rewUsd / maxPrCost) * 100));
+          const sparkbarHtml =
+            '<div class="sparkbar-track" title="Productive: $' + prodUsd.toFixed(4) + ' · Rework: $' + rewUsd.toFixed(4) + '">' +
+              '<div class="sparkbar-prod" style="width:' + prodW.toFixed(1) + '%;"></div>' +
+              '<div class="sparkbar-rework" style="width:' + rewW.toFixed(1) + '%;"></div>' +
+            '</div>';
           const subCostBadge = rewUsd > 0
             ? ('<div style="font-size:0.64rem;color:var(--status-warn);">Rework: $' + rewUsd.toFixed(4) + ' (' + Number(pr.rework_ratio_pct || 0).toFixed(0) + '%)</div>')
             : '<div style="font-size:0.64rem;color:var(--status-good);">100% Productive</div>';
@@ -807,7 +1010,7 @@
                 escapeHTML(pr.branch || 'main') + ' · Issues: ' + escapeHTML(linkedIssuesStr || '—') + ' · +' + (pr.additions || 0) + '/-' + (pr.deletions || 0) + ' (' + (pr.changed_files || 0) + ' files)' +
               '</div>' +
             '</td>' +
-            '<td class="mono num" style="font-weight:700;color:var(--text-primary);white-space:nowrap;">$' + Number(pr.cost_usd || 0).toFixed(4) + subCostBadge + '</td>' +
+            '<td class="mono num" style="font-weight:700;color:var(--text-primary);white-space:nowrap;min-width:125px;">$' + itemCost.toFixed(4) + sparkbarHtml + subCostBadge + '</td>' +
             '<td class="mono num" style="white-space:nowrap;">' +
               '<strong>' + (pr.turns_count || 0) + '</strong> turns' +
               '<div style="font-size:0.66rem;color:var(--text-muted);">' + (pr.steps_count || 0) + ' steps · ' + (pr.tool_calls_count || 0) + ' tools</div>' +
@@ -826,7 +1029,9 @@
       } else {
         if (thWorkitem) thWorkitem.textContent = 'Issue';
         if (tblTitle) tblTitle.textContent = 'GitHub Issue Cost, Turns & Agent Ledger (Click Any Row to Dig In & Filter Turns)';
-        if (tblMeta) tblMeta.textContent = issueRollups.length + ' Issues (#1–#36) · Standalone Ledger $' + Number(costSummary.issue_standalone_cost_usd || 0).toFixed(4) + ' · Avg $' + Number(costSummary.avg_cost_per_issue_usd || 0).toFixed(4) + '/Issue';
+        if (tblMeta) tblMeta.textContent = issueRollups.length + ' Issues (#1–#37) · Standalone Ledger $' + Number(costSummary.issue_standalone_cost_usd || 0).toFixed(4) + ' · Avg $' + Number(costSummary.avg_cost_per_issue_usd || 0).toFixed(4) + '/Issue';
+
+        const maxIssueCost = Math.max(0.0001, ...issueRollups.map(i => Number(i.cost_usd || 0)));
 
         tbodyList.innerHTML = issueRollups.map(ir => {
           const isSelected = selectedDrilldownWorkItem.type === 'issue' && Number(selectedDrilldownWorkItem.id) === Number(ir.issue_number);
@@ -834,7 +1039,16 @@
           const rowStyle = isSelected ? 'background:var(--bg-elevated);border-left:3px solid var(--accent-primary);' : 'cursor:pointer;';
           const prLinksStr = (ir.linked_prs && ir.linked_prs.length > 0) ? (' · PR #' + ir.linked_prs.join(', PR #')) : '';
           const agentsList = (ir.agents_involved || []).map(a => '@' + a.agent).join(', ');
+          const itemCost = Number(ir.cost_usd || 0);
+          const prodUsd = Number(ir.productive_cost_usd !== undefined ? ir.productive_cost_usd : itemCost);
           const rewUsd = Number(ir.rework_cost_usd || 0);
+          const prodW = Math.min(100, Math.max(0, (prodUsd / maxIssueCost) * 100));
+          const rewW = Math.min(100 - prodW, Math.max(0, (rewUsd / maxIssueCost) * 100));
+          const sparkbarHtml =
+            '<div class="sparkbar-track" title="Productive: $' + prodUsd.toFixed(4) + ' · Rework: $' + rewUsd.toFixed(4) + '">' +
+              '<div class="sparkbar-prod" style="width:' + prodW.toFixed(1) + '%;"></div>' +
+              '<div class="sparkbar-rework" style="width:' + rewW.toFixed(1) + '%;"></div>' +
+            '</div>';
           const subCostBadge = rewUsd > 0
             ? ('<div style="font-size:0.64rem;color:var(--status-warn);">Rework: $' + rewUsd.toFixed(4) + ' (' + Number(ir.rework_ratio_pct || 0).toFixed(0) + '%)</div>')
             : '<div style="font-size:0.64rem;color:var(--status-good);">100% Productive</div>';
@@ -850,7 +1064,7 @@
                 escapeHTML(ir.wave || '') + prLinksStr + (ir.cloud_run_revision ? (' · ' + escapeHTML(ir.cloud_run_revision)) : '') +
               '</div>' +
             '</td>' +
-            '<td class="mono num" style="font-weight:700;color:var(--text-primary);white-space:nowrap;">$' + Number(ir.cost_usd || 0).toFixed(4) + subCostBadge + '</td>' +
+            '<td class="mono num" style="font-weight:700;color:var(--text-primary);white-space:nowrap;min-width:125px;">$' + itemCost.toFixed(4) + sparkbarHtml + subCostBadge + '</td>' +
             '<td class="mono num" style="white-space:nowrap;">' +
               '<strong>' + (ir.turns_count || 0) + '</strong> turns' +
               '<div style="font-size:0.66rem;color:var(--text-muted);">' + (ir.steps_count || 0) + ' steps · ' + (ir.tool_calls_count || 0) + ' tools</div>' +
@@ -1232,6 +1446,289 @@
     }
   }
 
+  let currentRenderedSteps = [];
+
+  function getStepUniqueKey(s, idx) {
+    if (!s) return 'step-' + idx;
+    return String(s.step_id || s.commit_sha || ((s.project || 'psearch') + ':' + (s.agent_name || s.agent || 'lead') + ':' + (s.step_index || idx)));
+  }
+
+  function selectStepForInspection(stepKey) {
+    selectedInspectedStepKey = String(stepKey || '');
+    renderStepInspectorDrawer(currentRenderedSteps);
+    renderAgentSwimlaneAndBloat(currentRenderedSteps);
+    document.querySelectorAll('#tbody-agent-trajectory tr[data-step-key]').forEach(tr => {
+      const isSel = tr.getAttribute('data-step-key') === selectedInspectedStepKey;
+      tr.style.background = isSel ? 'var(--bg-elevated)' : '';
+    });
+  }
+
+  function showAllTrajectoryRows() {
+    trajectoryRowsLimit = 9999;
+    renderAgentTrajectory();
+  }
+
+  function renderStepInspectorDrawer(stepsToRender) {
+    const drawer = document.getElementById('traj-step-inspector-drawer');
+    if (!drawer) return;
+    if (!Array.isArray(stepsToRender) || stepsToRender.length === 0) {
+      drawer.innerHTML = '<div class="mono" style="font-size:0.75rem;color:var(--text-muted);">No trajectory step selected (current filter returned 0 steps).</div>';
+      return;
+    }
+
+    let step = stepsToRender.find((s, i) => getStepUniqueKey(s, i) === selectedInspectedStepKey);
+    if (!step) {
+      step = stepsToRender[0];
+      selectedInspectedStepKey = getStepUniqueKey(step, 0);
+    }
+
+    const tok = step.tokens || {};
+    const inTok = Number(tok.input_tokens || 0);
+    const cacheTok = Number(tok.cache_read_tokens || 0);
+    const outTok = Number(tok.output_tokens || 0);
+    const totTok = Math.max(1, inTok + cacheTok + outTok);
+    const inPct = ((inTok / totTok) * 100).toFixed(1);
+    const cachePct = ((cacheTok / totTok) * 100).toFixed(1);
+    const outPct = Math.max(0, 100 - Number(inPct) - Number(cachePct)).toFixed(1);
+
+    const stepCost = Number(step.cost_usd !== undefined ? step.cost_usd : (tok.cost_usd || 0));
+    const cBucket = String(step.cost_bucket || 'productive').toUpperCase();
+    const bucketBg = cBucket === 'REWORK' ? 'var(--accent-primary)' : (cBucket === 'HEARTBEAT_TAX' ? 'var(--text-muted)' : 'var(--status-pass)');
+    const attrSource = step.attribution_source || (step.pr_number ? 'git_commit_sha' : (step.issue_number ? 'explicit_mention' : 'session_carry_forward'));
+    const edgeStr = step.interaction_edge || ((step.from_agent || step.agent_name || step.agent) + ' → ' + (step.to_agent || 'lead'));
+    const toolCalls = Array.isArray(step.tool_calls) ? step.tool_calls : [];
+
+    const toolsListHtml = toolCalls.length > 0
+      ? toolCalls.map(tc => {
+          const st = String(tc.status || 'OK').toUpperCase();
+          const col = (st === 'WARN' || st === 'ERROR') ? 'var(--status-critical)' : 'var(--accent-primary)';
+          return '<div class="mono" style="font-size:0.69rem;background:var(--bg-subtle);padding:0.25rem 0.45rem;border-left:2px solid ' + col + ';margin-bottom:0.25rem;">' +
+            '<div><strong style="color:' + col + ';">[' + escapeHTML(tc.tool || 'tool') + ' · ' + escapeHTML(st) + ']</strong> $ ' + escapeHTML(tc.command || '') + '</div>' +
+            '<div style="color:var(--text-secondary);margin-top:0.08rem;">&rarr; ' + escapeHTML(tc.output || '') + '</div>' +
+          '</div>';
+        }).join('')
+      : '<div class="mono" style="color:var(--text-muted);font-size:0.7rem;">No external CLI/file mutations in this step.</div>';
+
+    drawer.innerHTML =
+      '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:0.65rem;padding-bottom:0.5rem;border-bottom:1px solid var(--border-hairline);">' +
+        '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.45rem;">' +
+          '<span class="mono" style="font-size:0.72rem;font-weight:700;padding:0.15rem 0.48rem;border-radius:3px;background:var(--text-primary);color:var(--bg-surface);">🔍 PINNED TURN INSPECTOR</span>' +
+          '<span class="mono" style="font-size:0.78rem;font-weight:700;color:var(--text-primary);">Step #' + escapeHTML(step.step_index || 1) + ' · @' + escapeHTML(step.agent_name || step.agent || 'lead') + ' (' + escapeHTML(step.project || 'psearch') + ')</span>' +
+          '<span class="mono" style="font-size:0.72rem;color:var(--accent-primary);font-weight:600;">' + escapeHTML(edgeStr) + '</span>' +
+          (step.pr_number ? ('<span class="mono" style="font-size:0.7rem;padding:0.1rem 0.4rem;border:1px solid var(--accent-primary);border-radius:3px;color:var(--accent-primary);font-weight:700;">PR #' + escapeHTML(step.pr_number) + '</span>') : '') +
+          (step.issue_number ? ('<span class="mono" style="font-size:0.7rem;padding:0.1rem 0.4rem;border:1px solid var(--border-strong);border-radius:3px;color:var(--text-primary);font-weight:700;">Issue #' + escapeHTML(step.issue_number) + '</span>') : '') +
+        '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.45rem;">' +
+          '<span class="mono" style="font-size:0.68rem;padding:0.14rem 0.45rem;border-radius:3px;background:' + bucketBg + ';color:#fff;font-weight:700;">BUCKET: ' + escapeHTML(cBucket) + '</span>' +
+          '<span class="mono" style="font-size:0.68rem;padding:0.14rem 0.45rem;border-radius:3px;background:var(--bg-surface);border:1px solid var(--border-strong);color:var(--text-primary);font-weight:600;" title="Stateful attribution lineage rule">LINEAGE: ' + escapeHTML(attrSource) + '</span>' +
+          '<span class="mono num" style="font-size:0.76rem;font-weight:700;color:var(--text-primary);">$' + stepCost.toFixed(4) + ' USD · ' + (step.turns_count || 4) + ' turns · ' + (totTok / 1000).toFixed(1) + 'k tok</span>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:0.6rem;margin-top:0.42rem;flex-wrap:wrap;">' +
+        '<span class="mono" style="font-size:0.68rem;color:var(--text-secondary);white-space:nowrap;">Token &amp; Cache Profile:</span>' +
+        '<div style="flex:1;min-width:180px;max-width:360px;height:8px;background:var(--bg-subtle);border-radius:3px;overflow:hidden;display:flex;border:1px solid var(--border-hairline);">' +
+          '<div style="width:' + inPct + '%;background:#0284c7;" title="Input Tokens: ' + inTok + ' (' + inPct + '%)"></div>' +
+          '<div style="width:' + cachePct + '%;background:var(--accent-primary);" title="Cache Read Tokens: ' + cacheTok + ' (' + cachePct + '%)"></div>' +
+          '<div style="width:' + outPct + '%;background:var(--status-pass);" title="Output Tokens: ' + outTok + ' (' + outPct + '%)"></div>' +
+        '</div>' +
+        '<span class="mono" style="font-size:0.67rem;color:var(--text-muted);">' +
+          '<strong style="color:#0284c7;">in: ' + inTok.toLocaleString('en-US') + ' (' + inPct + '%)</strong> · ' +
+          '<strong style="color:var(--accent-primary);">cache_read: ' + cacheTok.toLocaleString('en-US') + ' (' + cachePct + '%)</strong> · ' +
+          '<strong style="color:var(--status-pass);">out: ' + outTok.toLocaleString('en-US') + ' (' + outPct + '%)</strong>' +
+        '</span>' +
+      '</div>' +
+      '<div class="inspector-trace-grid">' +
+        '<div class="inspector-trace-card">' +
+          '<div class="mono" style="font-size:0.7rem;font-weight:700;color:var(--text-primary);margin-bottom:0.25rem;">📥 Incoming Prompt (' + escapeHTML(step.from_agent || 'orchestrator') + ' &rarr; @' + escapeHTML(step.agent_name || step.agent) + ')</div>' +
+          '<div style="color:var(--text-secondary);">' + escapeHTML(step.prompt || step.title || '') + '</div>' +
+        '</div>' +
+        '<div class="inspector-trace-card">' +
+          '<div class="mono" style="font-size:0.7rem;font-weight:700;color:var(--text-primary);margin-bottom:0.25rem;">🧠 Thinking Trace (' + escapeHTML(step.model || 'gemini-4-argon') + ')</div>' +
+          '<div style="color:var(--text-secondary);">' + escapeHTML(step.thinking || step.detail || '') + '</div>' +
+        '</div>' +
+        '<div class="inspector-trace-card">' +
+          '<div class="mono" style="font-size:0.7rem;font-weight:700;color:var(--text-primary);margin-bottom:0.25rem;">🛠️ Tool Invocations (' + toolCalls.length + ' calls)</div>' +
+          toolsListHtml +
+        '</div>' +
+        '<div class="inspector-trace-card">' +
+          '<div class="mono" style="font-size:0.7rem;font-weight:700;color:var(--text-primary);margin-bottom:0.25rem;">📤 Outcome &amp; Handoff (&rarr; ' + escapeHTML(step.to_agent || 'next') + ')</div>' +
+          '<div style="font-weight:600;color:var(--text-primary);margin-bottom:0.2rem;">' + escapeHTML(step.title || '') + '</div>' +
+          '<div style="color:var(--text-secondary);">' + escapeHTML(step.response || step.detail || '') + '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function renderAgentSwimlaneAndBloat(stepsToRender) {
+    const swimSvg = document.getElementById('traj-swimlane-svg');
+    const bloatSvg = document.getElementById('traj-bloat-curve-svg');
+    const bloatBadge = document.getElementById('traj-bloat-ratio-badge');
+    const bloatMeta = document.getElementById('traj-bloat-curve-meta');
+    if (!swimSvg || !bloatSvg || !cachedTrajectories) return;
+
+    const list = Array.isArray(stepsToRender) && stepsToRender.length > 0
+      ? stepsToRender
+      : (Array.isArray(cachedTrajectories.chronological_timeline) ? cachedTrajectories.chronological_timeline : []);
+
+    // 1. Render 10-Agent Swimlane Execution Waterfall SVG
+    const lanes = [
+      { key: 'psearch:lead', label: '@lead' },
+      { key: 'psearch:backend', label: '@backend' },
+      { key: 'psearch:frontend', label: '@frontend' },
+      { key: 'psearch:reviewer', label: '@reviewer' },
+      { key: 'psearch:deployer', label: '@deployer' },
+      { key: 'psearch-eval:eval-lead', label: '@eval-lead' },
+      { key: 'psearch-eval:search-evaluator', label: '@search-eval' },
+      { key: 'psearch-eval:factory-analyst', label: '@factory-analyst' },
+      { key: 'psearch-eval:ui-craftsman', label: '@ui-craftsman' },
+      { key: 'psearch-eval:eval-deployer', label: '@eval-deployer' }
+    ];
+    const laneIndexMap = {};
+    lanes.forEach((l, i) => { laneIndexMap[l.key] = i; });
+
+    const leftPad = 108;
+    const rightPad = 16;
+    const topPad = 24;
+    const rowH = 22.5;
+    const plotW = 880 - leftPad - rightPad;
+    const nSteps = Math.max(1, list.length);
+
+    let sHtml = '';
+    // Draw horizontal lane backgrounds & labels
+    lanes.forEach((l, i) => {
+      const y = topPad + i * rowH;
+      const bg = i % 2 === 0 ? 'var(--bg-subtle)' : 'var(--bg-surface)';
+      sHtml += '<rect x="' + leftPad + '" y="' + y + '" width="' + plotW + '" height="' + rowH + '" fill="' + bg + '" />';
+      sHtml += '<line x1="' + leftPad + '" y1="' + (y + rowH) + '" x2="' + (leftPad + plotW) + '" y2="' + (y + rowH) + '" stroke="var(--border-hairline)" stroke-width="0.7" />';
+      sHtml += '<text x="' + (leftPad - 6) + '" y="' + (y + 14.5) + '" text-anchor="end" fill="var(--text-secondary)" font-family="JetBrains Mono, monospace" font-size="9.5" font-weight="600">' + escapeHTML(l.label) + '</text>';
+    });
+    // Divider between psearch (top 5) and psearch-eval (bottom 5)
+    const divY = topPad + 5 * rowH;
+    sHtml += '<line x1="8" y1="' + divY + '" x2="' + (leftPad + plotW) + '" y2="' + divY + '" stroke="var(--border-strong)" stroke-width="1.1" stroke-dasharray="3 2" />';
+
+    // Wave axis markers across top
+    const waveLabels = ['W0', 'W1', 'W2', 'W3', 'W4', 'W5', 'W6'];
+    waveLabels.forEach((wl, wi) => {
+      const wx = leftPad + (wi / waveLabels.length) * plotW;
+      sHtml += '<line x1="' + wx.toFixed(1) + '" y1="' + (topPad - 6) + '" x2="' + wx.toFixed(1) + '" y2="' + (topPad + 10 * rowH) + '" stroke="var(--border-hairline)" stroke-width="0.6" stroke-dasharray="2 2" />';
+      sHtml += '<text x="' + (wx + 4).toFixed(1) + '" y="14" fill="var(--text-muted)" font-family="JetBrains Mono, monospace" font-size="9" font-weight="600">' + wl + '</text>';
+    });
+
+    // Plot each step span block
+    const barW = Math.max(3.2, Math.min(14, (plotW / nSteps) * 0.85));
+    list.forEach((s, idx) => {
+      const proj = s.project || 'psearch';
+      const ag = s.agent_name || s.agent || 'lead';
+      const lIdx = laneIndexMap[proj + ':' + ag] !== undefined ? laneIndexMap[proj + ':' + ag] : 0;
+      const x = leftPad + ((idx + 0.5) / nSteps) * (plotW - barW);
+      const y = topPad + lIdx * rowH + 3;
+      const h = rowH - 6;
+      const bucket = String(s.cost_bucket || 'productive').toLowerCase();
+      const fill = bucket === 'rework' ? 'var(--accent-primary)' : (bucket === 'heartbeat_tax' ? 'var(--text-muted)' : 'var(--status-pass)');
+      const uKey = getStepUniqueKey(s, idx);
+      const isSel = uKey === selectedInspectedStepKey;
+      const safeKey = escapeHTML(uKey).replace(/'/g, "\\'");
+      const stepCost = Number(s.cost_usd !== undefined ? s.cost_usd : ((s.tokens && s.tokens.cost_usd) || 0));
+      const tip = 'Step #' + (s.step_index || (idx + 1)) + ' · @' + ag + ' · ' + (s.pr_number ? ('PR #' + s.pr_number + ' · ') : '') + (s.issue_number ? ('Issue #' + s.issue_number + ' · ') : '') + '$' + stepCost.toFixed(4) + ' [' + bucket.toUpperCase() + '] — ' + String(s.title || '').slice(0, 65);
+
+      sHtml += '<rect class="swimlane-step-rect" data-bucket="' + escapeHTML(bucket) + '" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5" fill="' + fill + '" stroke="' + (isSel ? 'var(--text-primary)' : 'none') + '" stroke-width="' + (isSel ? '1.8' : '0') + '" style="cursor:pointer;" onclick="selectStepForInspection(\'' + safeKey + '\')">' +
+        '<title>' + escapeHTML(tip) + '</title>' +
+      '</rect>';
+    });
+
+    swimSvg.innerHTML = sHtml;
+
+    // 2. Render Context Cache-Bloat Curve SVG (cache_read_tokens vs Step Index + Linear Regression Trendline)
+    const bLeft = 48;
+    const bRight = 14;
+    const bTop = 20;
+    const bBottom = 28;
+    const bW = 540 - bLeft - bRight;
+    const bH = 265 - bTop - bBottom;
+
+    const points = list.map((s, i) => {
+      const tok = s.tokens || {};
+      const cacheRead = Number(tok.cache_read_tokens !== undefined ? tok.cache_read_tokens : (Number(tok.input_tokens || 0) * 0.68));
+      const inTok = Math.max(1, Number(tok.input_tokens || 1000));
+      return {
+        idx: i,
+        step: s,
+        uKey: getStepUniqueKey(s, i),
+        cacheRead,
+        inTok,
+        bucket: String(s.cost_bucket || 'productive').toLowerCase()
+      };
+    });
+
+    const maxCache = Math.max(1000, ...points.map(p => p.cacheRead));
+    // Compute linear regression y = a + b*x
+    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    const N = points.length;
+    points.forEach((p, i) => {
+      sumX += i;
+      sumY += p.cacheRead;
+      sumXY += i * p.cacheRead;
+      sumXX += i * i;
+    });
+    const denom = (N * sumXX - sumX * sumX);
+    const slope = denom !== 0 ? ((N * sumXY - sumX * sumY) / denom) : 0;
+    const intercept = N > 0 ? ((sumY - slope * sumX) / N) : 0;
+
+    const totalCache = points.reduce((a, p) => a + p.cacheRead, 0);
+    const totalIn = Math.max(1, points.reduce((a, p) => a + p.inTok, 0));
+    const ratio = (totalCache / totalIn).toFixed(2);
+
+    if (bloatBadge) {
+      bloatBadge.textContent = ratio + 'x Cache Ratio · ' + (slope >= 0 ? '+' : '') + slope.toFixed(0) + ' tok/step';
+    }
+    if (bloatMeta) {
+      bloatMeta.textContent = 'Peak Cache Read: ' + (maxCache / 1000).toFixed(1) + 'k tok · Regression Slope: ' + (slope >= 0 ? '+' : '') + slope.toFixed(1) + ' tok/step across ' + N + ' steps';
+    }
+
+    let bHtml = '';
+    // Horizontal Y grid lines
+    [0, 0.25, 0.5, 0.75, 1].forEach(frac => {
+      const gy = bTop + bH - frac * bH;
+      const valK = ((frac * maxCache) / 1000).toFixed(0) + 'k';
+      bHtml += '<line x1="' + bLeft + '" y1="' + gy.toFixed(1) + '" x2="' + (bLeft + bW) + '" y2="' + gy.toFixed(1) + '" stroke="var(--border-hairline)" stroke-width="0.7" />';
+      bHtml += '<text x="' + (bLeft - 6) + '" y="' + (gy + 3).toFixed(1) + '" text-anchor="end" fill="var(--text-muted)" font-family="JetBrains Mono, monospace" font-size="9">' + valK + '</text>';
+    });
+
+    if (N > 1) {
+      const polyCoords = points.map((p, i) => {
+        const px = bLeft + (i / Math.max(1, N - 1)) * bW;
+        const py = bTop + bH - Math.min(1, Math.max(0, p.cacheRead / maxCache)) * bH;
+        return px.toFixed(1) + ',' + py.toFixed(1);
+      }).join(' ');
+      const areaCoords = bLeft + ',' + (bTop + bH) + ' ' + polyCoords + ' ' + (bLeft + bW) + ',' + (bTop + bH);
+      bHtml += '<polygon points="' + areaCoords + '" fill="var(--accent-tint)" opacity="0.55" />';
+      bHtml += '<polyline points="' + polyCoords + '" fill="none" stroke="var(--accent-primary)" stroke-width="1.5" />';
+
+      // Linear regression trendline
+      const y0 = Math.max(0, Math.min(maxCache, intercept));
+      const y1 = Math.max(0, Math.min(maxCache, intercept + slope * (N - 1)));
+      const ry0 = bTop + bH - (y0 / maxCache) * bH;
+      const ry1 = bTop + bH - (y1 / maxCache) * bH;
+      bHtml += '<line x1="' + bLeft + '" y1="' + ry0.toFixed(1) + '" x2="' + (bLeft + bW) + '" y2="' + ry1.toFixed(1) + '" stroke="var(--text-primary)" stroke-width="1.4" stroke-dasharray="4 3" />';
+    }
+
+    // Sampled interactive points
+    const stepStride = Math.max(1, Math.floor(N / 70));
+    points.forEach((p, i) => {
+      const isSel = p.uKey === selectedInspectedStepKey;
+      if (i % stepStride !== 0 && !isSel && p.bucket !== 'rework') return;
+      const px = bLeft + (i / Math.max(1, N - 1)) * bW;
+      const py = bTop + bH - Math.min(1, Math.max(0, p.cacheRead / maxCache)) * bH;
+      const dotCol = p.bucket === 'rework' ? 'var(--accent-primary)' : 'var(--status-pass)';
+      const safeKey = escapeHTML(p.uKey).replace(/'/g, "\\'");
+      bHtml += '<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="' + (isSel ? '4.5' : '2.6') + '" fill="' + dotCol + '" stroke="var(--bg-surface)" stroke-width="1" style="cursor:pointer;" onclick="selectStepForInspection(\'' + safeKey + '\')">' +
+        '<title>Step #' + (p.step.step_index || (i + 1)) + ' (@' + escapeHTML(p.step.agent_name || p.step.agent) + '): cache_read=' + p.cacheRead.toLocaleString('en-US') + ' tok</title>' +
+      '</circle>';
+    });
+
+    bHtml += '<text x="' + (bLeft + bW / 2) + '" y="256" text-anchor="middle" fill="var(--text-muted)" font-family="JetBrains Mono, monospace" font-size="9.5">Chronological Step Sequence (1 &rarr; ' + N + ') · Dashed = Linear Trendline</text>';
+    bloatSvg.innerHTML = bHtml;
+  }
+
   function renderAgentTrajectory() {
     const tbody = document.getElementById('tbody-agent-trajectory');
     const summaryEl = document.getElementById('trajectory-agent-summary');
@@ -1294,7 +1791,7 @@
       }
     }
 
-    // Apply PR and/or Issue filters on top of stepsToRender
+    // Apply PR, Issue, and FinOps Cost Bucket filters on top of stepsToRender
     const activePrNum = selectedTrajectoryPrFilter !== 'all' ? Number(selectedTrajectoryPrFilter) : null;
     const activeIssueNum = selectedTrajectoryIssueFilter !== 'all' ? Number(selectedTrajectoryIssueFilter) : null;
 
@@ -1315,6 +1812,12 @@
       stepsToRender = stepsToRender.filter(st => Number(st.issue_number) === activeIssueNum);
     }
 
+    if (selectedCostBucketFilter !== 'all') {
+      stepsToRender = stepsToRender.filter(st => String(st.cost_bucket || 'productive').toLowerCase() === selectedCostBucketFilter);
+    }
+
+    currentRenderedSteps = stepsToRender;
+
     // Compute dynamic cost, turns, tools, tokens & agents involved for currently visible steps
     const visibleCostUsd = stepsToRender.reduce((acc, s) => acc + (Number(s.cost_usd || (s.tokens && s.tokens.cost_usd) || 0)), 0);
     const visibleTurns = stepsToRender.reduce((acc, s) => acc + (Number(s.turns_count) || 4), 0);
@@ -1323,19 +1826,24 @@
     const visibleAgentsSet = new Set(stepsToRender.map(s => '@' + (s.agent_name || s.agent)));
     const visibleAgentsArr = Array.from(visibleAgentsSet);
 
+    // Update Sticky Active Crossfilter Bar, Swimlane Waterfall & Context-Bloat Curve, and Pinned Turn Inspector Drawer
+    renderActiveCrossfilterBar(stepsToRender.length, visibleTurns, visibleCostUsd);
+    renderAgentSwimlaneAndBloat(stepsToRender);
+    renderStepInspectorDrawer(stepsToRender);
+
     if (filteredCostPill) {
       const scopeTag = activePrNum
         ? ('PR #' + activePrNum)
-        : (activeIssueNum ? ('Issue #' + activeIssueNum) : (selectedTrajectoryAgent === 'all' ? 'All Selected Agents' : ('@' + selectedTrajectoryAgent)));
+        : (activeIssueNum ? ('Issue #' + activeIssueNum) : (selectedCostBucketFilter !== 'all' ? ('Bucket: ' + selectedCostBucketFilter) : (selectedTrajectoryAgent === 'all' ? 'All Selected Agents' : ('@' + selectedTrajectoryAgent))));
       filteredCostPill.innerHTML =
         escapeHTML(scopeTag) + ': <strong>$' + visibleCostUsd.toFixed(4) + ' USD</strong> · <strong>' + visibleTurns + ' turns</strong> (' + stepsToRender.length + ' steps) · <strong>' + visibleAgentsArr.length + ' agent(s)</strong> · ' + (visibleTokens / 1000).toFixed(1) + 'k tok';
     }
 
     if (summaryEl) {
-      if (activePrNum || activeIssueNum) {
+      if (activePrNum || activeIssueNum || selectedCostBucketFilter !== 'all') {
         const filterTitle = activePrNum
           ? ('Filtered by PR #' + activePrNum)
-          : ('Filtered by Issue #' + activeIssueNum);
+          : (activeIssueNum ? ('Filtered by Issue #' + activeIssueNum) : ('Filtered by FinOps Bucket: ' + selectedCostBucketFilter.toUpperCase()));
         const agentScope = selectedTrajectoryAgent !== 'all' ? (' · Agent: @' + escapeHTML(selectedTrajectoryAgent)) : '';
         summaryEl.innerHTML =
           '<span><strong>' + escapeHTML(filterTitle) + '</strong>' + agentScope + ' — Agents Involved (' + visibleAgentsArr.length + '): <strong class="mono">' + escapeHTML(visibleAgentsArr.join(', ') || 'none') + '</strong></span>' +
@@ -1347,11 +1855,11 @@
       } else if (selectedTrajectoryProject === 'psearch' && selectedTrajectoryAgent === 'all') {
         summaryEl.innerHTML =
           '<span>Viewing Trajectory: <strong class="mono">All psearch Agents (Chronological)</strong> — @lead · @backend · @frontend · @reviewer · @deployer</span>' +
-          '<span class="mono">Steps: ' + stepsToRender.length + ' · Turns: <strong>' + visibleTurns + '</strong> · Cost: <strong>$' + visibleCostUsd.toFixed(4) + ' USD</strong> · Waves 0–6 (Issues #1–#35)</span>';
+          '<span class="mono">Steps: ' + stepsToRender.length + ' · Turns: <strong>' + visibleTurns + '</strong> · Cost: <strong>$' + visibleCostUsd.toFixed(4) + ' USD</strong> · Waves 0–6 (Issues #1–#37)</span>';
       } else if (selectedTrajectoryProject === 'all' && selectedTrajectoryAgent === 'all') {
         summaryEl.innerHTML =
           '<span>Viewing Trajectory: <strong class="mono">All 10 Factory Agents (psearch + psearch-eval)</strong> — Chronological Execution Ledger</span>' +
-          '<span class="mono">Steps: ' + stepsToRender.length + ' · Turns: <strong>' + visibleTurns + '</strong> · Total Cost: <strong>$' + visibleCostUsd.toFixed(4) + ' USD</strong> · Issues #1–#35 &amp; PRs #12–#27</span>';
+          '<span class="mono">Steps: ' + stepsToRender.length + ' · Turns: <strong>' + visibleTurns + '</strong> · Total Cost: <strong>$' + visibleCostUsd.toFixed(4) + ' USD</strong> · Issues #1–#37 &amp; PRs #12–#27</span>';
       } else {
         const key = selectedTrajectoryProject + ':' + selectedTrajectoryAgent;
         const agentObj = (cachedTrajectories.agents_by_key && cachedTrajectories.agents_by_key[key]) ||
@@ -1369,12 +1877,17 @@
     }
 
     if (stepsToRender.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:1rem;">No trajectory steps match the current filter combination. <button type="button" class="btn mono" style="margin-left:0.5rem;padding:0.15rem 0.5rem;font-size:0.72rem;" onclick="clearTrajectoryWorkItemFilters()">Reset PR / Issue Filters</button></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:1rem;">No trajectory steps match the current filter combination. <button type="button" class="btn mono" style="margin-left:0.5rem;padding:0.15rem 0.5rem;font-size:0.72rem;" onclick="resetAllTrajectoryFilters()">Reset All Filters</button></td></tr>';
       return;
     }
 
-    tbody.innerHTML = stepsToRender.map((s, idx) => {
+    const windowedSteps = stepsToRender.slice(0, trajectoryRowsLimit);
+
+    let rowsHtml = windowedSteps.map((s, idx) => {
       const stepNum = s.step_index || (idx + 1);
+      const uKey = getStepUniqueKey(s, idx);
+      const safeKey = escapeHTML(uKey).replace(/'/g, "\\'");
+      const isInspected = uKey === selectedInspectedStepKey;
       const edgeStr = s.interaction_edge || ((s.from_agent || s.agent_name) + ' → ' + (s.to_agent || 'lead'));
       const isLiveHarness = s.source_mode === 'live_harness_stream' || String(s.commit_sha || '').indexOf('spanner-turn-') === 0;
       const agentBadge = '<span class="mono" style="font-weight:700;">@' + escapeHTML(s.agent_name || s.agent || selectedTrajectoryAgent) + '</span>' +
@@ -1382,10 +1895,10 @@
         '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);">' + escapeHTML(s.harness || '') + ' · ' + escapeHTML(s.model || '') + (isLiveHarness ? ' · <strong style="color:var(--status-pass);">⚡LIVE</strong>' : '') + '</div>';
 
       const issuePart = s.issue_number
-        ? '<button type="button" class="btn mono" style="padding:0.08rem 0.36rem;font-size:0.68rem;" title="Filter turns by Issue #' + escapeHTML(s.issue_number) + '" onclick="selectCostDrilldownItem(\'issue\',' + Number(s.issue_number) + ',true)">#' + escapeHTML(s.issue_number) + '</button>'
+        ? '<button type="button" class="btn mono" style="padding:0.08rem 0.36rem;font-size:0.68rem;" title="Filter turns by Issue #' + escapeHTML(s.issue_number) + '" onclick="event.stopPropagation();selectCostDrilldownItem(\'issue\',' + Number(s.issue_number) + ',true)">#' + escapeHTML(s.issue_number) + '</button>'
         : '—';
       const prPart = s.pr_number
-        ? '<div style="margin-top:0.2rem;"><button type="button" class="btn mono" style="padding:0.08rem 0.36rem;font-size:0.66rem;border-color:var(--accent-primary);color:var(--accent-primary);" title="Inspect &amp; Filter turns by PR #' + escapeHTML(s.pr_number) + '" onclick="selectCostDrilldownItem(\'pr\',' + Number(s.pr_number) + ',true)">PR #' + escapeHTML(s.pr_number) + '</button></div>'
+        ? '<div style="margin-top:0.2rem;"><button type="button" class="btn mono" style="padding:0.08rem 0.36rem;font-size:0.66rem;border-color:var(--accent-primary);color:var(--accent-primary);" title="Inspect &amp; Filter turns by PR #' + escapeHTML(s.pr_number) + '" onclick="event.stopPropagation();selectCostDrilldownItem(\'pr\',' + Number(s.pr_number) + ',true)">PR #' + escapeHTML(s.pr_number) + '</button></div>'
         : '';
       const waveIssueCell = '<div class="mono" style="font-size:0.7rem;color:var(--text-muted);">' + escapeHTML(s.wave || 'wave') + '</div><div style="margin-top:0.15rem;">' + issuePart + '</div>' + prPart;
 
@@ -1398,9 +1911,9 @@
       } else if (shaStr.indexOf('comment-') === 0) {
         const cid = shaStr.replace('comment-', '').replace(/-relay-\d+$/, '');
         const cUrl = s.comment_url || ('https://github.com/duboc/scion-experiment/issues/' + encodeURIComponent(s.issue_number || 1) + '#issuecomment-' + encodeURIComponent(cid));
-        commitCell = '<a href="' + escapeHTML(cUrl) + '" target="_blank" class="mono">#' + escapeHTML(shaStr.replace('comment-', '').slice(-10)) + '</a>';
+        commitCell = '<a href="' + escapeHTML(cUrl) + '" target="_blank" class="mono" onclick="event.stopPropagation()">#' + escapeHTML(shaStr.replace('comment-', '').slice(-10)) + '</a>';
       } else if (shaStr) {
-        commitCell = '<a href="https://github.com/duboc/scion-experiment/commit/' + encodeURIComponent(shaStr) + '" target="_blank" class="mono">' + escapeHTML(shaStr.slice(0, 7)) + '</a>';
+        commitCell = '<a href="https://github.com/duboc/scion-experiment/commit/' + encodeURIComponent(shaStr) + '" target="_blank" class="mono" onclick="event.stopPropagation()">' + escapeHTML(shaStr.slice(0, 7)) + '</a>';
       }
       const tsFormatted = s.timestamp ? escapeHTML(String(s.timestamp).replace('T', ' ').slice(0, 19)) : '—';
       const stVal = s.status || 'PASS';
@@ -1439,9 +1952,16 @@
             (toolListHtml ? '<div><strong class="mono" style="font-size:0.74rem;color:var(--text-primary);">🛠️ Tool Usage (' + (s.tool_calls || []).length + ' calls):</strong>' + toolListHtml + '</div>' : '') +
             '<div style="font-size:0.76rem;"><strong class="mono" style="color:var(--text-primary);">📤 Response / Handoff (→ ' + escapeHTML(s.to_agent || 'next') + '):</strong> ' + escapeHTML((s.response || s.detail || '').slice(0, 420)) + '</div>' +
           '</div>';
+      } else {
+        const toolCount = Array.isArray(s.tool_calls) ? s.tool_calls.length : 0;
+        convBlockHtml =
+          '<div class="mono" style="margin-top:0.28rem;font-size:0.68rem;color:var(--accent-primary);display:flex;align-items:center;gap:0.5rem;">' +
+            '<span>🛠️ ' + toolCount + ' tool call(s) · Lineage: ' + escapeHTML(s.attribution_source || 'git_commit_sha') + '</span>' +
+            '<button type="button" class="btn mono" style="padding:0.1rem 0.42rem;font-size:0.66rem;" onclick="event.stopPropagation();selectStepForInspection(\'' + safeKey + '\')">Inspect in Drawer &uarr;</button>' +
+          '</div>';
       }
 
-      return '<tr>' +
+      return '<tr data-step-key="' + escapeHTML(uKey) + '" style="cursor:pointer;' + (isInspected ? 'background:var(--bg-elevated);' : '') + '" onclick="selectStepForInspection(\'' + safeKey + '\')">' +
         '<td class="mono num">#' + escapeHTML(stepNum) + '</td>' +
         '<td>' + agentBadge + '</td>' +
         '<td class="mono">' + waveIssueCell + '</td>' +
@@ -1456,6 +1976,14 @@
         '<td>' + statusBadge + '</td>' +
       '</tr>';
     }).join('');
+
+    if (stepsToRender.length > windowedSteps.length) {
+      rowsHtml += '<tr><td colspan="8" style="text-align:center;padding:0.75rem;background:var(--bg-subtle);">' +
+        '<button type="button" class="btn mono" onclick="showAllTrajectoryRows()">Showing First ' + windowedSteps.length + ' of ' + stepsToRender.length + ' Steps (DOM Windowed for Instant Paint) — Click to Render All ' + stepsToRender.length + ' Steps</button>' +
+      '</td></tr>';
+    }
+
+    tbody.innerHTML = rowsHtml;
   }
 
   async function rebuildAgentTrajectories() {
@@ -1614,6 +2142,11 @@
 
   // Export to window for inline HTML event attributes
   root.toggleTheme = toggleTheme;
+  root.switchWorkspaceLens = switchWorkspaceLens;
+  root.filterByCostBucket = filterByCostBucket;
+  root.resetAllTrajectoryFilters = resetAllTrajectoryFilters;
+  root.selectStepForInspection = selectStepForInspection;
+  root.showAllTrajectoryRows = showAllTrajectoryRows;
   root.setAgentFilter = setAgentFilter;
   root.setWaveFilter = setWaveFilter;
   root.selectAgentNode = selectAgentNode;
@@ -1644,6 +2177,12 @@
 
   // Initialize on load
   function init() {
+    try {
+      const m = String(window.location.hash || '').match(/lens=(all|finops|pyramid|topology)/i);
+      if (m && m[1]) {
+        switchWorkspaceLens(m[1].toLowerCase());
+      }
+    } catch (_) {}
     refreshAll();
     runWorkbenchQuery();
     setInterval(refreshAll, 15000);

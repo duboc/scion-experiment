@@ -1075,10 +1075,11 @@ const ISSUE_METADATA = [
   { issue_number: 33, req_id: 'Req 4.1.16', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00028-klr', title: '[Req 4.1.16] Visual & Multimodal Search (gemini-embedding-2 @ 1024-d)' },
   { issue_number: 34, req_id: 'Req 4.1.17', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00029-7ss', title: '[Req 4.1.17] Tornar as facetas no painel lateral clicáveis (Interactive Facet Re-Search)' },
   { issue_number: 35, req_id: 'Req 4.1.18', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00030-pqq', title: '[Req 4.1.18] Sponsored Products / Retail Media (Injeção de anúncios nativos com controle de budget real-time)' },
-  { issue_number: 36, req_id: 'FinOps #36', wave: 'wave-6', project: 'psearch-eval', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00024-nt2', title: 'feat(eval-dashboard): Scion-native zero-extra-cost PR/Issue FinOps & stateful turn attribution engine' }
+  { issue_number: 36, req_id: 'FinOps #36', wave: 'wave-6', project: 'psearch-eval', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00024-nt2', title: 'feat(eval-dashboard): Scion-native zero-extra-cost PR/Issue FinOps & stateful turn attribution engine' },
+  { issue_number: 37, req_id: 'Workbench #37', wave: 'wave-6', project: 'psearch-eval', linked_prs: [],            cloud_run_revision: 'psearch-eval-dashboard-00025', title: 'feat(eval-dashboard): High-density multi-view observability workbench (FinOps Marimekko bar, 10-agent swimlane waterfall, context-bloat curve, crossfilter & turn inspector)' }
 ];
 
-// Additional canonical baseline steps for PRs #12-#17, #24, #25, #27 and Issues #34, #35, #36
+// Additional canonical baseline steps for PRs #12-#17, #24, #25, #27 and Issues #34, #35, #36, #37
 const EXTRA_PR_AND_ISSUE_STEPS = [
   // PR #12
   { project: 'psearch', agent: 'lead', wave: 'wave-0', issue_number: 11, pr_number: 12, step_type: 'ADR_PLAN', commit_sha: 'a09cb0e', event_timestamp: '2026-10-13T00:54:28Z', status: 'PASS', title: '[PR #12] Author Reproducible Software Factory Playbook, 10 Agent Templates & Shared Protocol', detail: 'Merged PR #12 (+3191/-0, 46 files): docs/scion/ architecture, setup/operations runbooks, 10 agent templates, and 20 lessons learned.' },
@@ -1120,7 +1121,9 @@ const EXTRA_PR_AND_ISSUE_STEPS = [
   // Issue #36
   { project: 'psearch-eval', agent: 'eval-lead', wave: 'wave-6', issue_number: 36, step_type: 'ADR_PLAN', commit_sha: 'c148a6f', event_timestamp: '2026-10-15T17:48:54Z', status: 'PASS', title: 'Author & Implement Issue #36 Scion-Native Zero-Extra-Cost FinOps & Stateful Turn Attribution Engine', detail: 'Implemented incremental .ship-cursor.json, noise-free gh issue list stripping, git-diff file intersection, stateful session carry-forward, and 3-bucket FinOps cost conservation.' },
   { project: 'psearch-eval', agent: 'factory-analyst', wave: 'wave-6', issue_number: 36, step_type: 'TELEMETRY_SYNC', commit_sha: 'ea9d6e4', event_timestamp: '2026-10-15T17:52:00Z', status: 'PASS', title: 'Verify Exact Cost Conservation (<$0.0001 Drift) & Zero Heartbeat Leakage on Issue #36', detail: 'Verified 0 Spanner writes on incremental no-op run, >=90% git-diff file-intersection precision across PRs #12-#27, and 100% heartbeat_tax isolation.' },
-  { project: 'psearch-eval', agent: 'ui-craftsman', wave: 'wave-6', issue_number: 36, step_type: 'UI_IMPL', commit_sha: '2f2702a', event_timestamp: '2026-10-15T17:55:00Z', status: 'PASS', title: 'Build FinOps Conservation Strip, Productive/Rework/Heartbeat Bars & Lazy Turn Drill-Down (#36)', detail: 'Wired 3-bucket FinOps decomposition banner and on-demand GET /api/trajectories/turns drill-down drawer in public/app.js.' }
+  { project: 'psearch-eval', agent: 'ui-craftsman', wave: 'wave-6', issue_number: 36, step_type: 'UI_IMPL', commit_sha: '2f2702a', event_timestamp: '2026-10-15T17:55:00Z', status: 'PASS', title: 'Build FinOps Conservation Strip, Productive/Rework/Heartbeat Bars & Lazy Turn Drill-Down (#36)', detail: 'Wired 3-bucket FinOps decomposition banner and on-demand GET /api/trajectories/turns drill-down drawer in public/app.js.' },
+  // Issue #37
+  { project: 'psearch-eval', agent: 'ui-craftsman', wave: 'wave-6', issue_number: 37, step_type: 'UI_IMPL', commit_sha: '18449ec', event_timestamp: '2026-10-15T21:18:00Z', status: 'PASS', title: 'Design & Implement High-Density Multi-View Observability Workbench (#37)', detail: 'Built sticky Workspace Lens Switcher, Active Crossfilter Strip, 2-Track FinOps Marimekko Conservation Bar, inline PR/Issue sparkbars, 10-agent Swimlane Waterfall SVG, Context Cache-Bloat Curve SVG, and Pinned Turn Inspector Drawer.' }
 ];
 
 for (const extra of EXTRA_PR_AND_ISSUE_STEPS) {
@@ -1189,6 +1192,7 @@ const COMMIT_SHA_MAP = {
   'c148a6f': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'ADR_PLAN' },
   '0a850c9': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'BACKEND_IMPL' },
   'adc37f7': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-deployer', step_type: 'CLOUD_RUN_DEPLOY' },
+  '18449ec': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'TELEMETRY_SYNC' },
   'ea9d6e4': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
   '2f2702a': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'ui-craftsman',  step_type: 'UI_IMPL' },
   '24d62c2': { issue_number: 11, pr_number: 12, project: 'psearch',      agent: 'lead',            step_type: 'ADR_PLAN' },
@@ -1347,6 +1351,7 @@ function extractSmartIssueOrPrNumber(text, options = {}) {
   if (matches.length > 0) {
     return matches[matches.length - 1];
   }
+  if (/marimekko|swimlane waterfall|context-bloat|observability workbench|issue #37/i.test(s)) return 37;
   if (/finops|stateful turn attribution|ship-cursor|issue #36/i.test(s)) return 36;
   if (/sponsored|retail media|00030/i.test(s)) return 35;
   if (/clickable facet|faceta|00029/i.test(s)) return 34;
@@ -1559,7 +1564,7 @@ function inferWaveFromIssue(issueNum) {
   if ([7, 8].includes(issueNum)) return 'wave-3';
   if ([9, 10, 16, 18].includes(issueNum)) return 'wave-4';
   if ([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31].includes(issueNum)) return 'wave-5';
-  if ([32, 33, 34, 35, 36].includes(issueNum)) return 'wave-6';
+  if ([32, 33, 34, 35, 36, 37].includes(issueNum)) return 'wave-6';
   return 'wave-6';
 }
 
@@ -1577,12 +1582,12 @@ function classifyGithubComment(commentObj) {
   const wave = inferWaveFromIssue(issueNum);
   const commentKey = `comment-${commentObj.id}`;
 
-  let project = [18, 26, 29, 31, 36].includes(issueNum) ? 'psearch-eval' : 'psearch';
+  let project = [18, 26, 29, 31, 36, 37].includes(issueNum) ? 'psearch-eval' : 'psearch';
   let agent = 'lead';
   let stepType = 'ISSUE_COMMENT';
   let status = 'PASS';
 
-  if (/Evaluation & Deployment Approval|Claimed by `@eval-lead`|Evaluation & Observability Plan|Live Verification Sweep|Verification Complete: All 10|Final Deployment & Complete 22\/22|5-Layer Product Evaluation Methodology Pyramid|Empirical Verification & Delivery Summary \(Issue #29\)|Completed & Verified Live on Cloud Run \(Issue #31\)|Completed & Verified Live on Cloud Run \(Issue #36\)/i.test(rawBody)) {
+  if (/Evaluation & Deployment Approval|Claimed by `@eval-lead`|Evaluation & Observability Plan|Live Verification Sweep|Verification Complete: All 10|Final Deployment & Complete 22\/22|5-Layer Product Evaluation Methodology Pyramid|Empirical Verification & Delivery Summary \(Issue #29\)|Completed & Verified Live on Cloud Run \(Issue #31\)|Completed & Verified Live on Cloud Run \(Issue #36\)|Completed & Verified Live on Cloud Run \(Issue #37\)/i.test(rawBody)) {
     project = 'psearch-eval';
     agent = 'eval-lead';
     stepType = /Approval/i.test(firstLine) ? 'EVAL_APPROVAL_GATE' : 'EVAL_REPORT';
