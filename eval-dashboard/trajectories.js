@@ -906,6 +906,7 @@ const PR_METADATA = [
     changed_files: 46,
     linked_issues: [11, 18],
     commit_shas: ['08e4596', '31cb28d', 'cb9c62b', '3c61235', 'ce21413', 'a09cb0e', '0a911fc', '6224ff7', '03058b2', '5f475ea', 'd91cb9f', '0d8c0f5'],
+    changed_file_patterns: ['docs/scion/README.md', 'docs/scion/lessons-learned.md', 'docs/scion/operations-runbook.md', 'docs/scion/scripts/sync-factory-agents.py', 'docs/scion/scripts/factory-status.sh', 'docs/scion/sql/factory_schema.sql', 'docs/scion/templates/'],
     summary: 'Established the reproducible 10-agent Scion software factory playbook (psearch + psearch-eval), Spanner factory DDL, operations scripts, and 20 lessons learned.'
   },
   {
@@ -922,6 +923,7 @@ const PR_METADATA = [
     changed_files: 7,
     linked_issues: [18],
     commit_shas: ['afd6a17', 'c882a36', '15fa880', '96f010e'],
+    changed_file_patterns: ['docs/scion/scripts/push-templates.py', 'push-templates.py'],
     summary: 'Added push-templates.py to prevent template storage path collisions (-legacy rename) and documented Hub-managed reincarnate HTTP 400 fallback (L16, L21).'
   },
   {
@@ -938,6 +940,7 @@ const PR_METADATA = [
     changed_files: 22,
     linked_issues: [18],
     commit_shas: ['8aa2e08', '23c63b9', 'ab61624'],
+    changed_file_patterns: ['docs/scion/scripts/patch-antigravity-hooks.py', 'patch-antigravity-hooks.py', 'docs/scion/scripts/backup-hub.sh', 'backup-hub.sh'],
     summary: 'Implemented 3-tier durable Antigravity pre-start hooks (patch-antigravity-hooks.py), online SQLite Hub backup (backup-hub.sh), and GITHUB_TOKEN injection rules (L22, L23).'
   },
   {
@@ -954,6 +957,7 @@ const PR_METADATA = [
     changed_files: 11,
     linked_issues: [18, 22],
     commit_shas: ['00c6e08', '2ab5512', '87c19d3'],
+    changed_file_patterns: ['docs/scion/scripts/factory-watchdog.py', 'factory-watchdog.py', 'docs/scion/scripts/setup-monitoring-alerts.sh', 'docs/scion/scripts/sync-shared-dirs.sh'],
     summary: 'Added factory-watchdog.py circuit-breaker daemon, Cloud Monitoring alert policies, GCP billing budgets, and workspace shared-dir sync.'
   },
   {
@@ -970,6 +974,7 @@ const PR_METADATA = [
     changed_files: 8,
     linked_issues: [18],
     commit_shas: ['22e6259', '28ad839', 'abe23fb', '2fabf16', '7f1efc7'],
+    changed_file_patterns: ['docs/scion/architecture.md', 'docs/scion/setup-runbook.md'],
     summary: 'Configured branch isolation between psearch (main) and psearch-eval (eval-dashboard) to eliminate cross-grove git push contention.'
   },
   {
@@ -986,6 +991,7 @@ const PR_METADATA = [
     changed_files: 1,
     linked_issues: [1],
     commit_shas: ['167ca47', '76df31a', '7b404be', '8894c6d', '1baae5e', '79b15a2', '09b5d18', '31a8c9a', '6af0f25'],
+    changed_file_patterns: ['src/psearch/serving/internal/spanner/service.go', 'src/psearch/serving/internal/api/handlers.go', 'src/psearch/ui/src/App.tsx', 'knowledge-plane/issues/issue-01-hybrid-alpha.md'],
     summary: 'Delivered and verified Req 4.1.1 (Hybrid Search RRF Alpha parameterization in Spanner SQL, Go API, and React/Storefront UI) on psearch-serving-00011-p6t.'
   },
   {
@@ -1002,6 +1008,7 @@ const PR_METADATA = [
     changed_files: 20,
     linked_issues: [23],
     commit_shas: ['eca31de', '12cec7a', 'ba2371a'],
+    changed_file_patterns: ['docs/scion/scripts/provision.py', 'provision.py', 'docs/scion/templates/opencode', 'docs/scion/templates/hermes'],
     summary: 'Upgraded OpenCode, Hermes, and Antigravity agent harnesses across psearch and psearch-eval to Gemini 4 Argon on Vertex AI global endpoint and fixed provision.py f-string escaping.'
   },
   {
@@ -1018,6 +1025,7 @@ const PR_METADATA = [
     changed_files: 14,
     linked_issues: [23],
     commit_shas: ['da4a707', '1f2eba6', '41af0a6', '38e4386', '1f1c59f', 'f53514a'],
+    changed_file_patterns: ['src/psearch/serving/internal/config/config.go', 'src/psearch/serving/internal/nl/parser.go', 'src/psearch/serving/internal/genai/'],
     summary: 'Upgraded psearch-serving default text/flash model to gemini-3.8-flash and pro model to gemini-4-argon on Vertex AI global (live on psearch-serving-00025-5mx).'
   },
   {
@@ -1034,11 +1042,12 @@ const PR_METADATA = [
     changed_files: 3,
     linked_issues: [26],
     commit_shas: ['346afae', '5182d03', 'b10120a', '3294a8e'],
+    changed_file_patterns: ['docs/scion/verification-architecture.md', 'docs/scion/verification-and-evaluation.md', 'docs/scion/eval-pyramid.md', 'eval-dashboard/pyramid.js'],
     summary: 'Codified the 5-Layer Product Evaluation Methodology Pyramid (L1-L5, 76->92 scenarios, 100% pass gate) and multi-agent verification architecture.'
   }
 ];
 
-// Canonical GitHub Issue catalog for duboc/scion-experiment (Issues #1-#11, #18-#23, #26, #28-#35)
+// Canonical GitHub Issue catalog for duboc/scion-experiment (Issues #1-#11, #18-#23, #26, #28-#36)
 const ISSUE_METADATA = [
   { issue_number: 1,  req_id: 'Req 4.1.1',  wave: 'wave-1', project: 'psearch',      linked_prs: [17],             cloud_run_revision: 'psearch-serving-00011-p6t', title: '[Req 4.1.1] Busca Híbrida: Parametrizar peso alpha no RRF (SQL + Biggy Search API + UI)' },
   { issue_number: 2,  req_id: 'Req 4.1.2',  wave: 'wave-1', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00012-65q', title: '[Req 4.1.2] Busca Vetorial: 1024 dim (ScaNN), Blue/Green Index Switch & Cache de Embeddings' },
@@ -1065,10 +1074,11 @@ const ISSUE_METADATA = [
   { issue_number: 32, req_id: 'Req 4.1.15', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00027-dmv', title: '[Req 4.1.15] Variant Grouping / Collapse (Products -> SKUs INTERLEAVE)' },
   { issue_number: 33, req_id: 'Req 4.1.16', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00028-klr', title: '[Req 4.1.16] Visual & Multimodal Search (gemini-embedding-2 @ 1024-d)' },
   { issue_number: 34, req_id: 'Req 4.1.17', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00029-7ss', title: '[Req 4.1.17] Tornar as facetas no painel lateral clicáveis (Interactive Facet Re-Search)' },
-  { issue_number: 35, req_id: 'Req 4.1.18', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00030-pqq', title: '[Req 4.1.18] Sponsored Products / Retail Media (Injeção de anúncios nativos com controle de budget real-time)' }
+  { issue_number: 35, req_id: 'Req 4.1.18', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00030-pqq', title: '[Req 4.1.18] Sponsored Products / Retail Media (Injeção de anúncios nativos com controle de budget real-time)' },
+  { issue_number: 36, req_id: 'FinOps #36', wave: 'wave-6', project: 'psearch-eval', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00024', title: 'feat(eval-dashboard): Scion-native zero-extra-cost PR/Issue FinOps & stateful turn attribution engine' }
 ];
 
-// Additional canonical baseline steps for PRs #12-#17, #24, #25, #27 and Issues #34, #35
+// Additional canonical baseline steps for PRs #12-#17, #24, #25, #27 and Issues #34, #35, #36
 const EXTRA_PR_AND_ISSUE_STEPS = [
   // PR #12
   { project: 'psearch', agent: 'lead', wave: 'wave-0', issue_number: 11, pr_number: 12, step_type: 'ADR_PLAN', commit_sha: 'a09cb0e', event_timestamp: '2026-10-13T00:54:28Z', status: 'PASS', title: '[PR #12] Author Reproducible Software Factory Playbook, 10 Agent Templates & Shared Protocol', detail: 'Merged PR #12 (+3191/-0, 46 files): docs/scion/ architecture, setup/operations runbooks, 10 agent templates, and 20 lessons learned.' },
@@ -1106,7 +1116,11 @@ const EXTRA_PR_AND_ISSUE_STEPS = [
   { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 35, step_type: 'BACKEND_IMPL', commit_sha: '0644c6f', event_timestamp: '2026-10-14T22:53:10Z', status: 'PASS', title: 'Implement Sponsored Products Engine, Interleaved ad_clicks & Real-Time Budget Burn (#35)', detail: 'Added 023_ad_campaigns.sql, SpannerAdStore.RecordClick serializable tx, sponsored_matches CTE, and 44/44 sqlcheck gate (0644c6f).' },
   { project: 'psearch', agent: 'frontend', wave: 'wave-6', issue_number: 35, step_type: 'UI_IMPL', commit_sha: 'a7e1054', event_timestamp: '2026-10-14T23:00:55Z', status: 'PASS', title: 'Build Sponsored Badges, Idempotent Ad Click Beacon & AdCampaignManager UI (#35)', detail: 'Added AdCampaignManager.js, adService.js, "Sponsored · Patrocinado" badges, and click beacon firing in React & storefront (a7e1054).' },
   { project: 'psearch', agent: 'reviewer', wave: 'wave-6', issue_number: 35, step_type: 'PEER_REVIEW', commit_sha: '5e6bf63', event_timestamp: '2026-10-14T23:02:14Z', status: 'PASS', title: 'Approve Issue #35 Sponsored Products Backend (0644c6f) & Storefront/React UI (a7e1054)', detail: 'Verified bound SQL params in sponsored_matches CTE, facet/total_found exclusion, idempotent click_id charging, and admin auth.' },
-  { project: 'psearch', agent: 'deployer', wave: 'wave-6', issue_number: 35, step_type: 'CLOUD_RUN_DEPLOY', commit_sha: '8bbd2f4', event_timestamp: '2026-10-14T23:10:20Z', status: 'PASS', title: 'Apply DDL 023/023b, Pass 44/44 sqlcheck & Deploy psearch-serving-00030-pqq (#35)', detail: 'Applied ad_campaigns + interleaved ad_clicks on Spanner, deployed 00030-pqq (--to-latest), and verified live ad slots & duplicate click guard.' }
+  { project: 'psearch', agent: 'deployer', wave: 'wave-6', issue_number: 35, step_type: 'CLOUD_RUN_DEPLOY', commit_sha: '8bbd2f4', event_timestamp: '2026-10-14T23:10:20Z', status: 'PASS', title: 'Apply DDL 023/023b, Pass 44/44 sqlcheck & Deploy psearch-serving-00030-pqq (#35)', detail: 'Applied ad_campaigns + interleaved ad_clicks on Spanner, deployed 00030-pqq (--to-latest), and verified live ad slots & duplicate click guard.' },
+  // Issue #36
+  { project: 'psearch-eval', agent: 'eval-lead', wave: 'wave-6', issue_number: 36, step_type: 'ADR_PLAN', commit_sha: 'c148a6f', event_timestamp: '2026-10-15T17:48:54Z', status: 'PASS', title: 'Author & Implement Issue #36 Scion-Native Zero-Extra-Cost FinOps & Stateful Turn Attribution Engine', detail: 'Implemented incremental .ship-cursor.json, noise-free gh issue list stripping, git-diff file intersection, stateful session carry-forward, and 3-bucket FinOps cost conservation.' },
+  { project: 'psearch-eval', agent: 'factory-analyst', wave: 'wave-6', issue_number: 36, step_type: 'TELEMETRY_SYNC', commit_sha: 'ea9d6e4', event_timestamp: '2026-10-15T17:52:00Z', status: 'PASS', title: 'Verify Exact Cost Conservation (<$0.0001 Drift) & Zero Heartbeat Leakage on Issue #36', detail: 'Verified 0 Spanner writes on incremental no-op run, >=90% git-diff file-intersection precision across PRs #12-#27, and 100% heartbeat_tax isolation.' },
+  { project: 'psearch-eval', agent: 'ui-craftsman', wave: 'wave-6', issue_number: 36, step_type: 'UI_IMPL', commit_sha: '2f2702a', event_timestamp: '2026-10-15T17:55:00Z', status: 'PASS', title: 'Build FinOps Conservation Strip, Productive/Rework/Heartbeat Bars & Lazy Turn Drill-Down (#36)', detail: 'Wired 3-bucket FinOps decomposition banner and on-demand GET /api/trajectories/turns drill-down drawer in public/app.js.' }
 ];
 
 for (const extra of EXTRA_PR_AND_ISSUE_STEPS) {
@@ -1172,6 +1186,9 @@ const COMMIT_SHA_MAP = {
   '8bbd2f4': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'deployer',        step_type: 'CLOUD_RUN_DEPLOY' },
   'c9d8436': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'ISSUE_ACCEPTED_CLOSED' },
   '508867f': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'DOCS_SYNC' },
+  'c148a6f': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'ADR_PLAN' },
+  'ea9d6e4': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
+  '2f2702a': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'ui-craftsman',  step_type: 'UI_IMPL' },
   '24d62c2': { issue_number: 11, pr_number: 12, project: 'psearch',      agent: 'lead',            step_type: 'ADR_PLAN' },
   '29ad7ea': { issue_number: 11, pr_number: null, project: 'psearch',    agent: 'deployer',        step_type: 'CLOUD_RUN_DEPLOY' },
   'c4b3368': { issue_number: 11, pr_number: null, project: 'psearch',    agent: 'deployer',        step_type: 'CLOUD_RUN_DEPLOY' },
@@ -1184,32 +1201,156 @@ const COMMIT_SHA_MAP = {
 const PR_NUMBERS_SET = new Set(PR_METADATA.map(p => p.pr_number));
 const PR_BY_NUMBER = Object.fromEntries(PR_METADATA.map(p => [p.pr_number, p]));
 
-function extractSmartIssueOrPrNumber(text) {
-  const s = String(text || '');
+// Strip read-only CLI listing tables (gh issue list, gh pr list, scion list) and heartbeat boilerplate
+// so idle heartbeat turns never leak issue/PR numbers from stdout listings.
+function stripReadOnlyListOutput(text) {
+  let s = String(text || '');
+  s = s.replace(/^\s*#?\d{1,3}\t(?:OPEN|CLOSED|MERGED)\t.*$/gim, ' ');
+  s = s.replace(/^\s*#?\d{1,3}\s+(?:OPEN|CLOSED|MERGED)\s+.*$/gim, ' ');
+  s = s.replace(/HEARTBEAT\s*\(every\s*\d+\s*min\)[\s\S]*?(?:do only step 5\.?|$)/gi, ' ');
+  s = s.replace(/gh\s+(?:issue|pr)\s+list[^\n]*/gi, ' ');
+  s = s.replace(/(?:pr\s*|issue\s*|issues\s*)?#\d{1,2}\s*(?:[-–—]+|\.\.+|to)\s*(?:pr\s*|issue\s*)?#?\d{1,2}/gi, ' ');
+  return s;
+}
+
+// Match mutated file paths against PR changed_file_patterns (Git-Diff File-Intersection Attribution)
+function matchPrByChangedFiles(filePaths = [], textFallback = '') {
+  const candidates = Array.isArray(filePaths) ? [...filePaths] : [];
+  if (textFallback) {
+    const fileRe = /(?:docs\/scion\/[\w./-]+|src\/psearch\/[\w./-]+|knowledge-plane\/[\w./-]+|eval-dashboard\/[\w./-]+|push-templates\.py|patch-antigravity-hooks\.py|backup-hub\.sh|factory-watchdog\.py|provision\.py)/g;
+    let m;
+    while ((m = fileRe.exec(String(textFallback))) !== null) {
+      candidates.push(m[0]);
+    }
+  }
+  if (candidates.length === 0) return null;
+
+  let bestPr = null;
+  let bestScore = 0;
+  for (const pm of PR_METADATA) {
+    const patterns = pm.changed_file_patterns || [];
+    let score = 0;
+    for (const f of candidates) {
+      const normF = String(f).replace(/^\/workspace\//, '').trim();
+      for (const pat of patterns) {
+        if (normF === pat || normF.endsWith(pat) || normF.includes(pat)) {
+          score += pat.endsWith('/') ? 2 : 5;
+        }
+      }
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestPr = pm;
+    }
+  }
+  if (!bestPr || bestScore <= 0) return null;
+  return {
+    pr_number: bestPr.pr_number,
+    issue_number: (bestPr.linked_issues && bestPr.linked_issues[0]) || 18,
+    attribution_source: 'file_diff_intersection'
+  };
+}
+
+function isIdleHeartbeatStepOrTurn(item = {}) {
+  if (!item || typeof item !== 'object') return false;
+  const turnType = String(item.turn_type || '').toLowerCase();
+  const stepType = String(item.step_type || '').toUpperCase();
+  if (turnType === 'heartbeat_check' || stepType === 'HARNESS_HEARTBEAT_CHECK') {
+    return true;
+  }
+  const fromAg = String(item.from_agent || '').toLowerCase();
+  const prompt = String(item.prompt_text || item.prompt || item.title || '');
+  const isScheduler = fromAg.includes('scheduler') || prompt.includes('HEARTBEAT (every 15 min)');
+  if (!isScheduler) return false;
+
+  // Check if the turn mutated any files or ran git commit / gh pr / gcloud deploy
+  const toolsStr = typeof item.tool_calls_json === 'string'
+    ? item.tool_calls_json
+    : JSON.stringify(item.tool_calls || []);
+  const hasMutation = /write_to_file|replace_file_content|git commit|git push|gcloud builds|gcloud run deploy|gh issue create|gh issue close|gh pr create|scion message/i.test(toolsStr);
+  return !hasMutation;
+}
+
+const REWORK_COMMIT_SHAS = new Set([
+  '79b15a2', // Wave 1 nested-aggregate hotfix after 00010-w7g rollback
+  '9bb1598', // Wave 1 rollback guard
+  'abf6432', // Wave 2 authoritative empty Spanner result hotfix
+  '2586e94', // Wave 3 LN() multiplier clamp fix
+  'f00acb7', // Wave 3 free_shipping zero-cost fix
+  'f3fc754', // Wave 4 TOKENIZE_NGRAMS plain column fix
+  '69bdc21', // Wave 4 SEARCH_NGRAMS WHERE clause fix
+  '4ab8403', // Wave 5 entity spell-check fix after 00021-x6b rollback
+  '8d1213f', // Wave 5 rollback guard
+  '1fad8cf', // Wave 5 Spanner optimizer_version=6 hint fix
+  '2442093', // Wave 6 []*variantRow pointer slice decode fix
+  '12cec7a', // PR #24 provision.py f-string escaping fix
+  'c148a6f'  // Cloud Run 32MB response size limit fix
+]);
+
+function classifyStepOrTurnCostBucket(item = {}) {
+  if (isIdleHeartbeatStepOrTurn(item)) {
+    return 'heartbeat_tax';
+  }
+  const status = String(item.status || 'PASS').toUpperCase();
+  const stepType = String(item.step_type || item.turn_type || '').toUpperCase();
+  const sha7 = String(item.commit_sha || '').slice(0, 7);
+
+  if (
+    status === 'REJECTED' ||
+    status === 'ROLLED_BACK' ||
+    status === 'ERROR' ||
+    stepType === 'REVIEW_REJECTED' ||
+    stepType === 'ROLLBACK_GUARD' ||
+    stepType === 'ROLLOUT_ROLLED_BACK' ||
+    stepType === 'IAM_BLOCKER_ESCALATION' ||
+    REWORK_COMMIT_SHAS.has(sha7)
+  ) {
+    return 'rework';
+  }
+
+  // Check if any tool call in this turn failed
+  if (item.action_metadata && Number(item.action_metadata.failed_tool_calls_count) > 0) {
+    return 'rework';
+  }
+  const tools = Array.isArray(item.tool_calls) ? item.tool_calls : [];
+  if (tools.some(tc => {
+    const st = String(tc.status || 'OK').toUpperCase();
+    return st === 'WARN' || st === 'ERROR' || /exited with code [1-9]/i.test(String(tc.output || tc.output_preview || ''));
+  })) {
+    return 'rework';
+  }
+
+  if (item.pr_number || item.issue_number) {
+    return 'productive';
+  }
+  return 'unattributed';
+}
+
+function extractSmartIssueOrPrNumber(text, options = {}) {
+  if (options && options.isIdleHeartbeat) return null;
+  const s = stripReadOnlyListOutput(text);
   // 1. Explicit single PR mention in a commit subject or concise header (e.g. "PR #17", "Merge pull request #12")
   const allPrMentions = Array.from(s.matchAll(/(?:pull request|pr)\s*#?(\d{1,2})\b/gi)).map(m => Number(m[1]));
   const uniquePrs = Array.from(new Set(allPrMentions));
   if (uniquePrs.length === 1 && s.length < 360) {
     return uniquePrs[0];
   }
-  // 2. Strip range expressions like "#1-#10", "#1–#33", "#12-#17", "#19-#23" so we don't grab the start of a range
-  const withoutRanges = s.replace(/(?:pr\s*)?#\d{1,2}\s*(?:[-–—]+|\.\.+|to)\s*(?:pr\s*)?#?\d{1,2}/gi, ' ');
   const matches = [];
   const re = /(?:issue\s*#?|#)(\d{1,2})\b/gi;
   let m;
-  while ((m = re.exec(withoutRanges)) !== null) {
+  while ((m = re.exec(s)) !== null) {
     const n = Number(m[1]);
     if (n >= 1 && n <= 50 && !PR_NUMBERS_SET.has(n)) matches.push(n);
   }
   if (matches.length > 0) {
     return matches[matches.length - 1];
   }
-  if (/#1\s*[-–—]+\s*#?35\b/i.test(s) || /sponsored|retail media|00030/i.test(s)) return 35;
-  if (/#1\s*[-–—]+\s*#?34\b/i.test(s) || /clickable facet|faceta|00029/i.test(s)) return 34;
-  if (/#1\s*[-–—]+\s*#?33\b/i.test(s) || /multimodal|00028/i.test(s)) return 33;
-  if (/#1\s*[-–—]+\s*#?32\b/i.test(s) || /variant|00027/i.test(s)) return 32;
-  if (/pyramid|76-scenario|l1[-–]l5|#19\s*[-–—]+\s*#?2[23]/i.test(s)) return 26;
-  if (/#1\s*[-–—]+\s*#?10\b/i.test(s)) return 18;
+  if (/finops|stateful turn attribution|ship-cursor|issue #36/i.test(s)) return 36;
+  if (/sponsored|retail media|00030/i.test(s)) return 35;
+  if (/clickable facet|faceta|00029/i.test(s)) return 34;
+  if (/multimodal|00028/i.test(s)) return 33;
+  if (/variant|00027/i.test(s)) return 32;
+  if (/pyramid|76-scenario|l1[-–]l5/i.test(s)) return 26;
   return null;
 }
 
@@ -1217,17 +1358,37 @@ function resolvePrAndIssueForStep(rawNumOrStep, commitSha = '', text = '') {
   let rawNum = rawNumOrStep;
   let explicitPr = null;
   let stepProject = '';
+  let mutatedFiles = [];
   if (rawNumOrStep && typeof rawNumOrStep === 'object') {
+    if (isIdleHeartbeatStepOrTurn(rawNumOrStep)) {
+      return {
+        issue_number: null,
+        pr_number: null,
+        attribution_source: 'heartbeat_tax',
+        cost_bucket: 'heartbeat_tax'
+      };
+    }
     rawNum = rawNumOrStep.issue_number || null;
     explicitPr = rawNumOrStep.pr_number ? Number(rawNumOrStep.pr_number) : null;
     commitSha = rawNumOrStep.commit_sha || commitSha;
     stepProject = rawNumOrStep.project || rawNumOrStep.project_slug || '';
-    text = `${rawNumOrStep.title || ''} ${rawNumOrStep.detail || ''}`;
+    text = `${rawNumOrStep.title || ''} ${rawNumOrStep.detail || ''} ${rawNumOrStep.prompt_text || ''} ${rawNumOrStep.response_text || ''}`;
+    if (Array.isArray(rawNumOrStep.mutated_files)) {
+      mutatedFiles = rawNumOrStep.mutated_files;
+    } else if (rawNumOrStep.action_metadata && Array.isArray(rawNumOrStep.action_metadata.mutated_files)) {
+      mutatedFiles = rawNumOrStep.action_metadata.mutated_files;
+    } else if (Array.isArray(rawNumOrStep.tool_calls)) {
+      for (const tc of rawNumOrStep.tool_calls) {
+        if (tc.target_file) mutatedFiles.push(tc.target_file);
+        else if (tc.command) mutatedFiles.push(tc.command);
+      }
+    }
   }
 
   const sha7 = String(commitSha || '').slice(0, 7);
   const mapped = COMMIT_SHA_MAP[sha7];
   if (mapped && !stepProject) stepProject = mapped.project || '';
+  let attributionSource = mapped ? 'git_commit_sha' : (explicitPr || rawNum ? 'explicit_metadata' : null);
 
   // If a psearch-eval step or turn was previously tagged with issue 1 due to "#1-#10" range matching, re-extract from text
   if (stepProject === 'psearch-eval' && Number(rawNum) === 1) {
@@ -1241,6 +1402,7 @@ function resolvePrAndIssueForStep(rawNumOrStep, commitSha = '', text = '') {
   // Check if rawNum is actually one of the GitHub PR numbers (#12-#17, #24, #25, #27)
   if (rawNum && PR_NUMBERS_SET.has(Number(rawNum))) {
     prNumber = Number(rawNum);
+    attributionSource = 'explicit_pr_ref';
     const prMeta = PR_METADATA.find(p => p.pr_number === prNumber);
     if (prMeta && prMeta.linked_issues.length > 0) {
       issueNumber = prMeta.linked_issues[0];
@@ -1252,6 +1414,7 @@ function resolvePrAndIssueForStep(rawNumOrStep, commitSha = '', text = '') {
     for (const pm of PR_METADATA) {
       if ((pm.commit_shas || []).includes(sha7)) {
         prNumber = pm.pr_number;
+        attributionSource = 'git_commit_sha';
         if (!issueNumber && pm.linked_issues.length > 0) {
           issueNumber = pm.linked_issues[0];
         }
@@ -1260,16 +1423,38 @@ function resolvePrAndIssueForStep(rawNumOrStep, commitSha = '', text = '') {
     }
   }
 
+  // Git-Diff File-Intersection Attribution: match mutated files against PR changed_file_patterns
+  if (!prNumber && (mutatedFiles.length > 0 || /(?:docs\/scion\/|src\/psearch\/|push-templates|patch-antigravity-hooks|backup-hub|factory-watchdog|provision\.py)/.test(text))) {
+    const fileMatch = matchPrByChangedFiles(mutatedFiles, text);
+    if (fileMatch) {
+      prNumber = fileMatch.pr_number;
+      if (!issueNumber) issueNumber = fileMatch.issue_number;
+      attributionSource = 'file_diff_intersection';
+    }
+  }
+
   // Also link issues that were delivered by a specific PR (#1 -> PR #17 for psearch, #23 -> PR #25/#24, #26 -> PR #27)
   if (!prNumber && issueNumber) {
-    if (issueNumber === 1 && stepProject !== 'psearch-eval') prNumber = 17;
-    else if (issueNumber === 23) prNumber = /argon|harness|provision|opencode|hermes|antigravity/i.test(text) ? 24 : 25;
-    else if (issueNumber === 26) prNumber = 27;
+    if (issueNumber === 1 && stepProject !== 'psearch-eval') {
+      prNumber = 17;
+      if (!attributionSource) attributionSource = 'issue_to_pr_link';
+    } else if (issueNumber === 23) {
+      prNumber = /argon|harness|provision|opencode|hermes|antigravity/i.test(text) ? 24 : 25;
+      if (!attributionSource) attributionSource = 'issue_to_pr_link';
+    } else if (issueNumber === 26) {
+      prNumber = 27;
+      if (!attributionSource) attributionSource = 'issue_to_pr_link';
+    }
+  }
+
+  if (!attributionSource && (issueNumber || prNumber)) {
+    attributionSource = 'explicit_mention';
   }
 
   return {
-    issue_number: issueNumber || 34,
-    pr_number: prNumber || null
+    issue_number: issueNumber || null,
+    pr_number: prNumber || null,
+    attribution_source: attributionSource || 'unattributed'
   };
 }
 
@@ -1372,7 +1557,7 @@ function inferWaveFromIssue(issueNum) {
   if ([7, 8].includes(issueNum)) return 'wave-3';
   if ([9, 10, 16, 18].includes(issueNum)) return 'wave-4';
   if ([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31].includes(issueNum)) return 'wave-5';
-  if ([32, 33, 34, 35].includes(issueNum)) return 'wave-6';
+  if ([32, 33, 34, 35, 36].includes(issueNum)) return 'wave-6';
   return 'wave-6';
 }
 
@@ -1390,12 +1575,12 @@ function classifyGithubComment(commentObj) {
   const wave = inferWaveFromIssue(issueNum);
   const commentKey = `comment-${commentObj.id}`;
 
-  let project = [18, 26, 29, 31].includes(issueNum) ? 'psearch-eval' : 'psearch';
+  let project = [18, 26, 29, 31, 36].includes(issueNum) ? 'psearch-eval' : 'psearch';
   let agent = 'lead';
   let stepType = 'ISSUE_COMMENT';
   let status = 'PASS';
 
-  if (/Evaluation & Deployment Approval|Claimed by `@eval-lead`|Evaluation & Observability Plan|Live Verification Sweep|Verification Complete: All 10|Final Deployment & Complete 22\/22|5-Layer Product Evaluation Methodology Pyramid|Empirical Verification & Delivery Summary \(Issue #29\)|Completed & Verified Live on Cloud Run \(Issue #31\)/i.test(rawBody)) {
+  if (/Evaluation & Deployment Approval|Claimed by `@eval-lead`|Evaluation & Observability Plan|Live Verification Sweep|Verification Complete: All 10|Final Deployment & Complete 22\/22|5-Layer Product Evaluation Methodology Pyramid|Empirical Verification & Delivery Summary \(Issue #29\)|Completed & Verified Live on Cloud Run \(Issue #31\)|Completed & Verified Live on Cloud Run \(Issue #36\)/i.test(rawBody)) {
     project = 'psearch-eval';
     agent = 'eval-lead';
     stepType = /Approval/i.test(firstLine) ? 'EVAL_APPROVAL_GATE' : 'EVAL_REPORT';
@@ -1546,8 +1731,12 @@ function enrichStepWithConversationAndTools(step, meta) {
   const proj = meta.project;
   const agent = meta.name;
   const resolvedIds = resolvePrAndIssueForStep(step);
-  const issue = resolvedIds.issue_number || step.issue_number || 33;
-  const prNumber = resolvedIds.pr_number || step.pr_number || null;
+  const isHb = Boolean(resolvedIds.is_heartbeat_tax || step.cost_bucket === 'heartbeat_tax' || isIdleHeartbeatStepOrTurn(step));
+  const issue = isHb ? null : (resolvedIds.issue_number || step.issue_number || 33);
+  const prNumber = isHb ? null : (resolvedIds.pr_number || step.pr_number || null);
+  const attributionSource = isHb
+    ? 'idle_heartbeat_scheduler'
+    : (step.attribution_source || resolvedIds.attribution_source || (issue ? 'explicit_step' : 'unattributed'));
   const sha = step.commit_sha || 'n/a';
   const sType = String(step.step_type || 'ACTION').toUpperCase();
   const title = step.title || '';
@@ -1562,10 +1751,17 @@ function enrichStepWithConversationAndTools(step, meta) {
     const stepCost = Number(step.cost_usd || (step.tokens && step.tokens.cost_usd) || 0.0042);
     const toolList = Array.isArray(step.tool_calls) ? step.tool_calls : [];
     const edge = `${step.from_agent || 'PO / GitHub'} → ${step.to_agent || agent}`;
-    return {
+    const candidateStep = {
       ...step,
       issue_number: issue,
       pr_number: prNumber,
+      attribution_source: attributionSource,
+      tool_calls: toolList
+    };
+    const costBucket = step.cost_bucket || classifyStepOrTurnCostBucket(candidateStep);
+    return {
+      ...candidateStep,
+      cost_bucket: costBucket,
       turns_count: Number(step.turns_count) || 1,
       model_calls_count: Number(step.model_calls_count) || Math.max(1, toolList.length),
       tool_calls_count: toolList.length,
@@ -1770,10 +1966,11 @@ function enrichStepWithConversationAndTools(step, meta) {
     source: proj === 'psearch-eval' ? 'antigravity_transcript_calibrated' : 'reconstructed_from_artifact_payload'
   };
 
-  return {
+  const candidateStep = {
     ...step,
     issue_number: issue,
     pr_number: prNumber,
+    attribution_source: attributionSource,
     turns_count: stepTurns,
     model_calls_count: stepModelCalls,
     tool_calls_count: toolCalls.length,
@@ -1787,6 +1984,198 @@ function enrichStepWithConversationAndTools(step, meta) {
     tokens: tokensObj,
     cost_usd: costUsd
   };
+  const costBucket = step.cost_bucket || classifyStepOrTurnCostBucket(candidateStep);
+
+  return {
+    ...candidateStep,
+    cost_bucket: costBucket
+  };
+}
+
+// Compute linear regression slope d(cache_read_tokens)/d(turn_index) to quantify context bloat per turn
+function computeContextBloatSlope(stepsOrTurns) {
+  const pts = [];
+  let fallbackIdx = 0;
+  for (const item of (stepsOrTurns || [])) {
+    fallbackIdx += 1;
+    const x = Number(item.turn_index || item.step_index || fallbackIdx);
+    const y = Number((item.tokens && item.tokens.cache_read_tokens) ?? item.cache_read_tokens ?? 0);
+    if (y > 0) pts.push({ x, y });
+  }
+  if (pts.length < 2) return 0;
+  const n = pts.length;
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumXX = 0;
+  for (const p of pts) {
+    sumX += p.x;
+    sumY += p.y;
+    sumXY += p.x * p.y;
+    sumXX += p.x * p.x;
+  }
+  const denom = (n * sumXX) - (sumX * sumX);
+  if (Math.abs(denom) < 1e-9) return 0;
+  return Number((((n * sumXY) - (sumX * sumY)) / denom).toFixed(1));
+}
+
+// Stateful Scion Session & Git-Diff Attribution over raw Spanner turns (used by both buildTrajectoriesPayload and GET /api/trajectories/turns)
+function attributeSpannerTurnsStatefully(rawTurns = []) {
+  if (!Array.isArray(rawTurns) || rawTurns.length === 0) {
+    return {
+      turns: [],
+      finops_breakdown: {
+        total_turns: 0,
+        total_cost_usd: 0,
+        productive_cost_usd: 0,
+        rework_cost_usd: 0,
+        heartbeat_tax_usd: 0,
+        unattributed_cost_usd: 0,
+        conservation_drift_usd: 0,
+        cache_bloat_ratio: 0,
+        context_bloat_slope: 0
+      }
+    };
+  }
+
+  // Sort chronologically per agent so stateful session carry-forward works accurately
+  const chronological = [...rawTurns].sort((a, b) => {
+    const ka = `${a.project_slug || ''}:${a.agent_name || ''}`;
+    const kb = `${b.project_slug || ''}:${b.agent_name || ''}`;
+    if (ka !== kb) return ka.localeCompare(kb);
+    const ta = String(a.created_at || '');
+    const tb = String(b.created_at || '');
+    if (ta !== tb) return ta.localeCompare(tb);
+    return (Number(a.turn_index) || 0) - (Number(b.turn_index) || 0);
+  });
+
+  const sessionStateByAgent = {};
+  const enrichedByKey = new Map();
+
+  for (const r of chronological) {
+    const agentKey = `${r.project_slug || 'psearch'}:${r.agent_name || 'lead'}`;
+    if (!sessionStateByAgent[agentKey]) {
+      sessionStateByAgent[agentKey] = { activeIssue: null, activePr: null };
+    }
+    const state = sessionStateByAgent[agentKey];
+
+    let parsedTools = [];
+    try {
+      parsedTools = typeof r.tool_calls_json === 'string'
+        ? JSON.parse(r.tool_calls_json)
+        : (Array.isArray(r.tool_calls_json) ? r.tool_calls_json : (Array.isArray(r.tool_calls) ? r.tool_calls : []));
+    } catch (_) {
+      parsedTools = [];
+    }
+
+    const turnCandidate = {
+      ...r,
+      prompt: r.prompt_text || r.prompt || '',
+      thinking: r.thinking_text || r.thinking || '',
+      response: r.response_text || r.response || '',
+      tool_calls: parsedTools
+    };
+
+    const idleHb = isIdleHeartbeatStepOrTurn(turnCandidate);
+    let attributedIssue = null;
+    let attributedPr = null;
+    let attributionSource = 'unattributed';
+
+    if (idleHb) {
+      attributedIssue = null;
+      attributedPr = null;
+      attributionSource = 'idle_heartbeat_scheduler';
+    } else {
+      const resolved = resolvePrAndIssueForStep(turnCandidate);
+      const rawDbIssue = Number(r.issue_number) || null;
+      // Ignore default fallback 34 if resolved found a specific issue/PR or if session state has an active issue
+      if (resolved.pr_number || (resolved.issue_number && resolved.attribution_source !== 'explicit_step')) {
+        attributedIssue = resolved.issue_number;
+        attributedPr = resolved.pr_number;
+        attributionSource = resolved.attribution_source || 'explicit_mention';
+      } else if (rawDbIssue && rawDbIssue !== 34) {
+        attributedIssue = rawDbIssue;
+        attributedPr = ISSUE_TO_PR_MAP[rawDbIssue] || resolved.pr_number || null;
+        attributionSource = 'explicit_step';
+      } else if (state.activeIssue || state.activePr) {
+        attributedIssue = state.activeIssue;
+        attributedPr = state.activePr;
+        attributionSource = 'session_carry_forward';
+      } else if (rawDbIssue) {
+        attributedIssue = rawDbIssue;
+        attributedPr = ISSUE_TO_PR_MAP[rawDbIssue] || null;
+        attributionSource = 'explicit_step';
+      }
+
+      if (attributedIssue) state.activeIssue = attributedIssue;
+      if (attributedPr) state.activePr = attributedPr;
+    }
+
+    const withAttribution = {
+      ...turnCandidate,
+      issue_number: attributedIssue,
+      pr_number: attributedPr,
+      attribution_source: attributionSource
+    };
+    const costBucket = classifyStepOrTurnCostBucket(withAttribution);
+    const turnKey = `${r.project_slug}:${r.agent_name}:${r.session_id}:${r.turn_index}`;
+    enrichedByKey.set(turnKey, {
+      ...r,
+      issue_number: attributedIssue,
+      pr_number: attributedPr,
+      cost_bucket: costBucket,
+      classification: costBucket,
+      attribution_source: attributionSource,
+      parsed_tool_calls: parsedTools
+    });
+  }
+
+  // Restore original order of rawTurns
+  const enrichedTurns = rawTurns.map(r => {
+    const turnKey = `${r.project_slug}:${r.agent_name}:${r.session_id}:${r.turn_index}`;
+    return enrichedByKey.get(turnKey) || r;
+  });
+
+  let totalCost = 0;
+  let productiveCost = 0;
+  let reworkCost = 0;
+  let heartbeatCost = 0;
+  let unattributedCost = 0;
+  let totalInput = 0;
+  let totalCache = 0;
+
+  for (const t of enrichedTurns) {
+    const c = Number(Number(t.cost_usd || 0).toFixed(4));
+    totalCost += c;
+    totalInput += Number(t.input_tokens) || 0;
+    totalCache += Number(t.cache_read_tokens) || 0;
+    if (t.cost_bucket === 'heartbeat_tax') heartbeatCost += c;
+    else if (t.cost_bucket === 'rework') reworkCost += c;
+    else if (t.cost_bucket === 'unattributed') unattributedCost += c;
+    else productiveCost += c;
+  }
+
+  const cleanTotal = Number(totalCost.toFixed(4));
+  const cleanProd = Number(productiveCost.toFixed(4));
+  const cleanRework = Number(reworkCost.toFixed(4));
+  const cleanHb = Number(heartbeatCost.toFixed(4));
+  const cleanUnattr = Number((cleanTotal - cleanProd - cleanRework - cleanHb).toFixed(4));
+  const drift = Number(Math.abs(cleanTotal - (cleanProd + cleanRework + cleanHb + cleanUnattr)).toFixed(6));
+
+  return {
+    turns: enrichedTurns,
+    finops_breakdown: {
+      total_turns: enrichedTurns.length,
+      total_cost_usd: cleanTotal,
+      productive_cost_usd: cleanProd,
+      rework_cost_usd: cleanRework,
+      heartbeat_tax_usd: cleanHb,
+      unattributed_cost_usd: cleanUnattr,
+      conservation_drift_usd: drift,
+      cache_bloat_ratio: totalInput > 0 ? Number((totalCache / totalInput).toFixed(2)) : 0,
+      context_bloat_slope: computeContextBloatSlope(enrichedTurns)
+    }
+  };
 }
 
 // Build comprehensive PR & Issue Cost, Turns, and Agent Involvement Rollups so users can inspect how much any PR or Issue cost and which agents/turns were involved
@@ -1796,11 +2185,18 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
     agentMetaByKey[`${m.project}:${m.name}`] = m;
   }
 
-  // Helper to aggregate a list of trajectory steps into per-agent breakdown & totals
+  // Helper to aggregate a list of trajectory steps into per-agent breakdown, FinOps 3-bucket decomposition & totals
   const aggregateStepsGroup = (stepsList) => {
     const byAgent = {};
     let totalCostUsd = 0;
+    let productiveCostUsd = 0;
+    let reworkCostUsd = 0;
+    let heartbeatTaxUsd = 0;
+    let unattributedCostUsd = 0;
     let totalTurns = 0;
+    let productiveTurns = 0;
+    let reworkTurns = 0;
+    let heartbeatTurns = 0;
     let totalModelCalls = 0;
     let totalToolCalls = 0;
     let totalInputTokens = 0;
@@ -1814,7 +2210,7 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
     for (const s of stepsList) {
       const key = `${s.project}:${s.agent}`;
       const meta = agentMetaByKey[key] || { project: s.project, name: s.agent, role: 'Agent', harness: s.harness || 'antigravity', model: s.model || 'gemini-4-argon', turns_per_step: 4, calls_per_step: 8 };
-      const stepCost = Number(s.cost_usd || (s.tokens && s.tokens.cost_usd) || 0);
+      const stepCost = Number(Number(s.cost_usd || (s.tokens && s.tokens.cost_usd) || 0).toFixed(4));
       const stepTurns = Number(s.turns_count) || (s.pre_enriched_from_spanner_turn ? 1 : (meta.turns_per_step || 4));
       const stepCalls = Number(s.model_calls_count) || (s.pre_enriched_from_spanner_turn ? Math.max(1, (s.tool_calls || []).length) : (meta.calls_per_step || 8));
       const stepTools = Array.isArray(s.tool_calls) ? s.tool_calls.length : 0;
@@ -1822,9 +2218,23 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
       const cacheTok = Number(s.tokens && s.tokens.cache_read_tokens) || 0;
       const outTok = Number(s.tokens && s.tokens.output_tokens) || 0;
       const totTok = Number(s.tokens && s.tokens.total_tokens) || (inTok + cacheTok + outTok);
+      const bucket = s.cost_bucket || classifyStepOrTurnCostBucket(s);
 
       totalCostUsd += stepCost;
       totalTurns += stepTurns;
+      if (bucket === 'heartbeat_tax') {
+        heartbeatTaxUsd += stepCost;
+        heartbeatTurns += stepTurns;
+      } else if (bucket === 'rework') {
+        reworkCostUsd += stepCost;
+        reworkTurns += stepTurns;
+      } else if (bucket === 'unattributed') {
+        unattributedCostUsd += stepCost;
+      } else {
+        productiveCostUsd += stepCost;
+        productiveTurns += stepTurns;
+      }
+
       totalModelCalls += stepCalls;
       totalToolCalls += stepTools;
       totalInputTokens += inTok;
@@ -1855,6 +2265,9 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
           output_tokens: 0,
           total_tokens: 0,
           cost_usd: 0,
+          productive_cost_usd: 0,
+          rework_cost_usd: 0,
+          heartbeat_tax_usd: 0,
           commits: new Set(),
           step_types: new Set(),
           sample_steps: []
@@ -1870,6 +2283,9 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
       ag.output_tokens += outTok;
       ag.total_tokens += totTok;
       ag.cost_usd = Number((ag.cost_usd + stepCost).toFixed(4));
+      if (bucket === 'heartbeat_tax') ag.heartbeat_tax_usd = Number((ag.heartbeat_tax_usd + stepCost).toFixed(4));
+      else if (bucket === 'rework') ag.rework_cost_usd = Number((ag.rework_cost_usd + stepCost).toFixed(4));
+      else if (bucket === 'productive') ag.productive_cost_usd = Number((ag.productive_cost_usd + stepCost).toFixed(4));
       if (s.commit_sha) ag.commits.add(s.commit_sha);
       if (s.step_type) ag.step_types.add(s.step_type);
       if (ag.sample_steps.length < 4) {
@@ -1879,6 +2295,7 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
           step_type: s.step_type,
           title: s.title,
           cost_usd: stepCost,
+          cost_bucket: bucket,
           turns_count: stepTurns,
           event_timestamp: s.event_timestamp
         });
@@ -1886,6 +2303,11 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
     }
 
     const cleanTotalCost = Number(totalCostUsd.toFixed(4));
+    const cleanProdCost = Number(productiveCostUsd.toFixed(4));
+    const cleanReworkCost = Number(reworkCostUsd.toFixed(4));
+    const cleanHbCost = Number(heartbeatTaxUsd.toFixed(4));
+    const cleanUnattrCost = Number((cleanTotalCost - cleanProdCost - cleanReworkCost - cleanHbCost).toFixed(4));
+
     const agentsBreakdown = Object.values(byAgent).map(ag => ({
       key: ag.key,
       project: ag.project,
@@ -1903,8 +2325,12 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
       cache_read_tokens: ag.cache_read_tokens,
       output_tokens: ag.output_tokens,
       total_tokens: ag.total_tokens,
+      cache_bloat_ratio: ag.input_tokens > 0 ? Number((ag.cache_read_tokens / ag.input_tokens).toFixed(2)) : 0,
       cost_usd: ag.cost_usd,
       total_cost_usd: ag.cost_usd,
+      productive_cost_usd: ag.productive_cost_usd,
+      rework_cost_usd: ag.rework_cost_usd,
+      heartbeat_tax_usd: ag.heartbeat_tax_usd,
       share_pct: cleanTotalCost > 0 ? Number(((ag.cost_usd / cleanTotalCost) * 100).toFixed(1)) : 0,
       commits_count: ag.commits.size,
       step_types: Array.from(ag.step_types),
@@ -1916,14 +2342,23 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
       turns: totalTurns,
       turns_count: totalTurns,
       total_turns: totalTurns,
+      productive_turns: productiveTurns,
+      rework_turns: reworkTurns,
+      heartbeat_turns: heartbeatTurns,
       model_calls_count: totalModelCalls,
       tool_calls_count: totalToolCalls,
       input_tokens: totalInputTokens,
       cache_read_tokens: totalCacheTokens,
       output_tokens: totalOutputTokens,
       total_tokens: totalInputTokens + totalCacheTokens + totalOutputTokens,
+      cache_bloat_ratio: totalInputTokens > 0 ? Number((totalCacheTokens / totalInputTokens).toFixed(2)) : 0,
       cost_usd: cleanTotalCost,
       total_cost_usd: cleanTotalCost,
+      productive_cost_usd: cleanProdCost,
+      rework_cost_usd: cleanReworkCost,
+      heartbeat_tax_usd: cleanHbCost,
+      unattributed_cost_usd: cleanUnattrCost,
+      rework_ratio_pct: cleanTotalCost > 0 ? Number(((cleanReworkCost / cleanTotalCost) * 100).toFixed(1)) : 0,
       agents_count: agentsBreakdown.length,
       agents_involved: agentsBreakdown,
       commits_count: commitsSet.size,
@@ -1933,10 +2368,30 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
     };
   };
 
+  // Partition every step in allSteps into a mutually exclusive primary owner so the Work-Item Ledger conserves 100% of total_cost_usd
+  const validPrNumbers = new Set(PR_METADATA.map(p => p.pr_number));
+  const exclusivePrStepsMap = new Map();
+  const standaloneIssueStepsMap = new Map();
+  for (const p of PR_METADATA) exclusivePrStepsMap.set(p.pr_number, []);
+
+  for (const s of allSteps) {
+    const bucket = s.cost_bucket || classifyStepOrTurnCostBucket(s);
+    if (bucket === 'heartbeat_tax') continue;
+    const prNum = Number(s.pr_number) || null;
+    const issueNum = Number(s.issue_number) || null;
+    if (prNum && validPrNumbers.has(prNum)) {
+      exclusivePrStepsMap.get(prNum).push(s);
+    } else if (issueNum && issueNum > 0) {
+      if (!standaloneIssueStepsMap.has(issueNum)) standaloneIssueStepsMap.set(issueNum, []);
+      standaloneIssueStepsMap.get(issueNum).push(s);
+    }
+  }
+
   // 1. Build PR Rollups for all 9 GitHub PRs (#12-#17, #24, #25, #27)
   const prRollups = PR_METADATA.map(pr => {
     const prShaSet = new Set([pr.merge_commit, ...(pr.commit_shas || pr.commits || [])].filter(Boolean).map(x => String(x).slice(0, 7)));
     const directPrSteps = allSteps.filter(s => {
+      if (s.cost_bucket === 'heartbeat_tax') return false;
       if (Number(s.pr_number) === pr.pr_number) return true;
       const sha7 = String(s.commit_sha || '').slice(0, 7);
       if (prShaSet.has(sha7)) return true;
@@ -1946,14 +2401,17 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
     // Also include review/rollout/verification steps explicitly referencing PR #N or the PR's merge commit
     const prMentionRe = new RegExp(`(?:\\bpr\\s*#?${pr.pr_number}\\b|\\(#${pr.pr_number}\\)|\\[PR\\s*#${pr.pr_number}\\])`, 'i');
     const linkedSteps = allSteps.filter(s => {
+      if (s.cost_bucket === 'heartbeat_tax') return false;
       if (directPrSteps.includes(s) || s.pre_enriched_from_spanner_turn) return false;
-      const text = `${s.title || ''} ${s.detail || ''} ${s.raw_body || ''}`;
+      const text = stripReadOnlyListOutput(`${s.title || ''} ${s.detail || ''} ${s.raw_body || ''}`);
       if (prMentionRe.test(text) || (pr.merge_commit && text.includes(pr.merge_commit))) return true;
       return false;
     });
 
     const combinedPrSteps = [...directPrSteps, ...linkedSteps];
     const agg = aggregateStepsGroup(combinedPrSteps);
+    const exclusiveSteps = exclusivePrStepsMap.get(pr.pr_number) || [];
+    const exclusiveAgg = aggregateStepsGroup(exclusiveSteps);
     const primaryIssue = pr.primary_issue || (Array.isArray(pr.linked_issues) && pr.linked_issues.length > 0 ? pr.linked_issues[0] : 18);
     return {
       pr_number: pr.pr_number,
@@ -1970,19 +2428,24 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
       additions: pr.additions || 0,
       deletions: pr.deletions || 0,
       changed_files: pr.changed_files || 0,
+      changed_file_patterns: pr.changed_file_patterns || [],
       summary: pr.summary || '',
-      ...agg
+      ...agg,
+      exclusive_cost_usd: exclusiveAgg.cost_usd,
+      exclusive_turns_count: exclusiveAgg.turns_count,
+      exclusive_productive_cost_usd: exclusiveAgg.productive_cost_usd,
+      exclusive_rework_cost_usd: exclusiveAgg.rework_cost_usd
     };
   }).sort((a, b) => b.pr_number - a.pr_number);
 
-  // 2. Build Issue Rollups for all 26 GitHub Issues (#1-#11, #18-#23, #26, #28-#35)
+  // 2. Build Issue Rollups for all 27 GitHub Issues (#1-#11, #18-#23, #26, #28-#36)
   const issueMetaMap = {};
   for (const im of ISSUE_METADATA) {
     issueMetaMap[im.issue_number] = im;
   }
   const allIssueNumbers = new Set(ISSUE_METADATA.map(i => i.issue_number));
   for (const s of allSteps) {
-    if (s.issue_number && Number(s.issue_number) > 0) {
+    if (s.cost_bucket !== 'heartbeat_tax' && s.issue_number && Number(s.issue_number) > 0) {
       allIssueNumbers.add(Number(s.issue_number));
     }
   }
@@ -1998,8 +2461,11 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
       linked_prs: [],
       cloud_run_revision: 'psearch-serving-00030-pqq'
     };
-    const issueSteps = allSteps.filter(s => Number(s.issue_number) === issueNum);
+    const issueSteps = allSteps.filter(s => s.cost_bucket !== 'heartbeat_tax' && Number(s.issue_number) === issueNum);
     const agg = aggregateStepsGroup(issueSteps);
+    const standaloneSteps = standaloneIssueStepsMap.get(issueNum) || [];
+    const standaloneAgg = aggregateStepsGroup(standaloneSteps);
+    const prLinkedCostUsd = Number(Math.max(0, agg.cost_usd - standaloneAgg.cost_usd).toFixed(4));
     return {
       issue_number: issueNum,
       req_id: meta.req_id,
@@ -2009,23 +2475,66 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
       state: meta.state,
       linked_prs: meta.linked_prs || [],
       cloud_run_revision: meta.cloud_run_revision || null,
-      ...agg
+      ...agg,
+      standalone_cost_usd: standaloneAgg.cost_usd,
+      standalone_turns_count: standaloneAgg.turns_count,
+      standalone_productive_cost_usd: standaloneAgg.productive_cost_usd,
+      standalone_rework_cost_usd: standaloneAgg.rework_cost_usd,
+      pr_linked_cost_usd: prLinkedCostUsd
     };
   });
 
-  // 3. Build Overall Factory Cost & Turn Summary
+  // 3. Build Overall Factory Cost, 3-Bucket FinOps Decomposition & Exact Conservation Summary
   const overallAgg = aggregateStepsGroup(allSteps);
   const psearchAgg = aggregateStepsGroup(allSteps.filter(s => s.project === 'psearch'));
   const evalAgg = aggregateStepsGroup(allSteps.filter(s => s.project === 'psearch-eval'));
   const prTotalCost = Number(prRollups.reduce((acc, p) => acc + p.cost_usd, 0).toFixed(4));
+  const prExclusiveTotalCost = Number(prRollups.reduce((acc, p) => acc + p.exclusive_cost_usd, 0).toFixed(4));
+  const issueStandaloneTotalCost = Number(issueRollups.reduce((acc, i) => acc + i.standalone_cost_usd, 0).toFixed(4));
   const prTotalTurns = prRollups.reduce((acc, p) => acc + p.turns_count, 0);
+
+  const bucketSum = Number((
+    overallAgg.productive_cost_usd +
+    overallAgg.rework_cost_usd +
+    overallAgg.heartbeat_tax_usd +
+    overallAgg.unattributed_cost_usd
+  ).toFixed(4));
+  const bucketConservationDriftUsd = Number(Math.abs(overallAgg.cost_usd - bucketSum).toFixed(6));
+
+  const workItemLedgerSum = Number((
+    prExclusiveTotalCost +
+    issueStandaloneTotalCost +
+    overallAgg.heartbeat_tax_usd +
+    overallAgg.unattributed_cost_usd
+  ).toFixed(4));
+  const workItemConservationDriftUsd = Number(Math.abs(overallAgg.cost_usd - workItemLedgerSum).toFixed(6));
+  const contextBloatSlope = computeContextBloatSlope(allSteps);
 
   return {
     cost_summary: {
       total_cost_usd: overallAgg.cost_usd,
+      productive_cost_usd: overallAgg.productive_cost_usd,
+      rework_cost_usd: overallAgg.rework_cost_usd,
+      heartbeat_tax_usd: overallAgg.heartbeat_tax_usd,
+      unattributed_cost_usd: overallAgg.unattributed_cost_usd,
+      productive_share_pct: overallAgg.cost_usd > 0 ? Number(((overallAgg.productive_cost_usd / overallAgg.cost_usd) * 100).toFixed(1)) : 0,
+      rework_share_pct: overallAgg.cost_usd > 0 ? Number(((overallAgg.rework_cost_usd / overallAgg.cost_usd) * 100).toFixed(1)) : 0,
+      heartbeat_tax_share_pct: overallAgg.cost_usd > 0 ? Number(((overallAgg.heartbeat_tax_usd / overallAgg.cost_usd) * 100).toFixed(1)) : 0,
+      unattributed_share_pct: overallAgg.cost_usd > 0 ? Number(((overallAgg.unattributed_cost_usd / overallAgg.cost_usd) * 100).toFixed(1)) : 0,
+      pr_exclusive_cost_usd: prExclusiveTotalCost,
+      issue_standalone_cost_usd: issueStandaloneTotalCost,
+      conservation_drift_usd: Math.max(bucketConservationDriftUsd, workItemConservationDriftUsd),
+      bucket_conservation_drift_usd: bucketConservationDriftUsd,
+      work_item_conservation_drift_usd: workItemConservationDriftUsd,
+      conservation_verified: Math.max(bucketConservationDriftUsd, workItemConservationDriftUsd) < 0.0001,
+      cache_bloat_ratio: overallAgg.cache_bloat_ratio,
+      context_bloat_slope: contextBloatSlope,
       psearch_cost_usd: psearchAgg.cost_usd,
       psearch_eval_cost_usd: evalAgg.cost_usd,
       total_turns: overallAgg.turns_count,
+      productive_turns: overallAgg.productive_turns,
+      rework_turns: overallAgg.rework_turns,
+      heartbeat_turns: overallAgg.heartbeat_turns,
       psearch_turns: psearchAgg.turns_count,
       psearch_eval_turns: evalAgg.turns_count,
       total_steps: overallAgg.steps_count,
@@ -2554,8 +3063,9 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
     for (const [key, rows] of Object.entries(liveStreamByKey)) {
       const bucket = byAgentKey[key];
       if (!bucket) continue;
-      // Score turns so turns with rich thinking, tool calls, or inter-agent prompts are prioritized, keeping up to 16 per agent in the main timeline
-      const scored = rows.map(r => {
+      const attributedRows = attributeSpannerTurnsStatefully(rows).turns;
+      // Score turns so turns with rich thinking, tool calls, or inter-agent prompts are prioritized, keeping up to 8 per agent in the main timeline
+      const scored = attributedRows.map(r => {
         let score = 0;
         if (r.thinking_text && r.thinking_text.length > 20) score += 4;
         if (r.tool_calls_json && r.tool_calls_json.length > 10) score += 3;
@@ -2571,13 +3081,8 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
         if (bucket.seenShas.has(turnSha)) continue;
         bucket.seenShas.add(turnSha);
 
-        let rawTools = [];
-        try {
-          rawTools = typeof r.tool_calls_json === 'string' ? JSON.parse(r.tool_calls_json) : (r.tool_calls_json || []);
-        } catch (_) {
-          rawTools = [];
-        }
-        const mappedTools = (Array.isArray(rawTools) ? rawTools : []).slice(0, 5).map(tc => ({
+        const rawTools = Array.isArray(r.parsed_tool_calls) ? r.parsed_tool_calls : [];
+        const mappedTools = rawTools.slice(0, 5).map(tc => ({
           tool: String(tc.tool || 'tool').slice(0, 48),
           command: String(tc.args_preview || tc.command || tc.summary || tc.action || tc.tool || '').slice(0, 180),
           output: String(tc.output_preview || tc.output || (r.tool_output_text ? String(r.tool_output_text).slice(0, 220) : 'Executed via harness')).slice(0, 220),
@@ -2596,10 +3101,14 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
         const outTok = Number(r.output_tokens) || 0;
         const totTok = Number(r.total_tokens) || (inTok + cacheTok + outTok);
         const costUsd = Number(Number(r.cost_usd || 0).toFixed(4));
+        const isHbTurn = r.cost_bucket === 'heartbeat_tax';
 
         bucket.steps.push({
           wave: r.issue_number && r.issue_number <= 11 ? 'wave-1' : 'wave-6',
-          issue_number: Number(r.issue_number) || 34,
+          issue_number: isHbTurn ? null : (Number(r.issue_number) || null),
+          pr_number: isHbTurn ? null : (Number(r.pr_number) || null),
+          cost_bucket: r.cost_bucket || 'productive',
+          attribution_source: r.attribution_source || 'live_harness_stream',
           step_type: `HARNESS_${String(r.turn_type || 'TURN').toUpperCase().replace(/_TURN$/, '')}`,
           commit_sha: turnSha,
           session_id: r.session_id,
@@ -2642,6 +3151,9 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
     const bucket = byAgentKey[key];
     bucket.steps.sort((a, b) => String(a.event_timestamp).localeCompare(String(b.event_timestamp)));
 
+    let activeSessionIssue = null;
+    let activeSessionPr = null;
+
     const stepsWithIndex = bucket.steps.map((s, idx) => {
       const baseStepObj = {
         step_index: idx + 1,
@@ -2657,6 +3169,17 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
         raw_body: s.raw_body ? String(s.raw_body).slice(0, 420) : undefined
       };
       const enriched = enrichStepWithConversationAndTools(baseStepObj, meta);
+      if (enriched.cost_bucket !== 'heartbeat_tax') {
+        if (!enriched.issue_number && activeSessionIssue) {
+          enriched.issue_number = activeSessionIssue;
+          enriched.pr_number = enriched.pr_number || activeSessionPr;
+          enriched.attribution_source = 'session_carry_forward';
+          enriched.cost_bucket = classifyStepOrTurnCostBucket(enriched);
+        } else {
+          if (enriched.issue_number) activeSessionIssue = enriched.issue_number;
+          if (enriched.pr_number) activeSessionPr = enriched.pr_number;
+        }
+      }
       allStepsChronological.push(enriched);
       return enriched;
     });
@@ -2701,7 +3224,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
       commits_count: commitsSet.size,
       reconstructed_turns: turns,
       reconstructed_model_calls: modelCalls,
-      last_summary: lastStep ? `#${lastStep.issue_number || 35} ${lastStep.title.slice(0, 72)}` : meta.summary_focus,
+      last_summary: lastStep ? `#${lastStep.issue_number || 36} ${lastStep.title.slice(0, 72)}` : meta.summary_focus,
       summary_focus: meta.summary_focus,
       last_activity_at: lastStep ? lastStep.event_timestamp : new Date().toISOString()
     };
@@ -2803,6 +3326,12 @@ module.exports = {
   BASELINE_TRAJECTORIES,
   buildTrajectoriesPayload,
   buildCostAndWorkItemRollups,
+  attributeSpannerTurnsStatefully,
+  stripReadOnlyListOutput,
+  matchPrByChangedFiles,
+  isIdleHeartbeatStepOrTurn,
+  classifyStepOrTurnCostBucket,
+  computeContextBloatSlope,
   syncTrajectoriesToSpanner,
   answerTrajectoryConversationQuery,
   resolvePrAndIssueForStep

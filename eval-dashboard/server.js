@@ -10,6 +10,8 @@ const {
   ISSUE_METADATA,
   buildTrajectoriesPayload,
   buildCostAndWorkItemRollups,
+  attributeSpannerTurnsStatefully,
+  computeContextBloatSlope,
   syncTrajectoriesToSpanner,
   answerTrajectoryConversationQuery,
   resolvePrAndIssueForStep
@@ -575,7 +577,7 @@ app.post('/api/trajectories/rebuild', async (req, res) => {
   }
 });
 
-// GET /api/trajectories/turns - Direct query of Cloud Spanner agent_conversation_turns across psearch & psearch-eval (supports ?issue= & ?pr= filtering + cost breakdown)
+// GET /api/trajectories/turns - Direct query of Cloud Spanner agent_conversation_turns across psearch & psearch-eval (supports ?issue=, ?pr=, ?classification= filtering + FinOps conservation breakdown)
 app.get('/api/trajectories/turns', async (req, res) => {
   try {
     const db = getSpannerDatabase();
@@ -584,28 +586,19 @@ app.get('/api/trajectories/turns', async (req, res) => {
     const filterProject = req.query.project || '';
     const filterAgent = req.query.agent || '';
     const filterSource = req.query.source_mode || '';
+    const filterClassification = req.query.classification || req.query.cost_bucket || '';
     const filterIssue = req.query.issue && req.query.issue !== 'all' ? Number(String(req.query.issue).replace(/\D+/g, '')) : null;
     const filterPr = req.query.pr && req.query.pr !== 'all' ? Number(String(req.query.pr).replace(/\D+/g, '')) : null;
     const limit = Math.min(1000, Math.max(1, parseInt(req.query.limit || '500', 10)));
 
-    const allTurns = allTurnsRaw.map(t => {
-      const resolved = resolvePrAndIssueForStep({
-        issue_number: t.issue_number,
-        project_slug: t.project_slug,
-        title: t.prompt_text || '',
-        detail: t.response_text || ''
-      });
-      return {
-        ...t,
-        issue_number: resolved.issue_number || t.issue_number || 34,
-        pr_number: resolved.pr_number || null
-      };
-    });
+    const statefulResult = attributeSpannerTurnsStatefully(allTurnsRaw);
+    const allTurns = statefulResult.turns;
 
     const filtered = allTurns.filter(t => {
       if (filterProject && filterProject !== 'all' && t.project_slug !== filterProject) return false;
       if (filterAgent && filterAgent !== 'all' && t.agent_name !== filterAgent) return false;
       if (filterSource && filterSource !== 'all' && t.source_mode !== filterSource) return false;
+      if (filterClassification && filterClassification !== 'all' && t.cost_bucket !== filterClassification) return false;
       if (filterIssue && Number(t.issue_number) !== filterIssue) return false;
       if (filterPr && Number(t.pr_number) !== filterPr) return false;
       return true;
@@ -626,32 +619,77 @@ app.get('/api/trajectories/turns', async (req, res) => {
             total_turns: 0,
             live_harness_turns: 0,
             reconstructed_turns: 0,
+            input_tokens: 0,
+            cache_read_tokens: 0,
+            output_tokens: 0,
             total_tokens: 0,
             cost_usd: 0,
-            total_cost_usd: 0
+            total_cost_usd: 0,
+            productive_cost_usd: 0,
+            rework_cost_usd: 0,
+            heartbeat_tax_usd: 0
           };
         }
         const s = map[k];
+        const c = Number(t.cost_usd) || 0;
         s.turns += 1;
         s.total_turns += 1;
         if (t.source_mode === 'live_harness_stream') s.live_harness_turns += 1;
         else s.reconstructed_turns += 1;
+        s.input_tokens += Number(t.input_tokens) || 0;
+        s.cache_read_tokens += Number(t.cache_read_tokens) || 0;
+        s.output_tokens += Number(t.output_tokens) || 0;
         s.total_tokens += Number(t.total_tokens) || 0;
-        s.total_cost_usd = Number((s.total_cost_usd + (Number(t.cost_usd) || 0)).toFixed(4));
+        s.total_cost_usd = Number((s.total_cost_usd + c).toFixed(4));
         s.cost_usd = s.total_cost_usd;
+        if (t.cost_bucket === 'heartbeat_tax') s.heartbeat_tax_usd = Number((s.heartbeat_tax_usd + c).toFixed(4));
+        else if (t.cost_bucket === 'rework') s.rework_cost_usd = Number((s.rework_cost_usd + c).toFixed(4));
+        else if (t.cost_bucket === 'productive') s.productive_cost_usd = Number((s.productive_cost_usd + c).toFixed(4));
       }
-      return Object.values(map).sort((a, b) => b.total_cost_usd - a.total_cost_usd || b.total_turns - a.total_turns);
+      return Object.values(map).map(ag => ({
+        ...ag,
+        cache_bloat_ratio: ag.input_tokens > 0 ? Number((ag.cache_read_tokens / ag.input_tokens).toFixed(2)) : 0
+      })).sort((a, b) => b.total_cost_usd - a.total_cost_usd || b.total_turns - a.total_turns);
     };
 
     const filteredAgentsSummary = buildTurnsSummaryMap(filtered);
-    const filteredTotalCost = Number(filtered.reduce((acc, t) => acc + (Number(t.cost_usd) || 0), 0).toFixed(4));
-    const filteredTotalTokens = filtered.reduce((acc, t) => acc + (Number(t.total_tokens) || 0), 0);
+    let filteredTotalCost = 0;
+    let filteredProdCost = 0;
+    let filteredReworkCost = 0;
+    let filteredHbCost = 0;
+    let filteredInputTok = 0;
+    let filteredCacheTok = 0;
+    let filteredTotalTokens = 0;
+    for (const t of filtered) {
+      const c = Number(Number(t.cost_usd || 0).toFixed(4));
+      filteredTotalCost += c;
+      filteredInputTok += Number(t.input_tokens) || 0;
+      filteredCacheTok += Number(t.cache_read_tokens) || 0;
+      filteredTotalTokens += Number(t.total_tokens) || 0;
+      if (t.cost_bucket === 'heartbeat_tax') filteredHbCost += c;
+      else if (t.cost_bucket === 'rework') filteredReworkCost += c;
+      else if (t.cost_bucket === 'productive') filteredProdCost += c;
+    }
+    const cleanFilteredTotal = Number(filteredTotalCost.toFixed(4));
+    const cleanFilteredProd = Number(filteredProdCost.toFixed(4));
+    const cleanFilteredRework = Number(filteredReworkCost.toFixed(4));
+    const cleanFilteredHb = Number(filteredHbCost.toFixed(4));
+    const cleanFilteredUnattr = Number((cleanFilteredTotal - cleanFilteredProd - cleanFilteredRework - cleanFilteredHb).toFixed(4));
+    const filteredDrift = Number(Math.abs(cleanFilteredTotal - (cleanFilteredProd + cleanFilteredRework + cleanFilteredHb + cleanFilteredUnattr)).toFixed(6));
+
     const summaryObj = {
       turns: filtered.length,
       total_turns: filtered.length,
       total_tokens: filteredTotalTokens,
-      cost_usd: filteredTotalCost,
-      total_cost_usd: filteredTotalCost,
+      cost_usd: cleanFilteredTotal,
+      total_cost_usd: cleanFilteredTotal,
+      productive_cost_usd: cleanFilteredProd,
+      rework_cost_usd: cleanFilteredRework,
+      heartbeat_tax_usd: cleanFilteredHb,
+      unattributed_cost_usd: cleanFilteredUnattr,
+      conservation_drift_usd: filteredDrift,
+      cache_bloat_ratio: filteredInputTok > 0 ? Number((filteredCacheTok / filteredInputTok).toFixed(2)) : 0,
+      context_bloat_slope: computeContextBloatSlope(filtered),
       agents_count: filteredAgentsSummary.length,
       agents_involved: filteredAgentsSummary
     };
@@ -661,11 +699,13 @@ app.get('/api/trajectories/turns', async (req, res) => {
       spanner_table: 'agent_conversation_turns',
       total_turns_in_spanner: allTurns.length,
       live_harness_turns_in_spanner: allTurns.filter(t => t.source_mode === 'live_harness_stream').length,
+      finops_breakdown: statefulResult.finops_breakdown,
       filters_applied: {
         project: filterProject || 'all',
         agent: filterAgent || 'all',
         issue: filterIssue || 'all',
         pr: filterPr || 'all',
+        classification: filterClassification || 'all',
         source_mode: filterSource || 'all'
       },
       filtered_count: filtered.length,

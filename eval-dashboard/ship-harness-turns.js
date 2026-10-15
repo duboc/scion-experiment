@@ -103,31 +103,126 @@ function cleanJsonArgString(val) {
   return String(s);
 }
 
-function extractIssueNumberFromText(text) {
-  const s = String(text || '');
+const DEFAULT_CURSOR_PATH = process.env.SCION_SHIP_CURSOR_PATH || path.join(__dirname, '.ship-cursor.json');
+
+function loadShipCursor(cursorPath = DEFAULT_CURSOR_PATH) {
+  try {
+    if (fs.existsSync(cursorPath)) {
+      const parsed = JSON.parse(fs.readFileSync(cursorPath, 'utf8'));
+      if (parsed && typeof parsed === 'object' && parsed.files) {
+        return parsed;
+      }
+    }
+  } catch (_) {}
+  return { version: 1, updated_at: null, files: {} };
+}
+
+function saveShipCursor(cursorPath = DEFAULT_CURSOR_PATH, cursorObj = { version: 1, files: {} }) {
+  try {
+    cursorObj.updated_at = new Date().toISOString();
+    fs.writeFileSync(cursorPath, JSON.stringify(cursorObj, null, 2), 'utf8');
+  } catch (_) {}
+}
+
+// Strip read-only CLI listing tables (gh issue list, gh pr list, scion list) and heartbeat boilerplate
+// so idle heartbeat turns never leak issue/PR numbers from stdout listings.
+function stripReadOnlyListOutput(text) {
+  let s = String(text || '');
+  // Remove tabular gh issue list / gh pr list rows: e.g. "35\tOPEN\tfeat..." or "#35 OPEN ..."
+  s = s.replace(/^\s*#?\d{1,3}\t(?:OPEN|CLOSED|MERGED)\t.*$/gim, ' ');
+  s = s.replace(/^\s*#?\d{1,3}\s+(?:OPEN|CLOSED|MERGED)\s+.*$/gim, ' ');
+  // RemoveHEARTBEAT instruction template text
+  s = s.replace(/HEARTBEAT\s*\(every\s*\d+\s*min\)[\s\S]*?(?:do only step 5\.?|$)/gi, ' ');
+  // Remove command lines that merely list open issues/PRs
+  s = s.replace(/gh\s+(?:issue|pr)\s+list[^\n]*/gi, ' ');
+  // Remove range expressions like "#1-#35", "#1–#33", "#12-#17"
+  s = s.replace(/(?:pr\s*|issue\s*|issues\s*)?#\d{1,2}\s*(?:[-–—]+|\.\.+|to)\s*(?:pr\s*|issue\s*)?#?\d{1,2}/gi, ' ');
+  return s;
+}
+
+function extractTurnActionMetadata(toolCallsFormatted = [], parsedPrompt = {}, outboundToAgent = null) {
+  const mutatedFilesSet = new Set();
+  const gitGhCommands = [];
+  let failedToolCallsCount = 0;
+  let hasReadOnlyIssueList = false;
+
+  for (const tc of toolCallsFormatted) {
+    const toolName = String(tc.tool || '');
+    const argsStr = String(tc.args_preview || '');
+    const outStr = String(tc.output_preview || '');
+    const st = String(tc.status || 'ok').toLowerCase();
+
+    if (st === 'warn' || st === 'error' || /exited with code [1-9]/i.test(outStr)) {
+      failedToolCallsCount++;
+    }
+
+    if (/gh\s+(?:issue|pr)\s+list/i.test(argsStr)) {
+      hasReadOnlyIssueList = true;
+    }
+
+    // Track file mutations
+    if (['write_to_file', 'replace_file_content', 'multi_replace_file_content', 'Edit', 'Write', 'MultiEdit'].includes(toolName)) {
+      const cleaned = argsStr.replace(/^\/workspace\//, '').trim();
+      if (cleaned && !cleaned.startsWith('{') && cleaned.length < 180) {
+        mutatedFilesSet.add(cleaned);
+      }
+    }
+
+    // Track git / gh mutation or inspection commands
+    const ghMatches = argsStr.match(/\b(?:gh\s+(?:pr|issue)\s+(?:create|merge|review|close|comment|edit|view)|git\s+(?:commit|push|checkout|merge|cherry-pick))[^\n;&|]*/gi);
+    if (ghMatches) {
+      for (const gm of ghMatches) {
+        gitGhCommands.push(gm.trim().slice(0, 120));
+      }
+    }
+  }
+
+  const mutatedFiles = Array.from(mutatedFilesSet);
+  const isScheduledHeartbeat = Boolean(parsedPrompt && parsedPrompt.isHeartbeat);
+  const isIdleHeartbeat = Boolean(
+    isScheduledHeartbeat &&
+    mutatedFiles.length === 0 &&
+    gitGhCommands.length === 0 &&
+    !outboundToAgent
+  );
+
+  return {
+    mutated_files: mutatedFiles,
+    git_gh_commands: gitGhCommands,
+    failed_tool_calls_count: failedToolCallsCount,
+    has_readonly_issue_list: hasReadOnlyIssueList,
+    is_scheduled_heartbeat: isScheduledHeartbeat,
+    is_idle_heartbeat: isIdleHeartbeat
+  };
+}
+
+function extractIssueNumberFromText(text, options = {}) {
+  if (options && options.isIdleHeartbeat) {
+    return null;
+  }
+  const s = stripReadOnlyListOutput(text);
   const allPrMentions = Array.from(s.matchAll(/(?:pull request|pr)\s*#?(\d{1,2})\b/gi)).map(m => parseInt(m[1], 10));
   const uniquePrs = Array.from(new Set(allPrMentions));
   if (uniquePrs.length === 1 && s.length < 360) {
     return uniquePrs[0];
   }
-  const withoutRanges = s.replace(/(?:pr\s*)?#\d{1,2}\s*(?:[-–—]+|\.\.+|to)\s*(?:pr\s*)?#?\d{1,2}/gi, ' ');
   const prNums = new Set([12, 13, 14, 15, 16, 17, 24, 25, 27]);
   const matches = [];
   const re = /(?:issue\s*#?|#)(\d{1,2})\b/gi;
   let m;
-  while ((m = re.exec(withoutRanges)) !== null) {
+  while ((m = re.exec(s)) !== null) {
     const n = parseInt(m[1], 10);
     if (n >= 1 && n <= 50 && !prNums.has(n)) matches.push(n);
   }
   if (matches.length > 0) {
     return matches[matches.length - 1];
   }
-  if (/#1\s*[-–—]+\s*#?35\b/i.test(s) || /sponsored|retail media|00030/i.test(s)) return 35;
-  if (/#1\s*[-–—]+\s*#?34\b/i.test(s) || /clickable facet|faceta|00029/i.test(s)) return 34;
-  if (/#1\s*[-–—]+\s*#?33\b/i.test(s) || /multimodal|00028/i.test(s)) return 33;
-  if (/#1\s*[-–—]+\s*#?32\b/i.test(s) || /variant|00027/i.test(s)) return 32;
-  if (/pyramid|76-scenario|l1[-–]l5|#19\s*[-–—]+\s*#?2[23]/i.test(s)) return 26;
-  if (/#1\s*[-–—]+\s*#?10\b/i.test(s)) return 18;
+  if (/finops|stateful turn attribution|ship-cursor|issue #36/i.test(s)) return 36;
+  if (/sponsored|retail media|00030/i.test(s)) return 35;
+  if (/clickable facet|faceta|00029/i.test(s)) return 34;
+  if (/multimodal|00028/i.test(s)) return 33;
+  if (/variant|00027/i.test(s)) return 32;
+  if (/pyramid|76-scenario|l1[-–]l5/i.test(s)) return 26;
   return null;
 }
 
@@ -191,9 +286,9 @@ function parseUserInputPrompt(rawContent, projectSlug, agentName) {
   };
 }
 
-function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
+function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model, options = {}) {
   const brainDir = path.join(homeDir, '.gemini', 'antigravity-cli', 'brain');
-  if (!fs.existsSync(brainDir)) return { turns: [], totalModelCalls: 0, peerMessageTurns: [] };
+  if (!fs.existsSync(brainDir)) return { turns: [], rawTurnCount: 0, totalModelCalls: 0, peerMessageTurns: [], updatedCursorFiles: {}, unchangedFilesSkipped: 0 };
 
   let sessionDirs = [];
   try {
@@ -202,15 +297,37 @@ function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
       return fs.existsSync(p);
     });
   } catch (_) {
-    return { turns: [], totalModelCalls: 0, peerMessageTurns: [] };
+    return { turns: [], rawTurnCount: 0, totalModelCalls: 0, peerMessageTurns: [], updatedCursorFiles: {}, unchangedFilesSkipped: 0 };
   }
+
+  const cursorFiles = (options.cursor && options.cursor.files) ? options.cursor.files : {};
+  const forceFull = Boolean(options.force);
+  const updatedCursorFiles = { ...cursorFiles };
+  let unchangedFilesSkipped = 0;
 
   const allTurns = [];
   const peerMessageTurns = [];
   let totalModelCalls = 0;
+  let totalRawTurnsAcrossSessions = 0;
+  let activeSessionIssueCarryForward = null;
 
   for (const sessionId of sessionDirs) {
     const transcriptPath = path.join(brainDir, sessionId, '.system_generated', 'logs', 'transcript.jsonl');
+    let stat = null;
+    try {
+      stat = fs.statSync(transcriptPath);
+    } catch (_) {
+      continue;
+    }
+
+    const prevCursor = cursorFiles[transcriptPath];
+    if (!forceFull && prevCursor && prevCursor.size === stat.size) {
+      unchangedFilesSkipped++;
+      totalRawTurnsAcrossSessions += Number(prevCursor.rawTurns) || 0;
+      totalModelCalls += Number(prevCursor.modelCalls) || 0;
+      continue;
+    }
+
     let lines = [];
     try {
       lines = fs.readFileSync(transcriptPath, 'utf8')
@@ -226,6 +343,9 @@ function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
 
     let i = 0;
     let sessionTurnCounter = 0;
+    let fileModelCalls = 0;
+    const prevLastTurnIndex = (!forceFull && prevCursor) ? (Number(prevCursor.lastTurnIndex) || 0) : 0;
+    activeSessionIssueCarryForward = (!forceFull && prevCursor && prevCursor.lastActiveIssue) ? prevCursor.lastActiveIssue : null;
 
     while (i < lines.length) {
       if (lines[i].type !== 'USER_INPUT') {
@@ -253,7 +373,7 @@ function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
         const entry = lines[j];
         if (entry.type === 'PLANNER_RESPONSE') {
           plannerStepsInTurn++;
-          totalModelCalls++;
+          fileModelCalls++;
           inputTokens += Number(entry.input_tokens) || 0;
           cacheReadTokens += Number(entry.cache_read_tokens) || 0;
           outputTokens += Number(entry.output_tokens) || 0;
@@ -267,7 +387,6 @@ function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
           }
 
           if (Array.isArray(entry.tool_calls) && entry.tool_calls.length > 0) {
-            // Find any immediately following GENERIC outputs
             const genericOutputs = [];
             let k = j + 1;
             while (k < lines.length && lines[k].type === 'GENERIC') {
@@ -297,6 +416,7 @@ function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
                 action: action.slice(0, 220),
                 summary: summary.slice(0, 220),
                 args_preview: (cmdLine || targetFile || JSON.stringify(args)).slice(0, 500),
+                target_file: targetFile ? targetFile.replace(/^\/workspace\//, '').slice(0, 180) : undefined,
                 status: rawOut.includes('exited with code 0') || !rawOut.includes('exited with code') ? 'ok' : 'warn',
                 output_preview: rawOut.slice(0, 700)
               });
@@ -312,7 +432,7 @@ function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
 
       i = j;
 
-      // Classify turn
+      const actionMeta = extractTurnActionMetadata(toolCallsFormatted, parsedPrompt, outboundToAgent);
       const toolNames = toolCallsFormatted.map((t) => t.tool);
       const allArgsText = toolCallsFormatted.map((t) => t.args_preview).join(' ');
       let turnType = 'tool_execution_turn';
@@ -345,8 +465,24 @@ function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
         ? outboundToAgent
         : parsedPrompt.toAgent;
 
+      const isIdleHeartbeat = turnType === 'heartbeat_check';
       const combinedText = `${parsedPrompt.promptText}\n${responseBlocks.join('\n')}\n${allArgsText}`;
-      const issueNumber = extractIssueNumberFromText(combinedText);
+      let issueNumber = extractIssueNumberFromText(combinedText, { isIdleHeartbeat });
+      let attributionSource = issueNumber ? 'explicit_mention' : null;
+
+      // Stateful session carry-forward: if this is a substantive working turn without an explicit issue mention, inherit active issue
+      if (!isIdleHeartbeat && !issueNumber && activeSessionIssueCarryForward) {
+        issueNumber = activeSessionIssueCarryForward;
+        attributionSource = 'session_carry_forward';
+      } else if (!isIdleHeartbeat && issueNumber) {
+        activeSessionIssueCarryForward = issueNumber;
+      }
+
+      // Skip already-shipped turns when running incrementally
+      if (sessionTurnCounter <= prevLastTurnIndex) {
+        continue;
+      }
+
       const totalTokens = inputTokens + cacheReadTokens + outputTokens;
       const costUsd = computeTurnCostUsd(model, inputTokens, cacheReadTokens, outputTokens);
 
@@ -361,6 +497,8 @@ function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
         from_agent: finalFromAgent,
         to_agent: finalToAgent,
         issue_number: issueNumber,
+        attribution_source: isIdleHeartbeat ? 'heartbeat_tax' : (attributionSource || 'unattributed'),
+        action_metadata: actionMeta,
         prompt_text: parsedPrompt.promptText.slice(0, 8000),
         thinking_text: thinkingBlocks.join('\n\n---\n\n').slice(0, 12000),
         tool_calls_json: JSON.stringify(toolCallsFormatted.slice(0, 25)),
@@ -378,7 +516,6 @@ function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
 
       allTurns.push(turnObj);
 
-      // If this turn was an incoming message from a peer agent in psearch-eval, also record a peer message representation
       if (
         parsedPrompt.scionMsgMeta &&
         parsedPrompt.fromAgent &&
@@ -426,6 +563,17 @@ function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
         });
       }
     }
+
+    totalRawTurnsAcrossSessions += sessionTurnCounter;
+    totalModelCalls += fileModelCalls;
+    updatedCursorFiles[transcriptPath] = {
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      rawTurns: sessionTurnCounter,
+      modelCalls: fileModelCalls,
+      lastTurnIndex: sessionTurnCounter,
+      lastActiveIssue: activeSessionIssueCarryForward
+    };
   }
 
   // Keep 100% of substantive turns, plus the 4 most recent heartbeat_check turns so heartbeat health is visible without noise
@@ -437,9 +585,11 @@ function parseAntigravityTranscripts(homeDir, projectSlug, agentName, model) {
 
   return {
     turns: filteredTurns,
-    rawTurnCount: allTurns.length,
+    rawTurnCount: totalRawTurnsAcrossSessions,
     totalModelCalls,
-    peerMessageTurns
+    peerMessageTurns,
+    updatedCursorFiles,
+    unchangedFilesSkipped
   };
 }
 
@@ -591,14 +741,43 @@ async function updateAgentTurnCountersInSpanner(db, projectSlug, agentName, turn
 }
 
 async function shipLocalContainerTurns(options = {}) {
+  const startMs = Date.now();
   const identity = detectAgentIdentity(options.homeDir);
   const { projectSlug, agentName, harness, model, homeDir } = identity;
+  const cursorPath = options.cursorPath || DEFAULT_CURSOR_PATH;
+  const forceFull = Boolean(options.force);
+  const cursor = loadShipCursor(cursorPath);
 
-  let parsed = { turns: [], rawTurnCount: 0, totalModelCalls: 0, peerMessageTurns: [] };
+  let parsed = {
+    turns: [],
+    rawTurnCount: 0,
+    totalModelCalls: 0,
+    peerMessageTurns: [],
+    updatedCursorFiles: cursor.files || {},
+    unchangedFilesSkipped: 0
+  };
   if (harness === 'antigravity') {
-    parsed = parseAntigravityTranscripts(homeDir, projectSlug, agentName, model);
+    parsed = parseAntigravityTranscripts(homeDir, projectSlug, agentName, model, { cursor, force: forceFull });
   } else if (harness === 'claude') {
     parsed = parseClaudeCodeTranscripts(homeDir, projectSlug, agentName, model);
+  }
+
+  // Zero-extra-cost incremental fast path: if no new turns were appended since last cursor save, perform 0 Spanner writes
+  if (parsed.turns.length === 0 && (!Array.isArray(parsed.peerMessageTurns) || parsed.peerMessageTurns.length === 0)) {
+    return {
+      project_slug: projectSlug,
+      agent_name: agentName,
+      harness,
+      model,
+      shipped_turns: 0,
+      raw_turns: parsed.rawTurnCount || 0,
+      model_calls: parsed.totalModelCalls || 0,
+      persisted_rows: 0,
+      spanner_writes: 0,
+      incremental_noop: true,
+      unchanged_files_skipped: parsed.unchangedFilesSkipped || 0,
+      elapsed_ms: Date.now() - startMs
+    };
   }
 
   const db = options.db || getSpannerDatabase();
@@ -635,6 +814,13 @@ async function shipLocalContainerTurns(options = {}) {
     }
   }
 
+  if (parsed.updatedCursorFiles) {
+    saveShipCursor(cursorPath, {
+      version: 1,
+      files: parsed.updatedCursorFiles
+    });
+  }
+
   return {
     project_slug: projectSlug,
     agent_name: agentName,
@@ -643,7 +829,11 @@ async function shipLocalContainerTurns(options = {}) {
     shipped_turns: parsed.turns.length,
     raw_turns: parsed.rawTurnCount || parsed.turns.length,
     model_calls: parsed.totalModelCalls || 0,
-    persisted_rows: persisted
+    persisted_rows: persisted,
+    spanner_writes: persisted,
+    incremental_noop: false,
+    unchanged_files_skipped: parsed.unchangedFilesSkipped || 0,
+    elapsed_ms: Date.now() - startMs
   };
 }
 
@@ -678,7 +868,7 @@ async function fetchGithubTrajectoryInputs() {
 
 async function syncAllTrajectoriesAndTurnsToSpanner(options = {}) {
   const db = options.db || getSpannerDatabase();
-  const localResult = await shipLocalContainerTurns({ db, homeDir: options.homeDir });
+  const localResult = await shipLocalContainerTurns({ db, homeDir: options.homeDir, force: options.force });
 
   // Also ensure all 10 agents across psearch and psearch-eval have their full multi-turn conversation steps
   // in agent_conversation_turns so every agent across both groves has full prompts, thinking, tool calls, and costs in Spanner.
@@ -775,21 +965,22 @@ if (require.main === module) {
   const args = process.argv.slice(2);
   const quiet = args.includes('--quiet');
   const syncAll = args.includes('--sync-all');
+  const force = args.includes('--force');
 
   // Use a lightweight lockfile per agent so rapid PostToolUse hooks don't overlap
   const id = detectAgentIdentity();
   const lockFile = `/tmp/ship-harness-turns-${id.projectSlug}-${id.agentName}.lock`;
   try {
-    if (fs.existsSync(lockFile) && !syncAll) {
+    if (fs.existsSync(lockFile) && !syncAll && !force) {
       const stat = fs.statSync(lockFile);
-      if (Date.now() - stat.mtimeMs < 8000) {
+      if (Date.now() - stat.mtimeMs < 1500) {
         process.exit(0);
       }
     }
     fs.writeFileSync(lockFile, String(process.pid));
   } catch (_) {}
 
-  const runner = syncAll ? syncAllTrajectoriesAndTurnsToSpanner() : shipLocalContainerTurns();
+  const runner = syncAll ? syncAllTrajectoriesAndTurnsToSpanner({ force }) : shipLocalContainerTurns({ force });
   runner
     .then((res) => {
       try { fs.unlinkSync(lockFile); } catch (_) {}
@@ -809,6 +1000,11 @@ if (require.main === module) {
 
 module.exports = {
   detectAgentIdentity,
+  stripReadOnlyListOutput,
+  extractTurnActionMetadata,
+  extractIssueNumberFromText,
+  loadShipCursor,
+  saveShipCursor,
   parseAntigravityTranscripts,
   parseClaudeCodeTranscripts,
   upsertTurnsBatch,

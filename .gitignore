@@ -6,3 +6,5 @@ scratchpad/
 node_modules/
 __pycache__/
 *.pyc
+.ship-cursor.json
+eval-dashboard/.ship-cursor.json

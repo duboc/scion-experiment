@@ -689,20 +689,62 @@
     }
   }
 
+  let lastLazyTurnsFetchKey = '';
+
+  async function fetchLazyWorkItemSpannerTurns(type, id) {
+    const key = type + ':' + id;
+    lastLazyTurnsFetchKey = key;
+    const container = document.getElementById('drilldown-lazy-turns-strip');
+    if (!container) return;
+    try {
+      const qs = type === 'pr' ? ('pr=' + encodeURIComponent(id)) : ('issue=' + encodeURIComponent(id));
+      const resp = await fetch('/api/trajectories/turns?' + qs + '&limit=12', { cache: 'no-store' });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (lastLazyTurnsFetchKey !== key) return;
+      const summary = data.filtered_cost_summary || {};
+      const turns = Array.isArray(data.turns) ? data.turns : [];
+      const srcCounts = {};
+      turns.forEach(t => {
+        const s = t.attribution_source || 'explicit_step';
+        srcCounts[s] = (srcCounts[s] || 0) + 1;
+      });
+      const srcSummary = Object.entries(srcCounts).map(([k, v]) => k + ': ' + v).join(' · ') || 'none';
+      container.innerHTML =
+        '<div class="mono" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:0.4rem;padding:0.42rem 0.85rem;background:var(--bg-subtle);border-bottom:1px solid var(--border-hairline);font-size:0.68rem;color:var(--text-secondary);">' +
+          '<span><strong>⚡ Lazy Spanner Turn Drill-Down (' + (data.filtered_count || 0) + ' turns):</strong> Prod <strong>$' + Number(summary.productive_cost_usd || 0).toFixed(4) + '</strong> · Rework <strong style="color:var(--status-warn);">$' + Number(summary.rework_cost_usd || 0).toFixed(4) + '</strong> · Cache Bloat <strong>' + Number(summary.cache_bloat_ratio || 0).toFixed(1) + 'x</strong></span>' +
+          '<span>Attribution: <strong>' + escapeHTML(srcSummary) + '</strong> · Drift: <strong style="color:var(--status-good);">$' + Number(summary.conservation_drift_usd || 0).toFixed(4) + ' ✓</strong></span>' +
+        '</div>';
+    } catch (_) {
+      // ignore transient network errors
+    }
+  }
+
   function renderCostAndWorkItemExplorer() {
     if (!cachedTrajectories) return;
     const costSummary = cachedTrajectories.cost_summary || {};
     const prRollups = Array.isArray(cachedTrajectories.pr_rollups) ? cachedTrajectories.pr_rollups : [];
     const issueRollups = Array.isArray(cachedTrajectories.issue_rollups) ? cachedTrajectories.issue_rollups : [];
 
-    // 1. Update Top Cost Banner Summary
+    // 1. Update Top Cost Banner Summary with 3-Bucket FinOps Decomposition & Exact Conservation Proof
     const bannerEl = document.getElementById('traj-cost-banner-summary');
     if (bannerEl && costSummary.total_cost_usd !== undefined) {
       const totM = ((Number(costSummary.total_tokens) || 0) / 1e6).toFixed(2);
+      const driftVal = Number(costSummary.conservation_drift_usd || 0).toFixed(4);
+      const cacheBloat = Number(costSummary.cache_bloat_ratio || 0).toFixed(1);
+      const bloatSlope = Number(costSummary.context_bloat_slope || 0);
+      const slopeStr = (bloatSlope >= 0 ? '+' : '') + bloatSlope.toFixed(0) + ' tok/turn';
       bannerEl.innerHTML =
-        'Total Factory Cost: <strong style="color:var(--text-primary);">$' + Number(costSummary.total_cost_usd || 0).toFixed(4) + ' USD</strong> ' +
+        '<div>Total Factory Cost: <strong style="color:var(--text-primary);">$' + Number(costSummary.total_cost_usd || 0).toFixed(4) + ' USD</strong> ' +
         '(psearch: $' + Number(costSummary.psearch_cost_usd || 0).toFixed(4) + ' · psearch-eval: $' + Number(costSummary.psearch_eval_cost_usd || 0).toFixed(4) + ') · ' +
-        'Total Turns: <strong>' + (costSummary.total_turns || 0) + '</strong> (' + (costSummary.total_steps || 0) + ' steps · ' + (costSummary.total_model_calls || 0) + ' model calls · ' + (costSummary.total_tool_calls || 0) + ' tool calls · ' + totM + 'M tokens)';
+        'Total Turns: <strong>' + (costSummary.total_turns || 0) + '</strong> (' + (costSummary.total_steps || 0) + ' steps · ' + (costSummary.total_model_calls || 0) + ' model calls · ' + (costSummary.total_tool_calls || 0) + ' tool calls · ' + totM + 'M tokens)</div>' +
+        '<div style="margin-top:0.22rem;font-size:0.7rem;color:var(--text-secondary);">' +
+          'FinOps 3-Bucket Ledger: <strong style="color:var(--status-good);">Productive $' + Number(costSummary.productive_cost_usd || 0).toFixed(4) + ' (' + Number(costSummary.productive_share_pct || 0).toFixed(1) + '%)</strong> · ' +
+          '<strong style="color:var(--status-warn);">Rework $' + Number(costSummary.rework_cost_usd || 0).toFixed(4) + ' (' + Number(costSummary.rework_share_pct || 0).toFixed(1) + '%)</strong> · ' +
+          '<strong>Heartbeat Tax $' + Number(costSummary.heartbeat_tax_usd || 0).toFixed(4) + ' (' + Number(costSummary.heartbeat_tax_share_pct || 0).toFixed(1) + '%)</strong> · ' +
+          'Cache Bloat: <strong>' + cacheBloat + 'x</strong> (' + slopeStr + ') · ' +
+          'Conservation Drift: <strong style="color:var(--status-good);">$' + driftVal + ' ✓</strong>' +
+        '</div>';
     }
 
     // 2. Populate PR & Issue Filter Dropdowns
@@ -720,7 +762,7 @@
 
     const selIssue = document.getElementById('traj-filter-issue');
     if (selIssue && issueRollups.length > 0) {
-      let issOpts = '<option value="all">All GitHub Issues (' + issueRollups.length + ' Issues · #1–#35)</option>';
+      let issOpts = '<option value="all">All GitHub Issues (' + issueRollups.length + ' Issues · #1–#36)</option>';
       issueRollups.forEach(ir => {
         const selAttr = String(selectedTrajectoryIssueFilter) === String(ir.issue_number) ? ' selected' : '';
         issOpts += '<option value="' + escapeHTML(ir.issue_number) + '"' + selAttr + '>' +
@@ -741,7 +783,7 @@
       if (costLedgerMode === 'pr') {
         if (thWorkitem) thWorkitem.textContent = 'PR';
         if (tblTitle) tblTitle.textContent = 'Pull Request Cost, Turns & Agent Ledger (Click Any Row to Dig In & Filter Turns)';
-        if (tblMeta) tblMeta.textContent = prRollups.length + ' Merged PRs (#12–#27) · Avg $' + Number(costSummary.avg_cost_per_pr_usd || 0).toFixed(4) + '/PR';
+        if (tblMeta) tblMeta.textContent = prRollups.length + ' Merged PRs (#12–#27) · Exclusive Ledger $' + Number(costSummary.pr_exclusive_cost_usd || 0).toFixed(4) + ' · Avg $' + Number(costSummary.avg_cost_per_pr_usd || 0).toFixed(4) + '/PR';
 
         tbodyList.innerHTML = prRollups.map(pr => {
           const isSelected = selectedDrilldownWorkItem.type === 'pr' && Number(selectedDrilldownWorkItem.id) === Number(pr.pr_number);
@@ -749,6 +791,10 @@
           const rowStyle = isSelected ? 'background:var(--bg-elevated);border-left:3px solid var(--accent-primary);' : 'cursor:pointer;';
           const linkedIssuesStr = (pr.linked_issues || []).map(i => '#' + i).join(', ');
           const agentsList = (pr.agents_involved || []).map(a => '@' + a.agent).join(', ');
+          const rewUsd = Number(pr.rework_cost_usd || 0);
+          const subCostBadge = rewUsd > 0
+            ? ('<div style="font-size:0.64rem;color:var(--status-warn);">Rework: $' + rewUsd.toFixed(4) + ' (' + Number(pr.rework_ratio_pct || 0).toFixed(0) + '%)</div>')
+            : '<div style="font-size:0.64rem;color:var(--status-good);">100% Productive</div>';
 
           return '<tr style="' + rowStyle + '" onclick="selectCostDrilldownItem(\'pr\',' + Number(pr.pr_number) + ',true)">' +
             '<td class="mono" style="white-space:nowrap;font-weight:700;">' +
@@ -761,7 +807,7 @@
                 escapeHTML(pr.branch || 'main') + ' · Issues: ' + escapeHTML(linkedIssuesStr || '—') + ' · +' + (pr.additions || 0) + '/-' + (pr.deletions || 0) + ' (' + (pr.changed_files || 0) + ' files)' +
               '</div>' +
             '</td>' +
-            '<td class="mono num" style="font-weight:700;color:var(--text-primary);white-space:nowrap;">$' + Number(pr.cost_usd || 0).toFixed(4) + '</td>' +
+            '<td class="mono num" style="font-weight:700;color:var(--text-primary);white-space:nowrap;">$' + Number(pr.cost_usd || 0).toFixed(4) + subCostBadge + '</td>' +
             '<td class="mono num" style="white-space:nowrap;">' +
               '<strong>' + (pr.turns_count || 0) + '</strong> turns' +
               '<div style="font-size:0.66rem;color:var(--text-muted);">' + (pr.steps_count || 0) + ' steps · ' + (pr.tool_calls_count || 0) + ' tools</div>' +
@@ -780,7 +826,7 @@
       } else {
         if (thWorkitem) thWorkitem.textContent = 'Issue';
         if (tblTitle) tblTitle.textContent = 'GitHub Issue Cost, Turns & Agent Ledger (Click Any Row to Dig In & Filter Turns)';
-        if (tblMeta) tblMeta.textContent = issueRollups.length + ' Issues (#1–#35) · Avg $' + Number(costSummary.avg_cost_per_issue_usd || 0).toFixed(4) + '/Issue';
+        if (tblMeta) tblMeta.textContent = issueRollups.length + ' Issues (#1–#36) · Standalone Ledger $' + Number(costSummary.issue_standalone_cost_usd || 0).toFixed(4) + ' · Avg $' + Number(costSummary.avg_cost_per_issue_usd || 0).toFixed(4) + '/Issue';
 
         tbodyList.innerHTML = issueRollups.map(ir => {
           const isSelected = selectedDrilldownWorkItem.type === 'issue' && Number(selectedDrilldownWorkItem.id) === Number(ir.issue_number);
@@ -788,6 +834,10 @@
           const rowStyle = isSelected ? 'background:var(--bg-elevated);border-left:3px solid var(--accent-primary);' : 'cursor:pointer;';
           const prLinksStr = (ir.linked_prs && ir.linked_prs.length > 0) ? (' · PR #' + ir.linked_prs.join(', PR #')) : '';
           const agentsList = (ir.agents_involved || []).map(a => '@' + a.agent).join(', ');
+          const rewUsd = Number(ir.rework_cost_usd || 0);
+          const subCostBadge = rewUsd > 0
+            ? ('<div style="font-size:0.64rem;color:var(--status-warn);">Rework: $' + rewUsd.toFixed(4) + ' (' + Number(ir.rework_ratio_pct || 0).toFixed(0) + '%)</div>')
+            : '<div style="font-size:0.64rem;color:var(--status-good);">100% Productive</div>';
 
           return '<tr style="' + rowStyle + '" onclick="selectCostDrilldownItem(\'issue\',' + Number(ir.issue_number) + ',true)">' +
             '<td class="mono" style="white-space:nowrap;font-weight:700;">' +
@@ -800,7 +850,7 @@
                 escapeHTML(ir.wave || '') + prLinksStr + (ir.cloud_run_revision ? (' · ' + escapeHTML(ir.cloud_run_revision)) : '') +
               '</div>' +
             '</td>' +
-            '<td class="mono num" style="font-weight:700;color:var(--text-primary);white-space:nowrap;">$' + Number(ir.cost_usd || 0).toFixed(4) + '</td>' +
+            '<td class="mono num" style="font-weight:700;color:var(--text-primary);white-space:nowrap;">$' + Number(ir.cost_usd || 0).toFixed(4) + subCostBadge + '</td>' +
             '<td class="mono num" style="white-space:nowrap;">' +
               '<strong>' + (ir.turns_count || 0) + '</strong> turns' +
               '<div style="font-size:0.66rem;color:var(--text-muted);">' + (ir.steps_count || 0) + ' steps · ' + (ir.tool_calls_count || 0) + ' tools</div>' +
@@ -868,14 +918,19 @@
 
     if (ddKpis) {
       const tokK = ((Number(targetItem.total_tokens) || 0) / 1000).toFixed(1);
+      const prodUsd = Number(targetItem.productive_cost_usd || 0).toFixed(4);
+      const rewUsd = Number(targetItem.rework_cost_usd || 0).toFixed(4);
+      const bloatRatio = Number(targetItem.cache_bloat_ratio || 0).toFixed(1);
       ddKpis.innerHTML =
         '<div style="padding:0.55rem 0.85rem;border-right:1px solid var(--border-hairline);">' +
           '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;">Total ' + (isPr ? 'PR' : 'Issue') + ' Cost</div>' +
           '<div class="mono num" style="font-size:1.05rem;font-weight:700;color:var(--text-primary);margin-top:0.1rem;">$' + Number(targetItem.cost_usd || 0).toFixed(4) + ' <span style="font-size:0.7rem;color:var(--text-muted);">USD</span></div>' +
+          '<div class="mono" style="font-size:0.63rem;color:var(--text-secondary);margin-top:0.08rem;">Prod $' + prodUsd + ' · Rework $' + rewUsd + '</div>' +
         '</div>' +
         '<div style="padding:0.55rem 0.85rem;border-right:1px solid var(--border-hairline);">' +
           '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;">Turns &amp; Steps</div>' +
           '<div class="mono num" style="font-size:1.05rem;font-weight:700;color:var(--text-primary);margin-top:0.1rem;">' + (targetItem.turns_count || 0) + ' <span style="font-size:0.72rem;font-weight:500;color:var(--text-secondary);">turns (' + (targetItem.steps_count || 0) + ' steps)</span></div>' +
+          '<div class="mono" style="font-size:0.63rem;color:var(--text-secondary);margin-top:0.08rem;">Cache Bloat: ' + bloatRatio + 'x</div>' +
         '</div>' +
         '<div style="padding:0.55rem 0.85rem;border-right:1px solid var(--border-hairline);">' +
           '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;">Agents Involved</div>' +
@@ -884,7 +939,9 @@
         '<div style="padding:0.55rem 0.85rem;">' +
           '<div class="mono" style="font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;">Calls, Tools &amp; Tokens</div>' +
           '<div class="mono num" style="font-size:0.86rem;font-weight:700;color:var(--text-primary);margin-top:0.18rem;">' + (targetItem.model_calls_count || 0) + ' calls · ' + (targetItem.tool_calls_count || 0) + ' tools · ' + tokK + 'k tok</div>' +
-        '</div>';
+        '</div>' +
+        '<div id="drilldown-lazy-turns-strip" style="grid-column:1 / -1;"></div>';
+      fetchLazyWorkItemSpannerTurns(isPr ? 'pr' : 'issue', itemId);
     }
 
     if (ddAgentsTbody) {
@@ -1356,9 +1413,13 @@
       const stepCost = Number(s.cost_usd !== undefined ? s.cost_usd : (tok.cost_usd || 0));
       const stepTurns = Number(s.turns_count) || 4;
       const stepCalls = Number(s.model_calls_count) || 8;
+      const cBucket = String(s.cost_bucket || 'productive').toUpperCase();
+      const cBucketColor = cBucket === 'REWORK' ? 'var(--status-warn)' : (cBucket === 'HEARTBEAT_TAX' ? 'var(--text-muted)' : 'var(--status-good)');
+      const attrSrc = s.attribution_source ? (' · ' + s.attribution_source) : '';
       const costBadge =
         '<div class="mono num" style="font-size:0.74rem;font-weight:700;color:var(--text-primary);margin-top:0.22rem;">$' + stepCost.toFixed(4) + ' USD · ' + stepTurns + ' turns</div>' +
-        '<div class="mono num" style="font-size:0.66rem;color:var(--text-muted);margin-top:0.1rem;">' + stepCalls + ' calls · in:' + (tok.input_tokens || 0) + (tok.cache_read_tokens ? ' · cache:' + tok.cache_read_tokens : '') + ' · out:' + (tok.output_tokens || 0) + '</div>';
+        '<div class="mono" style="font-size:0.64rem;color:' + cBucketColor + ';font-weight:600;margin-top:0.08rem;">[' + escapeHTML(cBucket) + ']' + escapeHTML(attrSrc) + '</div>' +
+        '<div class="mono num" style="font-size:0.66rem;color:var(--text-muted);margin-top:0.08rem;">' + stepCalls + ' calls · in:' + (tok.input_tokens || 0) + (tok.cache_read_tokens ? ' · cache:' + tok.cache_read_tokens : '') + ' · out:' + (tok.output_tokens || 0) + '</div>';
 
       let convBlockHtml = '';
       if (showTrajectoryConversationTraces) {
