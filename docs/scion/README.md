@@ -27,6 +27,7 @@ it. The scripts and templates are parameterized, so you can build another factor
 | [config/](config/) | `factory.env.example`, the heartbeat text, the Hub settings excerpt, the Spanner DDL |
 | [specs/factory-orchestration-v2-design.md](specs/factory-orchestration-v2-design.md) | the next design (draft): one worker and PR per issue, status labels, watchdogs |
 | [verification-and-eval.md](verification-and-eval.md) | verification methodology, 5-layer product evaluation pyramid (L1–L5), and Wave 1–5 audit |
+| [../telemetry/README.md](../telemetry/README.md) | concise ASD-STE100 guide to telemetry reproduction, eval data pipeline, and harness hooks |
 
 ## Quick start
 
