@@ -3,8 +3,12 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"google.golang.org/genai"
 	"psearch/serving-go/internal/config"
@@ -18,6 +22,8 @@ func testConfig(version string) *config.Config {
 		EmbeddingModelName:       "gemini-embedding-2",
 		GeminiEmbeddingDimension: 1024,
 		ActiveEmbeddingVersion:   version,
+		UseVectorIndex:           version == "v2",
+		ANNNumLeavesToSearch:     20,
 	}
 }
 
@@ -179,3 +185,171 @@ func TestMemorySearchFilters(t *testing.T) {
 }
 
 func emptyFilters() models.SearchFilters { return models.SearchFilters{} }
+
+func TestBuildHybridSQLANN_UsesScaNNVectorIndexAndApproxCosineDistance(t *testing.T) {
+	annSQL := buildHybridSQLANN(vectorColumnV2, false, false, true, true, 25)
+	for _, want := range []string{
+		"APPROX_COSINE_DISTANCE(embedding_v2, @query_embedding, options => JSON '{\"num_leaves_to_search\": 25}') AS distance",
+		"FROM products@{FORCE_INDEX=products_embedding_v2_idx}",
+		"WHERE embedding_v2 IS NOT NULL",
+		"ORDER BY distance ASC",
+	} {
+		if !strings.Contains(annSQL, want) {
+			t.Errorf("ANN SQL missing %q", want)
+		}
+	}
+	// Exact mode (useANN=false) or v1 column must keep exact COSINE_DISTANCE.
+	exactSQL := buildHybridSQLANN(vectorColumnV2, false, false, true, false, 20)
+	if strings.Contains(exactSQL, "APPROX_COSINE_DISTANCE") || !strings.Contains(exactSQL, "COSINE_DISTANCE(embedding_v2, @query_embedding)") {
+		t.Error("exact SQL must use COSINE_DISTANCE without APPROX_COSINE_DISTANCE")
+	}
+	v1SQL := buildHybridSQLANN(vectorColumnV1, false, false, false, true, 20)
+	if strings.Contains(v1SQL, "APPROX_COSINE_DISTANCE") {
+		t.Error("v1 column must never use products_embedding_v2_idx")
+	}
+}
+
+func TestSpannerHybridSearch_ScaNNANNFallbackAndCooldown(t *testing.T) {
+	ctx := context.Background()
+	cfg := testConfig("v2")
+	var sqlCalls []string
+	var failANN atomic.Bool
+	failANN.Store(true)
+
+	svc := &SpannerService{
+		config:       cfg,
+		embeddings:   stubEmbedder{vec: make([]float32, 1024)},
+		seedProducts: DefaultSeedProducts(),
+		hybridQueryRunner: func(_ context.Context, sql string, _ map[string]interface{}, _, _ float64, _ vectorPlan, _ models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error) {
+			sqlCalls = append(sqlCalls, sql)
+			if strings.Contains(sql, "APPROX_COSINE_DISTANCE") && failANN.Load() {
+				return nil, nil, errors.New("spanner: code = InvalidArgument, desc = Index products_embedding_v2_idx not found")
+			}
+			return []models.SearchResult{{ID: "prod-001", Title: "Shoe"}}, nil, nil
+		},
+	}
+
+	// 1) When index is missing, request succeeds via automatic exact fallback (vector_index_used=false) and sets cooldown.
+	out, err := svc.HybridSearchDetailed(ctx, "running shoes", 10, 0, 0.5, models.SearchFilters{})
+	if err != nil {
+		t.Fatalf("expected fallback to succeed, got err: %v", err)
+	}
+	if out.VectorIndexUsed || len(out.Results) != 1 || !svc.IsANNCooledDown() {
+		t.Fatalf("after ANN fallback: VectorIndexUsed=%v len=%d cooledDown=%v", out.VectorIndexUsed, len(out.Results), svc.IsANNCooledDown())
+	}
+	if len(sqlCalls) != 2 || !strings.Contains(sqlCalls[0], "APPROX_COSINE_DISTANCE") || !strings.Contains(sqlCalls[1], "ORDER BY COSINE_DISTANCE") {
+		t.Fatalf("expected 1st call ANN and 2nd call exact fallback, got %d calls", len(sqlCalls))
+	}
+
+	// 2) During cooldown, subsequent queries go straight to exact COSINE_DISTANCE (1 call).
+	sqlCalls = nil
+	out2, err := svc.HybridSearchDetailed(ctx, "running shoes", 10, 0, 0.5, models.SearchFilters{})
+	if err != nil || out2.VectorIndexUsed || len(sqlCalls) != 1 || strings.Contains(sqlCalls[0], "APPROX_COSINE_DISTANCE") {
+		t.Fatalf("during cooldown expected single exact SQL call, got calls=%d vecUsed=%v err=%v", len(sqlCalls), out2.VectorIndexUsed, err)
+	}
+
+	// 3) After cooldown expires and index is healthy, ANN succeeds and reports vector_index_used=true.
+	svc.annCooldownUntil.Store(0)
+	failANN.Store(false)
+	sqlCalls = nil
+	out3, err := svc.HybridSearchDetailed(ctx, "running shoes", 10, 0, 0.5, models.SearchFilters{})
+	if err != nil || !out3.VectorIndexUsed || len(sqlCalls) != 1 || !strings.Contains(sqlCalls[0], "APPROX_COSINE_DISTANCE") {
+		t.Fatalf("expected ANN success with VectorIndexUsed=true, got vecUsed=%v calls=%d err=%v", out3.VectorIndexUsed, len(sqlCalls), err)
+	}
+}
+
+func TestEmbedDocumentsBatch_RetriesOn429And503(t *testing.T) {
+	var attempts atomic.Int32
+	svc := newEmbeddingServiceWith(testConfig("v2"), func(_ context.Context, _ string, contents []*genai.Content, cfg *genai.EmbedContentConfig) (*genai.EmbedContentResponse, error) {
+		n := attempts.Add(1)
+		if n == 1 {
+			return nil, errors.New("429 RESOURCE_EXHAUSTED: quota exceeded")
+		}
+		if n == 2 {
+			return nil, errors.New("503 UNAVAILABLE: backend overloaded")
+		}
+		if cfg.TaskType != "RETRIEVAL_DOCUMENT" {
+			return nil, fmt.Errorf("unexpected TaskType %q", cfg.TaskType)
+		}
+		embs := make([]*genai.ContentEmbedding, len(contents))
+		for i := range contents {
+			v := make([]float32, 1024)
+			v[0] = float32(i + 1)
+			embs[i] = &genai.ContentEmbedding{Values: v}
+		}
+		return &genai.EmbedContentResponse{Embeddings: embs}, nil
+	})
+	svc.retryBaseDelay = time.Millisecond
+
+	vecs, err := svc.EmbedDocumentsBatch(context.Background(), []string{"doc-1", "doc-2", "doc-3"})
+	if err != nil {
+		t.Fatalf("EmbedDocumentsBatch unexpected error: %v", err)
+	}
+	if attempts.Load() != 3 || len(vecs) != 3 || vecs[2][0] != 3 {
+		t.Fatalf("attempts=%d len(vecs)=%d vecs[2][0]=%v", attempts.Load(), len(vecs), vecs[2][0])
+	}
+}
+
+type fakeBatchEmbedder struct {
+	maxBatchSeen atomic.Int32
+}
+
+func (f *fakeBatchEmbedder) EmbedDocumentsBatch(_ context.Context, texts []string) ([][]float32, error) {
+	for {
+		cur := f.maxBatchSeen.Load()
+		if int32(len(texts)) <= cur || f.maxBatchSeen.CompareAndSwap(cur, int32(len(texts))) {
+			break
+		}
+	}
+	out := make([][]float32, len(texts))
+	for i := range texts {
+		vec := make([]float32, 1024)
+		vec[0] = 1.0
+		out[i] = vec
+	}
+	return out, nil
+}
+
+func TestRunEmbeddingBackfill_ConcurrentWorkersBatchesAnd200RowChunks(t *testing.T) {
+	rows := make([]BackfillRow, 1050)
+	for i := range rows {
+		rows[i] = BackfillRow{ID: fmt.Sprintf("prod-%04d", i+1), Text: fmt.Sprintf("Product %d", i+1)}
+	}
+	emb := &fakeBatchEmbedder{}
+	var mu sync.Mutex
+	var chunkSizes []int
+	seenIDs := map[string]bool{}
+
+	writer := func(_ context.Context, chunk []BackfillUpdate) error {
+		mu.Lock()
+		defer mu.Unlock()
+		chunkSizes = append(chunkSizes, len(chunk))
+		for _, u := range chunk {
+			if len(u.Vector) != 1024 {
+				return fmt.Errorf("bad vector len %d", len(u.Vector))
+			}
+			seenIDs[u.ID] = true
+		}
+		return nil
+	}
+
+	stats, err := RunEmbeddingBackfill(context.Background(), rows, emb, writer, BackfillOptions{
+		Workers:    8,
+		EmbedBatch: 32,
+		WriteChunk: 200,
+	})
+	if err != nil {
+		t.Fatalf("RunEmbeddingBackfill error: %v", err)
+	}
+	if stats.TotalEmbedded != 1050 || stats.TotalWritten != 1050 || stats.ChunksCommitted != 6 || len(seenIDs) != 1050 {
+		t.Fatalf("unexpected stats: %+v seenIDs=%d", stats, len(seenIDs))
+	}
+	if emb.maxBatchSeen.Load() != 32 {
+		t.Fatalf("maxBatchSeen = %d, want 32", emb.maxBatchSeen.Load())
+	}
+	for i, sz := range chunkSizes {
+		if sz > 200 {
+			t.Fatalf("chunk %d size %d exceeds WriteChunk=200", i, sz)
+		}
+	}
+}

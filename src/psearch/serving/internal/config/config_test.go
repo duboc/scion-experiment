@@ -48,3 +48,37 @@ func TestConfigModelDefaults(t *testing.T) {
 		t.Errorf("default GenAILocation = %q, want global", cfg.GenAILocation)
 	}
 }
+
+func TestConfigVectorIndexDefaultsAndEnv(t *testing.T) {
+	os.Unsetenv("USE_VECTOR_INDEX")
+	os.Unsetenv("ANN_NUM_LEAVES_TO_SEARCH")
+	os.Setenv("ACTIVE_EMBEDDING_VERSION", "v2")
+	defer os.Unsetenv("ACTIVE_EMBEDDING_VERSION")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.UseVectorIndex || !cfg.EffectiveUseVectorIndex() {
+		t.Errorf("expected UseVectorIndex=true by default when ACTIVE_EMBEDDING_VERSION=v2")
+	}
+	if cfg.EffectiveANNNumLeaves() != 20 {
+		t.Errorf("default EffectiveANNNumLeaves() = %d, want 20", cfg.EffectiveANNNumLeaves())
+	}
+
+	os.Setenv("USE_VECTOR_INDEX", "false")
+	os.Setenv("ANN_NUM_LEAVES_TO_SEARCH", "35")
+	defer os.Unsetenv("USE_VECTOR_INDEX")
+	defer os.Unsetenv("ANN_NUM_LEAVES_TO_SEARCH")
+
+	cfg2, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg2.UseVectorIndex || cfg2.EffectiveUseVectorIndex() {
+		t.Errorf("expected UseVectorIndex=false when USE_VECTOR_INDEX=false")
+	}
+	if cfg2.EffectiveANNNumLeaves() != 35 {
+		t.Errorf("EffectiveANNNumLeaves() = %d, want 35", cfg2.EffectiveANNNumLeaves())
+	}
+}

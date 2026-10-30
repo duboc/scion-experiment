@@ -7,8 +7,10 @@ import (
 	"log"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/spanner"
@@ -29,9 +31,51 @@ type SpannerService struct {
 	inventory    []InventoryRow  // memory-mode regional inventory (Issue #8), lazily built
 	invOnce      sync.Once
 	pricing      *memoryPricing              // memory-mode contract prices (Issue #22)
-	variants     map[string][]models.Variant // memory-mode SKU variants (Issue #32)
-	varOnce      sync.Once
-	priceOnce    sync.Once
+	variants          map[string][]models.Variant // memory-mode SKU variants (Issue #32)
+	varOnce           sync.Once
+	priceOnce         sync.Once
+	annCooldownUntil  atomic.Int64 // ADR-012 (#39): UnixNano timestamp until which ScaNN ANN is cooled down after index error
+	hybridQueryRunner func(ctx context.Context, sql string, params map[string]interface{}, minScore, alpha float64, plan vectorPlan, f models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error)
+}
+
+const annCooldownDuration = 60 * time.Second
+
+// IsANNCooledDown reports whether ScaNN ANN is temporarily disabled after an index/emulator error.
+func (s *SpannerService) IsANNCooledDown() bool {
+	return time.Now().UnixNano() < s.annCooldownUntil.Load()
+}
+
+// VectorIndexActive reports whether ScaNN ANN is enabled and not in a cooldown window (ADR-012, #39).
+func (s *SpannerService) VectorIndexActive() bool {
+	return s != nil && s.config != nil && s.config.EffectiveUseVectorIndex() && !s.IsANNCooledDown()
+}
+
+func (s *SpannerService) shouldUseANN(plan vectorPlan) bool {
+	return !plan.lexicalOnly && plan.column == vectorColumnV2 && s.VectorIndexActive()
+}
+
+func isANNIndexError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, needle := range []string{
+		"products_embedding_v2_idx",
+		"approx_cosine_distance",
+		"vector index",
+		"index not found",
+		"backfill",
+		"not ready",
+		"unsupported",
+		"unimplemented",
+		"invalidargument",
+		"failedprecondition",
+	} {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SpannerService) memPricing() *memoryPricing {
@@ -213,13 +257,14 @@ const (
 
 // SearchOutcome carries results plus the retrieval path that produced them.
 type SearchOutcome struct {
-	Results       []models.SearchResult
-	Sponsored     []models.SearchResult // ADR-011 (#35): candidate sponsored matches before slot placement
-	RetrievalMode string
-	CacheHit      bool     // query embedding served from the embedding cache (v2 only)
-	ExpandedTerms []string // synonym phrases added to the text leg (Issue #7)
-	AppliedRules  []string // merchandising rule_ids applied (Issue #6)
-	Pins, Buries  []string // merchandising pins/buries (kept by the LTR re-ranker, Issue #10)
+	Results         []models.SearchResult
+	Sponsored       []models.SearchResult // ADR-011 (#35): candidate sponsored matches before slot placement
+	RetrievalMode   string
+	VectorIndexUsed bool     // ADR-012 (#39): true when ScaNN vector index served the vector leg
+	CacheHit        bool     // query embedding served from the embedding cache (v2 only)
+	ExpandedTerms   []string // synonym phrases added to the text leg (Issue #7)
+	AppliedRules    []string // merchandising rule_ids applied (Issue #6)
+	Pins, Buries    []string // merchandising pins/buries (kept by the LTR re-ranker, Issue #10)
 }
 
 // HybridSearch executes hybrid vector + full-text RRF search against Cloud Spanner (with deterministic fallback).
@@ -259,9 +304,9 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		plan := s.planImageQuery(ctx, query, filters)
 		plan.expansion = expansion
 		plan.rules = ruleSet
-		res, sponsored, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
+		res, sponsored, vecIdxUsed, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
 		if err == nil {
-			return SearchOutcome{Results: res, Sponsored: sponsored, RetrievalMode: RetrievalMultimodal, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+			return SearchOutcome{Results: res, Sponsored: sponsored, RetrievalMode: RetrievalMultimodal, VectorIndexUsed: vecIdxUsed, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 		}
 		log.Printf("WARN: Spanner multimodal search fallback triggered: %v", err)
 	}
@@ -271,11 +316,11 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		// honest result rather than an unrelated catalog listing.
 		return SearchOutcome{Results: []models.SearchResult{}, RetrievalMode: RetrievalMemory}, nil
 	}
-	if s.client != nil && strings.TrimSpace(query) != "" {
+	if (s.client != nil || s.hybridQueryRunner != nil) && strings.TrimSpace(query) != "" {
 		plan := s.planVectorQuery(ctx, query)
 		plan.expansion = expansion
 		plan.rules = ruleSet
-		res, sponsored, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
+		res, sponsored, vecIdxUsed, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
 		switch {
 		case err != nil:
 			log.Printf("WARN: Spanner HybridSearch fallback triggered: %v", err)
@@ -292,7 +337,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			if plan.column == vectorColumnV2 {
 				mode = RetrievalHybridV2
 			}
-			return SearchOutcome{Results: res, Sponsored: sponsored, RetrievalMode: mode, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+			return SearchOutcome{Results: res, Sponsored: sponsored, RetrievalMode: mode, VectorIndexUsed: vecIdxUsed, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 		}
 	}
 
@@ -406,6 +451,16 @@ func buildHybridSQLWith(column string, lexicalOnly, folded bool) string {
 // buildHybridSQLMode adds vectorOnly (ADR-010, #33): an image-only query has no
 // text, so only the ann leg runs (weight 1.0) and the fts leg is omitted.
 func buildHybridSQLMode(column string, lexicalOnly, vectorOnly, folded bool) string {
+	return buildHybridSQLANN(column, lexicalOnly, vectorOnly, folded, false, 20)
+}
+
+// buildHybridSQLANN renders the hybrid RRF SQL using either the Cloud Spanner ScaNN
+// VECTOR INDEX (`products_embedding_v2_idx` + `APPROX_COSINE_DISTANCE`, ADR-012 #39)
+// when useANN is true on embedding_v2, or exact `COSINE_DISTANCE` otherwise.
+func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bool, numLeaves int) string {
+	if numLeaves <= 0 {
+		numLeaves = 20
+	}
 	titleTok, descTok := "title_tokens", "description_tokens"
 	if folded {
 		titleTok, descTok = "title_tokens_folded", "description_tokens_folded"
@@ -439,6 +494,21 @@ func buildHybridSQLMode(column string, lexicalOnly, vectorOnly, folded bool) str
 				LIMIT @limit
 			)) WITH OFFSET AS offset
 		),`
+	if useANN && column == vectorColumnV2 && !lexicalOnly {
+		ann = `
+		ann AS (
+			SELECT offset + 1 AS rank, product_id, title, product_data, is_available, stock
+			FROM UNNEST(ARRAY(
+				SELECT AS STRUCT product_id, title, product_data, is_available, stock,
+					APPROX_COSINE_DISTANCE(` + column + `, @query_embedding, options => JSON '{"num_leaves_to_search": ` + strconv.Itoa(numLeaves) + `}') AS distance
+				FROM products@{FORCE_INDEX=products_embedding_v2_idx}
+				WHERE ` + column + ` IS NOT NULL
+					AND ` + catalogFilterSQL + `
+				ORDER BY distance ASC
+				LIMIT @limit
+			)) WITH OFFSET AS offset
+		),`
+	}
 	union := `
 			SELECT 'vector' AS source, @alpha AS weight, rank, product_id, title, product_data, is_available, stock FROM ann
 			UNION ALL
@@ -586,6 +656,30 @@ func (s *SpannerService) CheckSpannerQuery(ctx context.Context, query string, al
 	return len(res), mode, err
 }
 
+// CheckSpannerQueryANN runs the Spanner hybrid query with USE_VECTOR_INDEX explicitly
+// toggled to useANN (ADR-012, #39) and reports whether the ScaNN vector index was used.
+func (s *SpannerService) CheckSpannerQueryANN(ctx context.Context, query string, alpha float64, filters models.SearchFilters, useANN bool) (int, bool, string, error) {
+	if s.client == nil && s.hybridQueryRunner == nil {
+		return 0, false, "", fmt.Errorf("no Spanner client (memory mode)")
+	}
+	prev := s.config.UseVectorIndex
+	prevCooldown := s.annCooldownUntil.Swap(0)
+	s.config.UseVectorIndex = useANN
+	defer func() {
+		s.config.UseVectorIndex = prev
+		s.annCooldownUntil.Store(prevCooldown)
+	}()
+	plan := s.planVectorQuery(ctx, query)
+	res, _, vecUsed, err := s.spannerHybridSearchWithAds(ctx, query, s.config.DefaultLimit, 0, alpha, plan, filters)
+	mode := RetrievalHybridV1
+	if plan.lexicalOnly {
+		mode = RetrievalLexicalOnly
+	} else if plan.column == vectorColumnV2 {
+		mode = RetrievalHybridV2
+	}
+	return len(res), vecUsed, mode, err
+}
+
 // isUnavailable implements the ADR-002 availability rule shared by Spanner and memory modes.
 func isUnavailable(availability string, quantity *int) bool {
 	return availability == "OUT_OF_STOCK" || (quantity != nil && *quantity <= 0)
@@ -606,16 +700,11 @@ func matchesChannel(requested string, channels []string) bool {
 }
 
 func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64, plan vectorPlan, filters models.SearchFilters) ([]models.SearchResult, error) {
-	organic, _, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
+	organic, _, _, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
 	return organic, err
 }
 
-func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query string, limit int, minScore float64, alpha float64, plan vectorPlan, filters models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error) {
-	// The correlated product_prices lookups (#22) change the plan shape; SCORE() in
-	// the fts leg then requires query optimizer version >= 6, which is newer than the
-	// database default. A statement hint is the least invasive fix (verified by
-	// deployer on psearch-db: sqlcheck 27/27).
-	sql := optimizerHint + buildHybridSQLMode(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding)
+func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query string, limit int, minScore float64, alpha float64, plan vectorPlan, filters models.SearchFilters) ([]models.SearchResult, []models.SearchResult, bool, error) {
 	queryText := query
 	if s.config.TextFolding {
 		queryText = FoldAccents(query)
@@ -661,6 +750,28 @@ func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query s
 		params["ad_min_similarity"] = s.config.EffectiveAdMinSimilarity()
 	}
 
+	useANN := s.shouldUseANN(plan)
+	numLeaves := s.config.EffectiveANNNumLeaves()
+	// The correlated product_prices lookups (#22) change the plan shape; SCORE() in
+	// the fts leg then requires query optimizer version >= 6, which is newer than the
+	// database default. A statement hint is the least invasive fix (verified by
+	// deployer on psearch-db: sqlcheck 27/27).
+	sql := optimizerHint + buildHybridSQLANN(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, useANN, numLeaves)
+	results, sponsored, err := s.executeHybridStatement(ctx, sql, params, minScore, alpha, plan, f)
+	if err != nil && useANN && isANNIndexError(err) {
+		log.Printf("WARN: ScaNN vector index unavailable (%v); cooling down ANN for %s and falling back to exact COSINE_DISTANCE", err, annCooldownDuration)
+		s.annCooldownUntil.Store(time.Now().Add(annCooldownDuration).UnixNano())
+		exactSQL := optimizerHint + buildHybridSQLANN(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, false, numLeaves)
+		results, sponsored, err = s.executeHybridStatement(ctx, exactSQL, params, minScore, alpha, plan, f)
+		return results, sponsored, false, err
+	}
+	return results, sponsored, useANN && err == nil, err
+}
+
+func (s *SpannerService) executeHybridStatement(ctx context.Context, sql string, params map[string]interface{}, minScore, alpha float64, plan vectorPlan, f models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error) {
+	if s.hybridQueryRunner != nil {
+		return s.hybridQueryRunner(ctx, sql, params, minScore, alpha, plan, f)
+	}
 	stmt := spanner.Statement{SQL: sql, Params: params}
 
 	iter := s.client.Single().Query(ctx, stmt)

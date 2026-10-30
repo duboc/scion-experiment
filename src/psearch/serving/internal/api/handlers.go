@@ -163,6 +163,10 @@ func (c *Controller) Info(ctx *gin.Context) {
 		"pro_model":                c.config.ProLLMModel,
 		"genai_location":           c.config.GenAILocation,
 		"embedding_cache":          c.cacheStats(),
+		"vector_index_used":        c.spannerSvc.VectorIndexActive(),
+		"use_vector_index":         c.config.EffectiveUseVectorIndex(),
+		"vector_index":             "products_embedding_v2_idx",
+		"ann_num_leaves_to_search": c.config.EffectiveANNNumLeaves(),
 		"default_alpha":            c.config.DefaultAlpha,
 		"orchestrator":             "lead",
 	})
@@ -528,6 +532,7 @@ intentDone:
 		Results:          results,
 		TotalFound:       organicTotal,
 		SponsoredCount:   sponsoredCount,
+		VectorIndexUsed:  outcome.VectorIndexUsed,
 		Candidates:       candidates,
 		Facets:           facets,
 		FacetsLatencyMs:  facetsMs,

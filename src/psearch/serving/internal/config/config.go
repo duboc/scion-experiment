@@ -39,6 +39,9 @@ type Config struct {
 	AdSlots                  []int   // ADR-011 (#35): 1-based slot positions for sponsored products (default [1,4,8])
 	AdMax                    int     // ADR-011 (#35): max sponsored products per response (default 3)
 	AdMinSimilarity          float64 // ADR-011 (#35): minimum cosine similarity for vector ad match (default 0.55)
+	UseVectorIndex           bool    // ADR-012 (#39): use ScaNN VECTOR INDEX (APPROX_COSINE_DISTANCE) when v2 is active
+	useVectorIndexExplicit   bool    // true when USE_VECTOR_INDEX was explicitly set in env
+	ANNNumLeavesToSearch     int     // ADR-012 (#39): ScaNN num_leaves_to_search option (default 20)
 }
 
 // NormalizeModelID normalizes model aliases (e.g. gemini-4-pro / gemini-4.0-pro -> gemini-4-argon).
@@ -81,6 +84,18 @@ func Load() (*Config, error) {
 		AdSlots:                  ParseAdSlots(getEnv("AD_SLOTS", "1,4,8")),
 		AdMax:                    3,
 		AdMinSimilarity:          0.55,
+		ANNNumLeavesToSearch:     20,
+	}
+
+	rawVecIdx := strings.ToLower(strings.TrimSpace(os.Getenv("USE_VECTOR_INDEX")))
+	if rawVecIdx == "" {
+		cfg.UseVectorIndex = cfg.ActiveEmbeddingVersion == "v2"
+	} else {
+		cfg.useVectorIndexExplicit = true
+		cfg.UseVectorIndex = rawVecIdx == "true" || rawVecIdx == "1" || rawVecIdx == "yes" || rawVecIdx == "on"
+	}
+	if leaves, err := strconv.Atoi(getEnv("ANN_NUM_LEAVES_TO_SEARCH", "20")); err == nil && leaves > 0 && leaves <= 1000 {
+		cfg.ANNNumLeavesToSearch = leaves
 	}
 
 	if adMax, err := strconv.Atoi(getEnv("AD_MAX", "3")); err == nil && adMax > 0 && adMax <= 10 {
@@ -140,7 +155,27 @@ func (c *Config) SetActiveVersion(v string) error {
 		return fmt.Errorf("invalid embedding version %q (want v1 or v2)", v)
 	}
 	c.activeVersion.Store(&v)
+	if !c.useVectorIndexExplicit {
+		c.UseVectorIndex = v == "v2"
+	}
 	return nil
+}
+
+// EffectiveUseVectorIndex reports whether the ScaNN ANN vector index should be used
+// for the currently active embedding version (ADR-012, Issue #39).
+func (c *Config) EffectiveUseVectorIndex() bool {
+	if c == nil || !c.UseGeminiEmbeddings() {
+		return false
+	}
+	return c.UseVectorIndex
+}
+
+// EffectiveANNNumLeaves returns the ScaNN num_leaves_to_search option (default 20).
+func (c *Config) EffectiveANNNumLeaves() int {
+	if c != nil && c.ANNNumLeavesToSearch > 0 && c.ANNNumLeavesToSearch <= 1000 {
+		return c.ANNNumLeavesToSearch
+	}
+	return 20
 }
 
 // ActiveDimension returns the dimension of the currently active vector column.

@@ -786,3 +786,21 @@ func TestAdCampaignsCRUDAndClickBurn(t *testing.T) {
 	}
 }
 
+func TestSearchAndInfoExposeVectorIndexUsed(t *testing.T) {
+	r := newTestRouter()
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/search?q=running+shoes", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/search status = %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `"vector_index_used":`) {
+		t.Fatalf("SearchResponse JSON missing vector_index_used field: %s", w.Body.String())
+	}
+
+	wInfo := httptest.NewRecorder()
+	r.ServeHTTP(wInfo, httptest.NewRequest(http.MethodGet, "/api/info", nil))
+	if wInfo.Code != http.StatusOK || !strings.Contains(wInfo.Body.String(), `"vector_index_used":`) || !strings.Contains(wInfo.Body.String(), `"products_embedding_v2_idx"`) {
+		t.Fatalf("/api/info missing vector_index_used metadata: %s", wInfo.Body.String())
+	}
+}
+

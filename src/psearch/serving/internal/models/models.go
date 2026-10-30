@@ -86,7 +86,8 @@ type SearchResponse struct {
 	SortBy           string         `json:"sort_by,omitempty"`
 	SessionID        string         `json:"session_id,omitempty"` // Issue #20 (ADR-007)
 	Personalized     bool           `json:"personalized,omitempty"`
-	SponsoredCount   int            `json:"sponsored_count"` // ADR-011 (#35): number of sponsored items injected
+	SponsoredCount   int            `json:"sponsored_count"`   // ADR-011 (#35): number of sponsored items injected
+	VectorIndexUsed  bool           `json:"vector_index_used"` // ADR-012 (#39): true when ScaNN vector index served the vector leg
 }
 
 type FacetBucket struct {

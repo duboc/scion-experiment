@@ -21,6 +21,10 @@ import (
 func main() {
 	force := flag.Bool("force", false, "re-embed rows that already have embedding_v2")
 	dryRun := flag.Bool("dry-run", false, "embed but do not write to Spanner")
+	workers := flag.Int("workers", 8, "concurrent batch embedding workers (ADR-012, #39)")
+	embedBatch := flag.Int("embed-batch", 32, "documents per EmbedDocumentsBatch RPC (ADR-012, #39)")
+	writeChunk := flag.Int("write-chunk", 200, "rows per Spanner client.Apply transaction (ADR-012, #39)")
+	limit := flag.Int("limit", 0, "max rows to backfill (0 = all matching rows)")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -43,13 +47,21 @@ func main() {
 	if *force {
 		where = ""
 	}
-	stmt := spanner.Statement{SQL: `SELECT product_id, IFNULL(title, ''), IFNULL(description, ''), IFNULL(category, ''), IFNULL(brand, '')
-		FROM products ` + where}
+	limitSQL := ""
+	params := map[string]interface{}{}
+	if *limit > 0 {
+		limitSQL = " LIMIT @row_limit"
+		params["row_limit"] = int64(*limit)
+	}
+	stmt := spanner.Statement{
+		SQL: `SELECT product_id, IFNULL(title, ''), IFNULL(description, ''), IFNULL(category, ''), IFNULL(brand, '')
+		FROM products ` + where + limitSQL,
+		Params: params,
+	}
 	iter := client.Single().Query(ctx, stmt)
 	defer iter.Stop()
 
-	var muts []*spanner.Mutation
-	n := 0
+	var rows []services.BackfillRow
 	for {
 		row, err := iter.Next()
 		if err == iterator.Done {
@@ -63,19 +75,29 @@ func main() {
 			log.Fatalf("scan: %v", err)
 		}
 		text := strings.TrimSpace(strings.Join([]string{title, desc, cat, brand}, " "))
-		vec, err := emb.EmbedDocument(ctx, text)
-		if err != nil {
-			log.Fatalf("embed %s: %v", id, err)
+		rows = append(rows, services.BackfillRow{ID: id, Text: text})
+	}
+	iter.Stop()
+
+	writer := func(ctx context.Context, chunk []services.BackfillUpdate) error {
+		muts := make([]*spanner.Mutation, 0, len(chunk))
+		for _, u := range chunk {
+			muts = append(muts, spanner.Update("products", []string{"product_id", "embedding_v2"}, []interface{}{u.ID, u.Vector}))
 		}
-		muts = append(muts, spanner.Update("products", []string{"product_id", "embedding_v2"}, []interface{}{id, vec}))
-		n++
+		_, err := client.Apply(ctx, muts)
+		return err
 	}
-	log.Printf("embedded %d products with %s (%d dims)", n, emb.Model(), cfg.GeminiEmbeddingDimension)
-	if *dryRun || n == 0 {
-		return
+
+	stats, err := services.RunEmbeddingBackfill(ctx, rows, emb, writer, services.BackfillOptions{
+		Workers:    *workers,
+		EmbedBatch: *embedBatch,
+		WriteChunk: *writeChunk,
+		Limit:      *limit,
+		DryRun:     *dryRun,
+	})
+	if err != nil {
+		log.Fatalf("backfill: %v", err)
 	}
-	if _, err := client.Apply(ctx, muts); err != nil {
-		log.Fatalf("apply: %v", err)
-	}
-	log.Printf("wrote embedding_v2 for %d products", n)
+	log.Printf("completed embedding_v2 backfill: embedded=%d written=%d batches=%d chunks=%d model=%s (%d dims)",
+		stats.TotalEmbedded, stats.TotalWritten, stats.Batches, stats.ChunksCommitted, emb.Model(), cfg.GeminiEmbeddingDimension)
 }

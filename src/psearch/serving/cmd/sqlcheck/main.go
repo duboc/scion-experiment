@@ -103,6 +103,17 @@ func main() {
 		}
 		log.Printf("OK   q=%q alpha=%.1f filters=%+v rows=%d mode=%s", c.q, c.alpha, c.filters, n, mode)
 	}
+	// ScaNN ANN Vector Index vs Exact Fallback (Issue #39, ADR-012): verify both
+	// USE_VECTOR_INDEX=true and USE_VECTOR_INDEX=false execute cleanly.
+	for _, useANN := range []bool{true, false} {
+		n, vecUsed, mode, err := svc.CheckSpannerQueryANN(ctx, "running shoes", 0.5, models.SearchFilters{}, useANN)
+		if err != nil {
+			failed = true
+			log.Printf("FAIL ScaNN ANN check use_vector_index=%v: %v", useANN, err)
+		} else {
+			log.Printf("OK   ScaNN ANN check use_vector_index=%v vector_index_used=%v rows=%d mode=%s", useANN, vecUsed, n, mode)
+		}
+	}
 	// Delivery promises (Issue #8): interleaved regional_inventory JOIN skus.
 	if p, err := svc.DeliveryPromises(ctx, []string{"prod-001", "prod-002", "prod-003", "prod-004"}, "01310", 0); err != nil {
 		failed = true
