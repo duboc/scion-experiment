@@ -1484,10 +1484,31 @@ function ProductSearch({
     // Prevent search input changes from causing product grid re-renders
     // Only fetch products when activeSearchQuery changes (not during typing)
 
+    const [substitutesByProduct, setSubstitutesByProduct] = useState({});
+
     // Stable handler for product clicks (fires ad click beacon as fire-and-forget when sponsored)
     const handleProductClick = useCallback((productOrId) => {
         const product = typeof productOrId === 'object' && productOrId !== null ? productOrId : null;
         const productId = product ? product.id : productOrId;
+        if (product && product.id) {
+            try {
+                const raw = localStorage.getItem('searchResults');
+                const list = raw ? JSON.parse(raw) : [];
+                const normalized = {
+                    ...product,
+                    name: product.name || product.title || product.id,
+                    title: product.title || product.description || product.name || '',
+                    brands: product.brands || (product.brand ? [product.brand] : []),
+                    categories: product.categories || (product.category ? [product.category] : []),
+                };
+                const nextList = Array.isArray(list)
+                    ? [normalized, ...list.filter(p => p && p.id !== product.id)]
+                    : [normalized];
+                localStorage.setItem('searchResults', JSON.stringify(nextList));
+            } catch (e) {
+                // ignore storage errors
+            }
+        }
         if (product && product.sponsored && product.ad_campaign_id && product.ad_click_id) {
             recordAdClick(product.ad_campaign_id, product.ad_click_id);
         }
@@ -1495,6 +1516,61 @@ function ProductSearch({
         setSessionRefreshKey(prev => prev + 1);
         navigate(`/product/${productId}`);
     }, [navigate, tenantId]);
+
+    const handleLoadSubstitutes = useCallback(async (productId, e) => {
+        if (e && e.stopPropagation) {
+            e.stopPropagation();
+        }
+        if (!productId) return;
+        const existing = substitutesByProduct[productId];
+        if (existing && existing.open && !existing.loading) {
+            setSubstitutesByProduct(prev => ({
+                ...prev,
+                [productId]: { ...prev[productId], open: false },
+            }));
+            return;
+        }
+        if (existing && Array.isArray(existing.items) && existing.items.length > 0) {
+            setSubstitutesByProduct(prev => ({
+                ...prev,
+                [productId]: { ...prev[productId], open: true },
+            }));
+            return;
+        }
+        setSubstitutesByProduct(prev => ({
+            ...prev,
+            [productId]: { loading: true, open: true, items: [], error: null },
+        }));
+        try {
+            const base = (API_URL || '').replace(/\/+$/, '');
+            const params = {
+                mode: 'substitutes',
+                limit: 4,
+                only_in_stock: true,
+                tenant_id: tenantId || 'default',
+            };
+            if (locale) params.locale = locale;
+            if (channel) params.channel = channel;
+            if (priceTableId) params.price_table_id = priceTableId;
+            if (cep) params.cep = cep;
+            const res = await axios.get(`${base}/api/products/${encodeURIComponent(productId)}/similar`, { params });
+            const items = Array.isArray(res.data?.results) ? res.data.results : [];
+            setSubstitutesByProduct(prev => ({
+                ...prev,
+                [productId]: { loading: false, open: true, items, error: null },
+            }));
+        } catch (err) {
+            setSubstitutesByProduct(prev => ({
+                ...prev,
+                [productId]: {
+                    loading: false,
+                    open: true,
+                    items: [],
+                    error: err.response?.data?.error || err.message || 'Failed to load substitutes',
+                },
+            }));
+        }
+    }, [substitutesByProduct, tenantId, locale, channel, priceTableId, cep]);
 
     const handleSessionUpdate = useCallback((newSessionId) => {
         setSessionId(newSessionId);
@@ -1776,76 +1852,152 @@ function ProductSearch({
                                                 : 'OUT_OF_STOCK';
                                             const prodLocale = product.locale || product.Locale;
                                             const dp = product.deliveryPromise;
+                                            const subState = substitutesByProduct[product.id];
                                             return (
-                                                <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap', mt: 1 }}>
-                                                    <Chip
-                                                        label={stockBadge}
-                                                        color={isStockIn ? 'success' : 'error'}
-                                                        size="small"
-                                                    />
-                                                    {prodLocale && (
+                                                <>
+                                                    <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap', mt: 1 }}>
                                                         <Chip
-                                                            label={prodLocale}
+                                                            label={stockBadge}
+                                                            color={isStockIn ? 'success' : 'error'}
                                                             size="small"
-                                                            variant="outlined"
-                                                            color="info"
-                                                            sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
                                                         />
+                                                        {prodLocale && (
+                                                            <Chip
+                                                                label={prodLocale}
+                                                                size="small"
+                                                                variant="outlined"
+                                                                color="info"
+                                                                sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
+                                                            />
+                                                        )}
+                                                        {dp && dp.label && (
+                                                            <Chip
+                                                                label={dp.label}
+                                                                size="small"
+                                                                color="success"
+                                                                sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
+                                                            />
+                                                        )}
+                                                        {dp && dp.free_shipping && (
+                                                            <Chip
+                                                                label="Frete grátis"
+                                                                size="small"
+                                                                variant="outlined"
+                                                                color="success"
+                                                                sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
+                                                            />
+                                                        )}
+                                                        {(() => {
+                                                            const s = product.score || {};
+                                                            if (s.stage1_rank !== undefined && s.stage2_rank !== undefined) {
+                                                                const diff = s.stage1_rank - s.stage2_rank;
+                                                                let rankLabel = `${s.stage1_rank} → ${s.stage2_rank}`;
+                                                                if (diff > 0) rankLabel += ` (↑${diff})`;
+                                                                else if (diff < 0) rankLabel += ` (↓${Math.abs(diff)})`;
+                                                                const color = diff > 0 ? 'success' : diff < 0 ? 'warning' : 'default';
+                                                                return (
+                                                                    <Chip
+                                                                        label={rankLabel}
+                                                                        size="small"
+                                                                        color={color}
+                                                                        variant="outlined"
+                                                                        sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
+                                                                    />
+                                                                );
+                                                            }
+                                                            return null;
+                                                        })()}
+                                                        {(() => {
+                                                            const s = product.score || {};
+                                                            if (personalized && s.session_boost !== undefined) {
+                                                                const b = Number(s.session_boost);
+                                                                return (
+                                                                    <Chip
+                                                                        label={`boost: +${b.toFixed(4)}`}
+                                                                        size="small"
+                                                                        color={b > 0 ? "secondary" : "default"}
+                                                                        variant="outlined"
+                                                                        sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
+                                                                    />
+                                                                );
+                                                            }
+                                                            return null;
+                                                        })()}
+                                                    </Box>
+                                                    {!isStockIn && (
+                                                        <Box sx={{ mt: 1 }} onClick={(e) => e.stopPropagation()}>
+                                                            <Button
+                                                                size="small"
+                                                                variant="outlined"
+                                                                color="warning"
+                                                                fullWidth
+                                                                data-testid="see-substitutes-btn"
+                                                                onClick={(e) => handleLoadSubstitutes(product.id, e)}
+                                                                sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, py: 0.25 }}
+                                                            >
+                                                                {subState?.open ? 'Hide In-Stock Alternatives' : 'See In-Stock Alternatives'}
+                                                            </Button>
+                                                            {subState?.open && (
+                                                                <Box
+                                                                    data-testid="substitutes-panel"
+                                                                    sx={{
+                                                                        mt: 0.75,
+                                                                        p: 1,
+                                                                        borderRadius: 1,
+                                                                        backgroundColor: '#fffbeb',
+                                                                        border: '1px solid #fcd34d',
+                                                                    }}
+                                                                >
+                                                                    {subState.loading ? (
+                                                                        <Typography variant="caption" color="text.secondary">
+                                                                            Loading alternatives...
+                                                                        </Typography>
+                                                                    ) : subState.error ? (
+                                                                        <Typography variant="caption" color="error">
+                                                                            {subState.error}
+                                                                        </Typography>
+                                                                    ) : subState.items.length === 0 ? (
+                                                                        <Typography variant="caption" color="text.secondary">
+                                                                            No in-stock substitutes found.
+                                                                        </Typography>
+                                                                    ) : (
+                                                                        subState.items.map((sub) => (
+                                                                            <Box
+                                                                                key={sub.id}
+                                                                                data-testid="substitute-item"
+                                                                                onClick={() => onProductClick(sub)}
+                                                                                sx={{
+                                                                                    display: 'flex',
+                                                                                    justifyContent: 'space-between',
+                                                                                    alignItems: 'center',
+                                                                                    py: 0.5,
+                                                                                    borderBottom: '1px solid #fde68a',
+                                                                                    cursor: 'pointer',
+                                                                                    '&:last-child': { borderBottom: 'none' },
+                                                                                    '&:hover': { backgroundColor: '#fef3c7' },
+                                                                                }}
+                                                                            >
+                                                                                <Box sx={{ minWidth: 0, pr: 0.5 }}>
+                                                                                    <Typography variant="caption" sx={{ fontWeight: 700, display: 'block' }} noWrap>
+                                                                                        {sub.title || sub.name}
+                                                                                    </Typography>
+                                                                                    {sub.substitute_reason && (
+                                                                                        <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#92400e', display: 'block' }} noWrap>
+                                                                                            {sub.substitute_reason}
+                                                                                        </Typography>
+                                                                                    )}
+                                                                                </Box>
+                                                                                <Typography variant="caption" color="primary" sx={{ fontWeight: 700, flexShrink: 0 }}>
+                                                                                    ${sub.priceInfo?.price || '0.00'}
+                                                                                </Typography>
+                                                                            </Box>
+                                                                        ))
+                                                                    )}
+                                                                </Box>
+                                                            )}
+                                                        </Box>
                                                     )}
-                                                    {dp && dp.label && (
-                                                        <Chip
-                                                            label={dp.label}
-                                                            size="small"
-                                                            color="success"
-                                                            sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
-                                                        />
-                                                    )}
-                                                    {dp && dp.free_shipping && (
-                                                        <Chip
-                                                            label="Frete grátis"
-                                                            size="small"
-                                                            variant="outlined"
-                                                            color="success"
-                                                            sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
-                                                        />
-                                                    )}
-                                                    {(() => {
-                                                        const s = product.score || {};
-                                                        if (s.stage1_rank !== undefined && s.stage2_rank !== undefined) {
-                                                            const diff = s.stage1_rank - s.stage2_rank;
-                                                            let rankLabel = `${s.stage1_rank} → ${s.stage2_rank}`;
-                                                            if (diff > 0) rankLabel += ` (↑${diff})`;
-                                                            else if (diff < 0) rankLabel += ` (↓${Math.abs(diff)})`;
-                                                            const color = diff > 0 ? 'success' : diff < 0 ? 'warning' : 'default';
-                                                            return (
-                                                                <Chip
-                                                                    label={rankLabel}
-                                                                    size="small"
-                                                                    color={color}
-                                                                    variant="outlined"
-                                                                    sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
-                                                                />
-                                                            );
-                                                        }
-                                                        return null;
-                                                    })()}
-                                                    {(() => {
-                                                        const s = product.score || {};
-                                                        if (personalized && s.session_boost !== undefined) {
-                                                            const b = Number(s.session_boost);
-                                                            return (
-                                                                <Chip
-                                                                    label={`boost: +${b.toFixed(4)}`}
-                                                                    size="small"
-                                                                    color={b > 0 ? "secondary" : "default"}
-                                                                    variant="outlined"
-                                                                    sx={{ fontWeight: 600, height: 24, fontSize: '0.75rem' }}
-                                                                />
-                                                            );
-                                                        }
-                                                        return null;
-                                                    })()}
-                                                </Box>
+                                                </>
                                             );
                                         })()}
                                     </Box>

@@ -175,3 +175,28 @@ func TestStorefrontDynamicAttributeFacetsAndSpecs(t *testing.T) {
 		}
 	}
 }
+
+// #44 (ADR-016): Similar Products / Frequently Viewed Together carousels and
+// 'See In-Stock Alternatives' on out-of-stock cards.
+func TestStorefrontSimilarAndSubstitutes(t *testing.T) {
+	for _, frag := range []string{
+		`id="product-details-modal"`,
+		`data-testid="similar-products-carousel"`,
+		`data-testid="co-viewed-carousel"`,
+		"Similar Products",
+		"Frequently Viewed Together",
+		"See In-Stock Alternatives",
+		`data-testid="see-substitutes-btn"`,
+		`data-testid="substitutes-panel"`,
+		"function buildSimilarUrl(",
+		"function openProductDetailsModal(",
+		"function loadInStockSubstitutes(",
+		"buildSimilarUrl(p.id, 'similar', 6)",
+		"buildSimilarUrl(p.id, 'co_viewed', 6)",
+		"buildSimilarUrl(productId, 'substitutes', 4)",
+	} {
+		if !strings.Contains(defaultStorefrontHTML, frag) {
+			t.Errorf("storefront missing %q", frag)
+		}
+	}
+}

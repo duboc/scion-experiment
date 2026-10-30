@@ -261,6 +261,28 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         <div id="parsed-query-chips" style="display:none;margin:-8px 0 16px 0;gap:8px;flex-wrap:wrap;align-items:center;"></div>
         <div class="grid" id="results"></div>
         <div id="pagination-bar" style="display:none;justify-content:space-between;align-items:center;margin-top:20px;flex-wrap:wrap;gap:12px;"></div>
+        <div id="product-details-modal" data-testid="product-recommendations-section" style="display:none;margin-top:24px;padding:18px;background:var(--card);border:1px solid #38bdf8;border-radius:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px;flex-wrap:wrap;">
+            <div>
+              <span style="font-size:11px;color:var(--accent);text-transform:uppercase;font-weight:700;">Item-to-Item Recommendations (ADR-016)</span>
+              <h3 id="modal-product-title" style="margin:4px 0 0 0;font-size:16px;">Product Recommendations</h3>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button type="button" id="tab-similar-btn" class="page-btn page-btn-active" onclick="switchRecTab('all')">All</button>
+              <button type="button" id="tab-only-similar-btn" class="page-btn" onclick="switchRecTab('similar')">Similar Products</button>
+              <button type="button" id="tab-only-coviewed-btn" class="page-btn" onclick="switchRecTab('co_viewed')">Frequently Viewed Together</button>
+              <button type="button" id="close-details-modal-btn" class="page-btn" onclick="closeProductDetailsModal()">Close &times;</button>
+            </div>
+          </div>
+          <div id="section-similar" data-testid="similar-products-carousel" style="margin-bottom:16px;">
+            <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px;">Similar Products</div>
+            <div id="carousel-similar" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;"></div>
+          </div>
+          <div id="section-co-viewed" data-testid="co-viewed-carousel">
+            <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px;">Frequently Viewed Together</div>
+            <div id="carousel-co-viewed" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;"></div>
+          </div>
+        </div>
       </div>
     </div>
   </main>
@@ -1109,7 +1131,14 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           '<div class="variant-chips" style="display:none;gap:4px;flex-wrap:wrap;align-items:center;"></div>' +
           '<div class="spec-badges" data-testid="product-spec-badges" style="display:none;gap:4px;flex-wrap:wrap;align-items:center;margin-top:6px;"></div>' +
           '<div class="scores">hybrid=' + finalScore.toFixed(4) + ' | vec=' + vecScore.toFixed(4) + ' | txt=' + txtScore.toFixed(4) + ltrScore + '</div>' +
-          '<div style="margin-top:10px;display:flex;justify-content:flex-end;"><button type="button" class="record-click-btn" style="background:#1e293b;border:1px solid #64748b;color:#f8fafc;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">+ Clique</button></div>' +
+          '<div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+              '<button type="button" class="similar-btn" data-testid="open-similar-btn" style="background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Similar / Co-Viewed</button>' +
+              (!isStockIn ? '<button type="button" class="substitutes-btn" data-testid="see-substitutes-btn" style="background:#451a03;border:1px solid #f59e0b;color:#fde68a;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">See In-Stock Alternatives</button>' : '') +
+            '</div>' +
+            '<button type="button" class="record-click-btn" style="background:#1e293b;border:1px solid #64748b;color:#f8fafc;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">+ Clique</button>' +
+          '</div>' +
+          '<div class="substitutes-panel" data-testid="substitutes-panel" style="display:none;margin-top:8px;padding:8px;background:#0f172a;border:1px solid #f59e0b;border-radius:6px;"></div>' +
         '</div>';
       }).join('');
       (data.results || []).forEach((p, i) => {
@@ -1262,6 +1291,21 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
             });
           }
         }
+        const similarBtn = card.querySelector('.similar-btn');
+        if (similarBtn) {
+          similarBtn.onclick = function(e) {
+            e.stopPropagation();
+            openProductDetailsModal(p);
+          };
+        }
+        const subBtn = card.querySelector('.substitutes-btn');
+        const subPanel = card.querySelector('.substitutes-panel');
+        if (subBtn && subPanel) {
+          subBtn.onclick = function(e) {
+            e.stopPropagation();
+            loadInStockSubstitutes(p.id, subPanel, subBtn);
+          };
+        }
         const recordBtn = card.querySelector('.record-click-btn');
         if (recordBtn) {
           recordBtn.textContent = '+ Clique';
@@ -1289,6 +1333,152 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           };
         }
       });
+    }
+    function buildSimilarUrl(productId, mode, limit) {
+      const tenantId = (document.getElementById('tenant_id') && document.getElementById('tenant_id').value) || 'default';
+      const locale = (document.getElementById('locale') && document.getElementById('locale').value) || '';
+      const channel = (document.getElementById('channel') && document.getElementById('channel').value) || '';
+      const priceTableId = (document.getElementById('price_table_id') && document.getElementById('price_table_id').value) || '';
+      const cep = (document.getElementById('cep') && document.getElementById('cep').value.trim()) || '';
+      let u = '/api/products/' + encodeURIComponent(productId) + '/similar?mode=' + encodeURIComponent(mode) + '&limit=' + encodeURIComponent(limit) + '&tenant_id=' + encodeURIComponent(tenantId);
+      if (mode === 'substitutes') u += '&only_in_stock=true';
+      if (locale) u += '&locale=' + encodeURIComponent(locale);
+      if (channel) u += '&channel=' + encodeURIComponent(channel);
+      if (priceTableId) u += '&price_table_id=' + encodeURIComponent(priceTableId);
+      if (cep) u += '&cep=' + encodeURIComponent(cep);
+      return u;
+    }
+    function renderRecCarousel(containerId, items) {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      el.textContent = '';
+      if (!Array.isArray(items) || items.length === 0) {
+        const empty = document.createElement('span');
+        empty.style.cssText = 'color:var(--muted);font-size:12px;';
+        empty.textContent = 'No recommendations available.';
+        el.appendChild(empty);
+        return;
+      }
+      items.forEach(function(item) {
+        const card = document.createElement('div');
+        card.style.cssText = 'min-width:190px;max-width:210px;flex-shrink:0;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;cursor:pointer;';
+        const title = document.createElement('div');
+        title.style.cssText = 'font-weight:700;font-size:13px;color:var(--text);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        title.textContent = item.title || item.name || item.id;
+        const cat = document.createElement('div');
+        cat.style.cssText = 'font-size:11px;color:var(--muted);margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        cat.textContent = Array.isArray(item.categories) ? item.categories.join(', ') : (item.category || '');
+        const bottom = document.createElement('div');
+        bottom.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
+        const price = document.createElement('span');
+        price.style.cssText = 'font-weight:700;font-size:13px;color:#22c55e;';
+        price.textContent = '$' + ((item.priceInfo && item.priceInfo.price) || '0.00');
+        const stock = document.createElement('span');
+        const inStock = item.availability === 'IN_STOCK';
+        stock.className = inStock ? 'stock-in' : 'stock-out';
+        stock.textContent = inStock ? 'IN_STOCK' : 'OUT_OF_STOCK';
+        bottom.appendChild(price);
+        bottom.appendChild(stock);
+        card.appendChild(title);
+        card.appendChild(cat);
+        card.appendChild(bottom);
+        if (item.similarity_score !== undefined) {
+          const meta = document.createElement('div');
+          meta.style.cssText = 'font-size:10px;color:#94a3b8;margin-top:4px;';
+          meta.textContent = 'sim=' + Number(item.similarity_score).toFixed(2) + (item.co_view_count ? ' · co-views=' + item.co_view_count : '');
+          card.appendChild(meta);
+        }
+        card.onclick = function() {
+          openProductDetailsModal(item);
+        };
+        el.appendChild(card);
+      });
+    }
+    function switchRecTab(tab) {
+      const secSim = document.getElementById('section-similar');
+      const secCo = document.getElementById('section-co-viewed');
+      if (secSim) secSim.style.display = (tab === 'all' || tab === 'similar') ? 'block' : 'none';
+      if (secCo) secCo.style.display = (tab === 'all' || tab === 'co_viewed') ? 'block' : 'none';
+      const btnAll = document.getElementById('tab-similar-btn');
+      const btnSim = document.getElementById('tab-only-similar-btn');
+      const btnCo = document.getElementById('tab-only-coviewed-btn');
+      if (btnAll) btnAll.className = 'page-btn' + (tab === 'all' ? ' page-btn-active' : '');
+      if (btnSim) btnSim.className = 'page-btn' + (tab === 'similar' ? ' page-btn-active' : '');
+      if (btnCo) btnCo.className = 'page-btn' + (tab === 'co_viewed' ? ' page-btn-active' : '');
+    }
+    async function openProductDetailsModal(p) {
+      if (!p || !p.id) return;
+      const modal = document.getElementById('product-details-modal');
+      if (!modal) return;
+      modal.style.display = 'block';
+      const titleEl = document.getElementById('modal-product-title');
+      if (titleEl) titleEl.textContent = (p.title || p.name || p.id) + ' (' + p.id + ')';
+      switchRecTab('all');
+      const simEl = document.getElementById('carousel-similar');
+      const coEl = document.getElementById('carousel-co-viewed');
+      if (simEl) simEl.textContent = 'Loading similar products...';
+      if (coEl) coEl.textContent = 'Loading frequently viewed together...';
+      try {
+        const [simRes, coRes] = await Promise.all([
+          fetch(buildSimilarUrl(p.id, 'similar', 6)),
+          fetch(buildSimilarUrl(p.id, 'co_viewed', 6))
+        ]);
+        const simData = simRes.ok ? await simRes.json() : { results: [] };
+        const coData = coRes.ok ? await coRes.json() : { results: [] };
+        renderRecCarousel('carousel-similar', simData.results || []);
+        renderRecCarousel('carousel-co-viewed', coData.results || []);
+      } catch (err) {
+        if (simEl) simEl.textContent = 'Failed to load similar products.';
+        if (coEl) coEl.textContent = 'Failed to load co-viewed products.';
+      }
+    }
+    function closeProductDetailsModal() {
+      const modal = document.getElementById('product-details-modal');
+      if (modal) modal.style.display = 'none';
+    }
+    async function loadInStockSubstitutes(productId, panelEl, btnEl) {
+      if (!productId || !panelEl) return;
+      if (panelEl.style.display === 'block') {
+        panelEl.style.display = 'none';
+        if (btnEl) btnEl.textContent = 'See In-Stock Alternatives';
+        return;
+      }
+      panelEl.style.display = 'block';
+      panelEl.textContent = 'Loading in-stock substitutes...';
+      if (btnEl) btnEl.textContent = 'Hide In-Stock Alternatives';
+      try {
+        const res = await fetch(buildSimilarUrl(productId, 'substitutes', 4));
+        const data = await res.json();
+        panelEl.textContent = '';
+        const items = (data && Array.isArray(data.results)) ? data.results : [];
+        if (items.length === 0) {
+          const none = document.createElement('span');
+          none.style.cssText = 'color:var(--muted);font-size:11px;';
+          none.textContent = 'No in-stock substitutes found.';
+          panelEl.appendChild(none);
+          return;
+        }
+        items.forEach(function(sub) {
+          const row = document.createElement('div');
+          row.setAttribute('data-testid', 'substitute-item');
+          row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #334155;font-size:12px;cursor:pointer;';
+          const left = document.createElement('span');
+          left.style.cssText = 'color:#f8fafc;font-weight:600;';
+          left.textContent = (sub.title || sub.name || sub.id) + (sub.substitute_reason ? ' (' + sub.substitute_reason + ')' : '');
+          const right = document.createElement('span');
+          right.style.cssText = 'color:#22c55e;font-weight:700;';
+          right.textContent = '$' + ((sub.priceInfo && sub.priceInfo.price) || '0.00') + ' · IN_STOCK';
+          row.appendChild(left);
+          row.appendChild(right);
+          row.onclick = function(e) {
+            e.stopPropagation();
+            openProductDetailsModal(sub);
+          };
+          panelEl.appendChild(row);
+        });
+      } catch (err) {
+        panelEl.textContent = 'Error loading substitutes.';
+      }
     }
     function recordAdClick(campaignId, clickId) {
       if (!campaignId || !clickId) return;

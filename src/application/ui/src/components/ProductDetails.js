@@ -113,11 +113,86 @@ function ProductDetails() {
     // State for image enhancer dialog
     const [imageEnhancerOpen, setImageEnhancerOpen] = useState(false);
 
+    // State for item-to-item recommendations (#44, ADR-016)
+    const [similarProducts, setSimilarProducts] = useState([]);
+    const [coViewedProducts, setCoViewedProducts] = useState([]);
+    const [substituteProducts, setSubstituteProducts] = useState([]);
+    const [recsLoading, setRecsLoading] = useState(false);
+    const [recTab, setRecTab] = useState('all');
+
     useEffect(() => {
         if (productId) {
             recordSessionEvent(productId, 'click');
         }
     }, [productId]);
+
+    useEffect(() => {
+        if (!productId) return;
+        let cancelled = false;
+        const base = (API_URL || '').replace(/\/+$/, '');
+        const tenantId = localStorage.getItem('tenantId') || 'default';
+        const locale = localStorage.getItem('locale') || '';
+        const baseParams = { tenant_id: tenantId };
+        if (locale) baseParams.locale = locale;
+
+        setRecsLoading(true);
+        Promise.allSettled([
+            axios.get(`${base}/api/products/${encodeURIComponent(productId)}/similar`, {
+                params: { ...baseParams, mode: 'similar', limit: 6 }
+            }),
+            axios.get(`${base}/api/products/${encodeURIComponent(productId)}/similar`, {
+                params: { ...baseParams, mode: 'co_viewed', limit: 6 }
+            }),
+            axios.get(`${base}/api/products/${encodeURIComponent(productId)}/similar`, {
+                params: { ...baseParams, mode: 'substitutes', limit: 4, only_in_stock: true }
+            }),
+        ]).then(([simRes, coRes, subRes]) => {
+            if (cancelled) return;
+            setSimilarProducts(
+                simRes.status === 'fulfilled' && Array.isArray(simRes.value?.data?.results)
+                    ? simRes.value.data.results
+                    : []
+            );
+            setCoViewedProducts(
+                coRes.status === 'fulfilled' && Array.isArray(coRes.value?.data?.results)
+                    ? coRes.value.data.results
+                    : []
+            );
+            setSubstituteProducts(
+                subRes.status === 'fulfilled' && Array.isArray(subRes.value?.data?.results)
+                    ? subRes.value.data.results
+                    : []
+            );
+        }).finally(() => {
+            if (!cancelled) setRecsLoading(false);
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [productId]);
+
+    const handleRecommendationClick = (recProduct) => {
+        if (!recProduct || !recProduct.id) return;
+        try {
+            const raw = localStorage.getItem('searchResults');
+            const list = raw ? JSON.parse(raw) : [];
+            const normalized = {
+                ...recProduct,
+                name: recProduct.name || recProduct.title || recProduct.id,
+                title: recProduct.title || recProduct.description || recProduct.name || '',
+                brands: recProduct.brands || (recProduct.brand ? [recProduct.brand] : []),
+                categories: recProduct.categories || (recProduct.category ? [recProduct.category] : []),
+            };
+            const nextList = Array.isArray(list)
+                ? [normalized, ...list.filter(p => p && p.id !== recProduct.id)]
+                : [normalized];
+            localStorage.setItem('searchResults', JSON.stringify(nextList));
+        } catch (e) {
+            // ignore storage errors
+        }
+        navigate(`/product/${recProduct.id}`);
+    };
 
     const handlePurchase = async () => {
         if (!productId) return;
@@ -962,6 +1037,191 @@ function ProductDetails() {
                         </Box>
                     </Grid>
                 </Grid>
+
+                {/* Item-to-Item Recommendations Carousels (#44, ADR-016) */}
+                <Box sx={{ mt: 5 }} data-testid="product-recommendations-section">
+                    {product.availability !== 'IN_STOCK' && substituteProducts.length > 0 && (
+                        <Paper
+                            elevation={1}
+                            data-testid="substitutes-carousel"
+                            sx={{ p: 2.5, mb: 4, border: '1px solid #f59e0b', backgroundColor: '#fffbeb', borderRadius: 2 }}
+                        >
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+                                <Typography variant="h6" sx={{ fontWeight: 700, color: '#92400e' }}>
+                                    See In-Stock Alternatives
+                                </Typography>
+                                <Chip label="Same Category · In Stock" size="small" color="warning" variant="outlined" />
+                            </Box>
+                            <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
+                                {substituteProducts.map((rec) => (
+                                    <Card
+                                        key={`sub-${rec.id}`}
+                                        data-testid="substitute-card"
+                                        onClick={() => handleRecommendationClick(rec)}
+                                        sx={{
+                                            minWidth: 210,
+                                            maxWidth: 230,
+                                            flexShrink: 0,
+                                            cursor: 'pointer',
+                                            transition: 'box-shadow 0.2s ease',
+                                            '&:hover': { boxShadow: 4 },
+                                        }}
+                                    >
+                                        <CardContent sx={{ p: 1.5 }}>
+                                            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }} noWrap>
+                                                {rec.title || rec.name}
+                                            </Typography>
+                                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }} noWrap>
+                                                {(rec.categories || []).join(', ') || rec.category || ''}
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
+                                                <Typography variant="subtitle1" color="primary" sx={{ fontWeight: 700 }}>
+                                                    ${rec.priceInfo?.price || '0.00'}
+                                                </Typography>
+                                                <Chip label="IN_STOCK" color="success" size="small" sx={{ height: 20, fontSize: '0.68rem' }} />
+                                            </Box>
+                                            {rec.substitute_reason && (
+                                                <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: '#92400e' }}>
+                                                    {rec.substitute_reason}
+                                                </Typography>
+                                            )}
+                                        </CardContent>
+                                    </Card>
+                                ))}
+                            </Box>
+                        </Paper>
+                    )}
+
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+                        <Tabs
+                            value={recTab}
+                            onChange={(_, val) => setRecTab(val)}
+                            textColor="primary"
+                            indicatorColor="primary"
+                        >
+                            <Tab value="all" label="All Recommendations" />
+                            <Tab value="similar" label={`Similar Products (${similarProducts.length})`} data-testid="tab-similar-products" />
+                            <Tab value="co_viewed" label={`Frequently Viewed Together (${coViewedProducts.length})`} data-testid="tab-co-viewed" />
+                        </Tabs>
+                        {recsLoading && (
+                            <Typography variant="caption" color="text.secondary">
+                                Loading recommendations...
+                            </Typography>
+                        )}
+                    </Box>
+
+                    {(recTab === 'all' || recTab === 'similar') && (
+                        <Box sx={{ mb: 4 }} data-testid="similar-products-carousel">
+                            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>
+                                Similar Products
+                            </Typography>
+                            {similarProducts.length === 0 ? (
+                                <Typography variant="body2" color="text.secondary">
+                                    {recsLoading ? 'Loading similar products...' : 'No similar products found.'}
+                                </Typography>
+                            ) : (
+                                <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
+                                    {similarProducts.map((rec) => (
+                                        <Card
+                                            key={`sim-${rec.id}`}
+                                            data-testid="similar-product-card"
+                                            onClick={() => handleRecommendationClick(rec)}
+                                            sx={{
+                                                minWidth: 210,
+                                                maxWidth: 230,
+                                                flexShrink: 0,
+                                                cursor: 'pointer',
+                                                transition: 'box-shadow 0.2s ease',
+                                                '&:hover': { boxShadow: 4 },
+                                            }}
+                                        >
+                                            <CardContent sx={{ p: 1.5 }}>
+                                                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }} noWrap>
+                                                    {rec.title || rec.name}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }} noWrap>
+                                                    {(rec.categories || []).join(', ') || rec.category || ''}
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Typography variant="subtitle1" color="primary" sx={{ fontWeight: 700 }}>
+                                                        ${rec.priceInfo?.price || '0.00'}
+                                                    </Typography>
+                                                    <Chip
+                                                        label={rec.availability === 'IN_STOCK' ? 'IN_STOCK' : 'OUT_OF_STOCK'}
+                                                        color={rec.availability === 'IN_STOCK' ? 'success' : 'error'}
+                                                        size="small"
+                                                        sx={{ height: 20, fontSize: '0.68rem' }}
+                                                    />
+                                                </Box>
+                                                {rec.similarity_score !== undefined && (
+                                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                                                        Similarity: {Number(rec.similarity_score).toFixed(2)}
+                                                    </Typography>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    ))}
+                                </Box>
+                            )}
+                        </Box>
+                    )}
+
+                    {(recTab === 'all' || recTab === 'co_viewed') && (
+                        <Box sx={{ mb: 4 }} data-testid="co-viewed-carousel">
+                            <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>
+                                Frequently Viewed Together
+                            </Typography>
+                            {coViewedProducts.length === 0 ? (
+                                <Typography variant="body2" color="text.secondary">
+                                    {recsLoading ? 'Loading co-viewed products...' : 'No co-viewed products yet.'}
+                                </Typography>
+                            ) : (
+                                <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 1 }}>
+                                    {coViewedProducts.map((rec) => (
+                                        <Card
+                                            key={`cov-${rec.id}`}
+                                            data-testid="co-viewed-product-card"
+                                            onClick={() => handleRecommendationClick(rec)}
+                                            sx={{
+                                                minWidth: 210,
+                                                maxWidth: 230,
+                                                flexShrink: 0,
+                                                cursor: 'pointer',
+                                                transition: 'box-shadow 0.2s ease',
+                                                '&:hover': { boxShadow: 4 },
+                                            }}
+                                        >
+                                            <CardContent sx={{ p: 1.5 }}>
+                                                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }} noWrap>
+                                                    {rec.title || rec.name}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }} noWrap>
+                                                    {(rec.categories || []).join(', ') || rec.category || ''}
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Typography variant="subtitle1" color="primary" sx={{ fontWeight: 700 }}>
+                                                        ${rec.priceInfo?.price || '0.00'}
+                                                    </Typography>
+                                                    <Chip
+                                                        label={rec.availability === 'IN_STOCK' ? 'IN_STOCK' : 'OUT_OF_STOCK'}
+                                                        color={rec.availability === 'IN_STOCK' ? 'success' : 'error'}
+                                                        size="small"
+                                                        sx={{ height: 20, fontSize: '0.68rem' }}
+                                                    />
+                                                </Box>
+                                                {rec.co_view_count !== undefined && rec.co_view_count > 0 && (
+                                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                                                        Co-viewed: {rec.co_view_count}x
+                                                    </Typography>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    ))}
+                                </Box>
+                            )}
+                        </Box>
+                    )}
+                </Box>
 
                 {/* Confirmation Dialog */}
                 <ConfirmationDialog
