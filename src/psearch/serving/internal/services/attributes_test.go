@@ -54,9 +54,71 @@ func TestDynamicAttrFilterSQL_UsesBoundParamsWithoutInterpolatingKeys(t *testing
 	}
 }
 
+func TestDefaultProductAttributes_SunscreenAttrsOnlyOnDermocosmetics(t *testing.T) {
+	products := DefaultSeedProducts()
+	attrsByProd := DefaultProductAttributes()
+	allowedByCat := map[string]map[string]bool{
+		"Footwear":       {"surface": true, "cushioning": true, "drop": true},
+		"Computers":      {"ram": true, "storage": true, "processor": true, "screen_size": true},
+		"Audio":          {"connectivity": true, "battery_life": true, "noise_cancelling": true},
+		"Smartphones":    {"ram": true, "storage": true, "connectivity": true},
+		"Appliances":     {"voltage": true, "energy_rating": true, "capacity": true, "pressure": true},
+		"TV & Video":     {"screen_size": true, "resolution": true, "refresh_rate": true},
+		"Accessories":    {"connectivity": true, "switch_type": true},
+		"Dermocosmetics": {"fps": true, "skin_type": true, "form": true},
+	}
+
+	for _, p := range products {
+		cat := ""
+		if len(p.Categories) > 0 {
+			cat = p.Categories[0]
+		}
+		attrs := attrsByProd[p.ID]
+		if len(attrs) == 0 {
+			t.Fatalf("seed product %s (%s) has no default attributes", p.ID, cat)
+		}
+		isDermo := strings.EqualFold(cat, "Dermocosmetics") || strings.EqualFold(cat, "Health & Beauty")
+		for k := range attrs {
+			if (k == "fps" || k == "skin_type" || k == "form") && !isDermo {
+				t.Fatalf("sunscreen attribute %q found on non-dermocosmetic product %s (category=%q)", k, p.ID, cat)
+			}
+			if allowed := allowedByCat[cat]; allowed != nil && !allowed[k] {
+				t.Fatalf("attribute %q on product %s does not match category %q", k, p.ID, cat)
+			}
+		}
+	}
+}
+
 func TestDynamicAttributesSearchFacetsAndUpsertInMemory(t *testing.T) {
 	ctx := context.Background()
-	svc := &SpannerService{config: testConfig("v1"), seedProducts: DefaultSeedProducts()}
+	seed := DefaultSeedProducts()
+	qty := 20
+	dermo1 := models.SearchResult{
+		ID:                "prod-dermo-1",
+		Title:             "Protetor Solar Facial Anthelios FPS 50",
+		Description:       "Protetor solar toque seco para pele oleosa",
+		Brands:            []string{"LaRoche"},
+		Categories:        []string{"Dermocosmetics"},
+		PriceInfo:         models.PriceInfo{CurrencyCode: "BRL", Price: "89.90", NumericPrice: 89.90},
+		Availability:      "IN_STOCK",
+		AvailableQuantity: &qty,
+		TenantID:          "default",
+		DynamicAttributes: map[string]interface{}{"fps": "FPS 50", "skin_type": "Pele Oleosa", "form": "Gel-Creme"},
+	}
+	dermo2 := models.SearchResult{
+		ID:                "prod-dermo-2",
+		Title:             "Protetor Solar Corporal FPS 70",
+		Description:       "Fluido solar resistente à água",
+		Brands:            []string{"Isdin"},
+		Categories:        []string{"Dermocosmetics"},
+		PriceInfo:         models.PriceInfo{CurrencyCode: "BRL", Price: "109.90", NumericPrice: 109.90},
+		Availability:      "IN_STOCK",
+		AvailableQuantity: &qty,
+		TenantID:          "default",
+		DynamicAttributes: map[string]interface{}{"fps": "FPS 70", "skin_type": "Todos os Tipos", "form": "Fluido"},
+	}
+	seed = append(seed, dermo1, dermo2)
+	svc := &SpannerService{config: testConfig("v1"), seedProducts: seed}
 
 	// 1) Searching q=notebook automatically surfaces notebook attribute facets (ram, storage, processor).
 	nbOut, err := svc.HybridSearchDetailed(ctx, "notebook", 100, 0, 0.5, models.SearchFilters{})

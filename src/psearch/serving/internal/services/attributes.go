@@ -240,8 +240,8 @@ func dynamicAttrFilterSQL(alias string, attrs map[string][]string) (string, map[
 func DefaultProductAttributes() map[string]map[string][]string {
 	return map[string]map[string][]string{
 		"prod-001": {"surface": {"Road", "Track"}, "cushioning": {"Maximum"}, "drop": {"10mm"}},
-		"prod-002": {"surface": {"Road"}, "cushioning": {"Maximum"}, "drop": {"8mm"}, "fps": {"FPS 50"}, "skin_type": {"Pele Oleosa"}, "form": {"Gel-Creme"}},
-		"prod-003": {"surface": {"Trail"}, "cushioning": {"Responsive"}, "drop": {"9mm"}, "fps": {"FPS 70"}, "skin_type": {"Todos os Tipos"}, "form": {"Fluido"}},
+		"prod-002": {"surface": {"Road"}, "cushioning": {"Maximum"}, "drop": {"8mm"}},
+		"prod-003": {"surface": {"Trail"}, "cushioning": {"Responsive"}, "drop": {"9mm"}},
 		"prod-004": {"surface": {"Casual"}, "cushioning": {"Standard"}, "drop": {"6mm"}},
 		"prod-005": {"ram": {"32GB"}, "storage": {"1TB"}, "processor": {"Intel Core Ultra 7"}, "screen_size": {`14"`}},
 		"prod-006": {"ram": {"32GB"}, "storage": {"1TB"}, "processor": {"Intel Core i9"}, "screen_size": {`16"`}},

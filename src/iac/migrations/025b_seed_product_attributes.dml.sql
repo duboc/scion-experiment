@@ -9,15 +9,9 @@ FROM UNNEST([
   STRUCT('prod-002', 'surface', 'Road'),
   STRUCT('prod-002', 'cushioning', 'Maximum'),
   STRUCT('prod-002', 'drop', '8mm'),
-  STRUCT('prod-002', 'fps', 'FPS 50'),
-  STRUCT('prod-002', 'skin_type', 'Pele Oleosa'),
-  STRUCT('prod-002', 'form', 'Gel-Creme'),
   STRUCT('prod-003', 'surface', 'Trail'),
   STRUCT('prod-003', 'cushioning', 'Responsive'),
   STRUCT('prod-003', 'drop', '9mm'),
-  STRUCT('prod-003', 'fps', 'FPS 70'),
-  STRUCT('prod-003', 'skin_type', 'Todos os Tipos'),
-  STRUCT('prod-003', 'form', 'Fluido'),
   STRUCT('prod-004', 'surface', 'Casual'),
   STRUCT('prod-004', 'cushioning', 'Standard'),
   STRUCT('prod-004', 'drop', '6mm'),
@@ -65,7 +59,7 @@ JOIN products AS p ON p.product_id = v.product_id
 UNION ALL
 SELECT p.product_id, a.attr_name, a.attr_value, IFNULL(p.tenant_id, 'default')
 FROM (
-  SELECT product_id, tenant_id, ROW_NUMBER() OVER (ORDER BY product_id) AS rn
+  SELECT product_id, tenant_id, MOD(ABS(FARM_FINGERPRINT(product_id)), 3) AS mod_val
   FROM products
   WHERE LOWER(IFNULL(title, '')) LIKE '%protetor%'
     AND NOT STARTS_WITH(product_id, 'prod-0')
@@ -82,4 +76,4 @@ CROSS JOIN UNNEST([
   STRUCT(2, 'skin_type', 'Todos os Tipos'),
   STRUCT(2, 'form', 'Fluido')
 ]) AS a
-WHERE MOD(p.rn, 3) = a.mod_val
+WHERE p.mod_val = a.mod_val
