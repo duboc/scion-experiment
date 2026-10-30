@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00037-g74`** (100% traffic, follows latest): #43 + #40 fix-3 + #45 (+ Go side of the #42 seed fix), deployed from a clean `git archive` of `739c62e`. ScaNN ANN active. Rollback target: `psearch-serving-00035-x4l`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00038-mpb`** (100% traffic, follows latest): #46 latency fix + #47 idempotent rollup, deployed from a clean `git archive` of `8b28300`. ScaNN ANN active. Rollback target: `psearch-serving-00037-g74`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -65,13 +65,14 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `024_products_vector_index.sql` | DDL | #39 | `CREATE VECTOR INDEX products_embedding_v2_idx ON products(embedding_v2) STORING (is_visible, is_available, stock, tenant_id, locale, category, brand, price) WHERE embedding_v2 IS NOT NULL`, COSINE, `tree_depth=2`, `num_leaves=100`. Online LRO `_auto_op_8e2272d28739ab64` took about 2.5 min. **Rebuilt** 2026-10-30 after the full backfill (DROP + same DDL, LRO `_auto_op_812837e126700655`, 3 min) |
 | `025_product_attributes.sql` / `025b_seed_product_attributes.dml.sql` | DDL / DML | #42 | `products.attributes JSON`; `product_attributes` (interleaved in `products`, ON DELETE CASCADE, generated `attr_value_lower`) + `product_attributes_by_tenant_name_val`, applied as 3 statements. Seed from **`d1e3f9b`** (the `6b0aee9` version used `ROW_NUMBER()`, which Spanner rejects): 307 rows, 100 products (15 `prod-*` + 85 sunscreens with fps/skin_type/form) |
 | `026_search_events.sql` | DDL | #43 | `search_impressions` (PK `tenant_id, impression_id`) + `search_impressions_by_tenant_time` (STORING); `search_conversions` (PK `tenant_id, event_id`) + `search_conversions_by_impression` (STORING); both tables `ROW DELETION POLICY (OLDER_THAN(created_at, INTERVAL 90 DAY))`. Applied as 4 statements |
+| `027_products_signal_baseline.sql` | DDL | #47 | `products.baseline_clicks INT64`, `baseline_orders INT64`, `baseline_ctr FLOAT64`, `baseline_conversion_rate FLOAT64` (nullable; snapshotted lazily by the first live rollup; reads `COALESCE` to live values). Applied as 4 statements before the deploy |
 
 ## 4. Release procedure
 
 1. Code reviewed (PASS in [REVIEW.md](REVIEW.md)), reviewed in a private worktree — never in the shared checkout.
 2. Stage a clean snapshot: `git archive <sha> | tar -x -C /tmp/deploy-<sha>` (never deploy from `/workspace`).
 3. Apply additive DDL/DML first (split multi-statement DDL so failures are attributable).
-4. `go run ./cmd/sqlcheck` from the archive with the production env — every case must pass (32 checks at `00025-5mx`).
+4. **Standing gate (lead, 2026-10-30):** `go run ./cmd/sqlcheck` from the archive with the production env against **real Spanner**. Every case must pass before any deploy (63 checks at `00038-mpb`). Unit tests run in memory mode and cannot catch Spanner planner rejections.
 5. `gcloud run deploy psearch-serving --source /tmp/deploy-<sha> --region us-central1 --service-account <RUNTIME_SA> …`, then `gcloud run services update-traffic psearch-serving --to-latest` (`deploy` does not accept `--to-latest`; after any `--to-revisions` rollback the next rollout must restore `--to-latest`).
 6. Verify live endpoints and logs; on failure `update-traffic --to-revisions=<previous>=100`.
 7. Record the result below and post evidence on the GitHub issue.
@@ -116,7 +117,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00034-wnr`** | `952cf20` | #40 fix, #41 (+ #42 UI) | true lexical/browse COUNT for `total_found`, reachable window ≤ 500; disjunctive multi-select facets (ADR-013). ✅ #41. ⚠️ #40 only partly fixed |
 | **`00035-x4l`** | `6b0aee9` | #42, #44, #40 fix-2 | schema-free product attributes + auto-discovered facets + admin upsert (ADR-014); similar / substitutes / co-viewed (ADR-016); fixed per-query window W. ✅ #42, #44. ⚠️ #40: pages overlap when W > 100 |
 | `00036-nf2` | `90e289a` | #43, #40 fix-3 | ❌ **never served**: container failed to start (`Application exec likely failed`, no app output; build normal; same code starts locally in 4 s). Cloud Run kept 00035 at 100% |
-| **`00037-g74`** | `739c62e` | #43, #40 fix-3, #45 | search telemetry (`query_id`, impressions/conversions, A/B summary, rollup) (ADR-015); page-independent candidate set W; relevance-ranked window with OOS-last applied after it. ✅ #40, #43, #45. **current** |
+| **`00037-g74`** | `739c62e` | #43, #40 fix-3, #45 | search telemetry (`query_id`, impressions/conversions, A/B summary, rollup) (ADR-015); page-independent candidate set W; relevance-ranked window with OOS-last applied after it. ✅ #40, #43, #45 |
+| **`00038-mpb`** | `8b28300` | #46, #47 | capped critical-path count + concurrent exact count, Go-side SQL specialization (no `IF` inside the SEARCH `WHERE`), scoped enrichment, ANN over-fetch only when needed; rollup over a frozen baseline (027) with strict params / dry-run. **p50 400/185/152 ms.** ✅ #46, #47. **current** |
 
 ---
 
@@ -863,3 +865,38 @@ Note: the smoke test left 1 click + 1 purchase (1,299 currency units) on impress
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00035-x4l=100`. 026 is additive.
 
 **Status:** #40, #43, #45 **closed**.
+
+## #46 Latency fix + #47 Idempotent rollup: DEPLOYED 2026-10-30
+
+| Step | Result |
+|---|---|
+| DDL `027_products_signal_baseline.sql` (4 `ALTER TABLE products ADD COLUMN`) | ✅ each `done`, checked with `ddl describe`. 00037 code still passed sqlcheck 59/0 afterwards (additive) |
+| Transient during the DDL window | ⚠️ one HTTP 503 on 00037 at 20:04:47Z (19.4 s, "connection to the instance had an error"), then an AUTOSCALING instance start; no OOM or crash logged; no recurrence |
+| Pre-deploy latency on `00037-g74` (n=20, pages 1–5, server `latency_ms`) | p50 `po` 2994 ms, `protetor` 1515 ms, `running shoes` 1269 ms |
+| sqlcheck gate on the first GO snapshot **`67fe6b0`** | ❌ **29 OK / 34 FAIL**: all hybrid/lexical searches, ScaNN and perf `po` got `InvalidArgument: SEARCH is not supported in this query … unsupported query shapes`. **Deploy held; 00037 kept serving.** Bisected to `3e424dd` (its parent `91cdd57` passes): `effectivePriceSQL` changed to `IF(@price_table = '', alias.price, COALESCE((SELECT … product_prices …), alias.price))`. That expression sits inside `catalogFilterSQL` in the same `WHERE` as `SEARCH()`. Proof: `67fe6b0` with only `pricing.go` reverted passes 63/0; reverting the `IF(@sort_by…)` sort change alone did not help |
+| Fix `10f6761` (Go-side SQL specialization: plain `alias.price` when there is no price table, original `COALESCE` subquery otherwise; min/max predicates omitted when unset; no `IF` in the SEARCH `WHERE`) | ✅ gate 63/0, covering b2b-gold ×2 / b2b-corporate / vip-club price tables (hybrid + browse), 5 min/max price cases, popularity/rating_desc/price sorts. Capped count equals exact for `running shoes` 1, `protetor` 80, `po` 249; browse capped 501 / exact 20535 |
+| Gate on the final snapshot **`8b28300`** (= `10f6761` + REVIEW.md) | ✅ **63 OK / 0 FAIL** |
+| Deploy → **`psearch-serving-00038-mpb`** | ✅ 100%, follows latest; logs clean (no ERROR, no SEARCH rejection) |
+
+### #46 Latency: target met ✅ (target: within ~10% of the pre-fix-3 baseline)
+
+| Query (n=20, `limit=12`, pages 1–5, server `latency_ms`) | Pre-fix-3 (00035) | 00037 (fix-3) | **00038** | vs pre-fix-3 |
+|---|---|---|---|---|
+| `po` (W=249) | 1712 ms | 2994 ms (earlier run 3939) | **400 ms** (p90 516) | **−77%** |
+| `protetor` | 1437 ms | 1515 ms | **185 ms** (p90 245) | **−87%** |
+| `running shoes` | 1184 ms | 1269 ms | **152 ms** (p90 184) | **−87%** |
+| 20 never-seen queries (cache-cold) | — | — | **p50 376 ms**, p90 780, max 932 | all `hybrid_v2`, `vector_index_used=true`, full pages |
+
+### Invariants and functional checks ✅
+
+| Check | Result |
+|---|---|
+| #40/#45 page walk (`ads=false`) | `po` totals {249}, 21 pages, last page 9 results `has_next=false`, next page empty, **249/249 unique**, 59 OOS from position 190, OOS strictly last. `protetor` 100/100 (19 OOS from 81). `urban sneaker` 100/100, **prod-004 at 73** (first OOS). `shoes` 100/100 (prod-004 at 83). `geladeira` 100/100. All totals constant |
+| Count-cache keying (filtered vs unfiltered) | `q=shoes` 100 → `sizes=40,42` **7** → `sizes=42` **3** → `cep=01310100` **9** → `cep=69000000` **0** → `q=shoes` again **100** |
+| Sponsored slot attributes | `running shoes`: sponsored prod-003 (Trail/Responsive/9mm) and prod-002 (Road/Maximum/8mm) carry `dynamic_attributes` + `attributes`; `notebook`: sponsored prod-006 / prod-007 carry ram/storage/processor/screen_size |
+| `price_table_id=b2b-gold` | ✅ contract prices: prod-007 **1147.18** (list 1399.00), prod-005 1229.18 (1499.00), prod-006 1353.00 (1650.00), prod-003 137.54 (149.50), matching `product_prices` exactly. `min_price=100&max_price=170` filters on the contract price |
+| `POST /api/analytics/rollup` (no token, wrong `X-Admin-Token`, and `?dry_run=true` without a token) | ✅ 403 `forbidden` ×3. **No live run.** `baseline_ctr IS NOT NULL` = **0** rows (baseline not snapshotted) |
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00037-g74=100`. 027 is additive; 00037 ignores the baseline columns.
+
+**Status:** #46 **closed** (latency target met by a wide margin), #47 **closed**.
