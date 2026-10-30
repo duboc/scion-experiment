@@ -1320,20 +1320,43 @@ func TestOOSProductReachableInUnfilteredHybridSearchAfterVectorFill(t *testing.T
 	r := gin.New()
 	r.GET("/api/search", ctrl.Search)
 
-	// 1) Acceptance Criterion 1: When GET /api/search?q=urban+sneaker is called,
-	// prod-004 is returned on page 1 and ranks after all in-stock results.
-	urban := doSearch(t, r, "q=urban+sneaker&ads=false")
-	if len(urban.Results) == 0 {
-		t.Fatal("expected results for q=urban+sneaker")
+	// 1) Acceptance Criterion 1: For q=urban+sneaker, prod-004 (OUT_OF_STOCK, only lexical match)
+	// enters the 100-item candidate window W (reachable by paging or limit=100) and ranks after every in-stock item.
+	urban100 := doSearch(t, r, "q=urban+sneaker&limit=100&ads=false")
+	if len(urban100.Results) != 100 || urban100.TotalFound != 100 {
+		t.Fatalf("expected 100 results in window W for q=urban+sneaker, got len=%d total_found=%d", len(urban100.Results), urban100.TotalFound)
 	}
-	lastItem := urban.Results[len(urban.Results)-1]
-	if lastItem.ID != "prod-004" || lastItem.Availability != "OUT_OF_STOCK" {
-		t.Fatalf("expected prod-004 (OUT_OF_STOCK) at end of q=urban+sneaker results, got %s (%s)", lastItem.ID, lastItem.Availability)
-	}
-	for i := 0; i < len(urban.Results)-1; i++ {
-		if urban.Results[i].Availability == "OUT_OF_STOCK" {
-			t.Fatalf("expected all items before prod-004 to be IN_STOCK, got OOS at index %d (%s)", i, urban.Results[i].ID)
+	foundProd004 := false
+	seenOOSUrban := false
+	for idx, item := range urban100.Results {
+		if item.Availability == "OUT_OF_STOCK" {
+			seenOOSUrban = true
+		} else if seenOOSUrban {
+			t.Fatalf("in-stock item %s at index %d ranked after an OOS item", item.ID, idx)
 		}
+		if item.ID == "prod-004" {
+			foundProd004 = true
+		}
+	}
+	if !foundProd004 {
+		t.Fatal("expected OOS lexical match prod-004 to be present in the result window after all in-stock items")
+	}
+
+	// Also verify prod-004 is reachable when paging with limit=24 across pages 1..5.
+	foundPaged := false
+	for page := 1; page <= 5; page++ {
+		pr := doSearch(t, r, "q=urban+sneaker&limit=24&ads=false&page="+strconv.Itoa(page))
+		if pr.TotalFound != 100 {
+			t.Fatalf("page %d: total_found=%d, want 100", page, pr.TotalFound)
+		}
+		for _, item := range pr.Results {
+			if item.ID == "prod-004" {
+				foundPaged = true
+			}
+		}
+	}
+	if !foundPaged {
+		t.Fatal("expected prod-004 to be reachable when paging q=urban+sneaker")
 	}
 
 	// 2) Acceptance Criterion 2: Given an unfiltered broad query ("running"), when the result

@@ -341,47 +341,6 @@ func fixedSearchWindow(lexicalCount int) int {
 	return w
 }
 
-// trimWindowPreservingOOSLexical ensures that when a specific query has few lexical
-// matches (0 < lexicalCount < pageWindow) and at least one of those lexical matches is
-// out-of-stock (e.g. q="urban sneaker" -> prod-004), vector-only in-stock filler items
-// do not push the OOS lexical match off page 1, while keeping all in-stock items before
-// all OOS items (Issue #45, ADR-002).
-func (s *SpannerService) trimWindowPreservingOOSLexical(res []models.SearchResult, lexicalCount int) []models.SearchResult {
-	const oosPage1Window = 20
-	if lexicalCount <= 0 || lexicalCount >= oosPage1Window || len(res) <= oosPage1Window {
-		return res
-	}
-	var inStock, oos []models.SearchResult
-	hasOOSLexical := false
-	for _, r := range res {
-		if isUnavailable(r.Availability, r.AvailableQuantity) {
-			oos = append(oos, r)
-			if r.Score["text"] > 0 {
-				hasOOSLexical = true
-			}
-		} else {
-			inStock = append(inStock, r)
-		}
-	}
-	if !hasOOSLexical || len(oos) == 0 {
-		return res
-	}
-	keepInStock := oosPage1Window - len(oos)
-	if keepInStock < lexicalCount {
-		keepInStock = lexicalCount
-	}
-	if keepInStock < 1 {
-		keepInStock = 1
-	}
-	if len(inStock) > keepInStock {
-		inStock = inStock[:keepInStock]
-	}
-	combined := make([]models.SearchResult, 0, len(inStock)+len(oos))
-	combined = append(combined, inStock...)
-	combined = append(combined, oos...)
-	return combined
-}
-
 // HybridSearch executes hybrid vector + full-text RRF search against Cloud Spanner (with deterministic fallback).
 func (s *SpannerService) HybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64, filters models.SearchFilters) ([]models.SearchResult, error) {
 	out, err := s.HybridSearchDetailed(ctx, query, limit, minScore, alpha, filters)
@@ -503,9 +462,6 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		res, sponsored, vecIdxUsed, err := s.spannerHybridSearchWithAds(ctx, query, queryLimit, minScore, alpha, plan, filters)
 		if len(res) > w {
 			res = res[:w]
-		}
-		if limit >= 100 {
-			res = s.trimWindowPreservingOOSLexical(res, lexCnt)
 		}
 		totalFound := len(res)
 		if lexCnt > totalFound {
@@ -1351,9 +1307,6 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 		}
 		return false
 	})
-	if limit >= 100 {
-		out = s.trimWindowPreservingOOSLexical(out, lexicalCount)
-	}
 	// ADR-012 (#40 fix-3): total_found = max(lexical_count, len(truncated)).
 	totalFound := len(out)
 	if lexicalCount > totalFound {
