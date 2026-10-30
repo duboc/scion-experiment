@@ -100,3 +100,55 @@ func TestBrowseSQL(t *testing.T) {
 		t.Error("IsBrowseQuery")
 	}
 }
+
+func TestDisjunctiveFacets_ExcludeOwnDimensionAndMultiSelect(t *testing.T) {
+	ctx := context.Background()
+	svc := &SpannerService{config: testConfig("v1"), seedProducts: DefaultSeedProducts()}
+
+	// 1) Filtering by brands=Nike restricts results to Nike, while facets.brands retains
+	// non-zero counts for sibling brands (Adidas, Asics, Reebok) via exclude-own-dimension.
+	filters := models.SearchFilters{Brands: []string{"Nike"}}
+	out, err := svc.HybridSearchDetailed(ctx, "shoes", 100, 0, 0.5, filters)
+	if err != nil || len(out.Results) == 0 {
+		t.Fatalf("search brands=Nike failed: %v (len=%d)", err, len(out.Results))
+	}
+	var filteredIDs []string
+	for _, r := range out.Results {
+		filteredIDs = append(filteredIDs, r.ID)
+		if !strings.EqualFold(r.Brands[0], "Nike") {
+			t.Fatalf("expected only Nike in results, got %s (%v)", r.ID, r.Brands)
+		}
+	}
+	facets, err := svc.DisjunctiveFacets(ctx, "shoes", 0, 0.5, filters, filteredIDs)
+	if err != nil {
+		t.Fatalf("DisjunctiveFacets error: %v", err)
+	}
+	brandCounts := map[string]models.FacetBucket{}
+	for _, b := range facets.Brands {
+		brandCounts[strings.ToLower(b.Value)] = b
+	}
+	if !brandCounts["nike"].Selected || brandCounts["nike"].Count == 0 {
+		t.Fatalf("expected Nike selected with count>0 in facets.brands: %+v", facets.Brands)
+	}
+	if brandCounts["adidas"].Count == 0 || brandCounts["asics"].Count == 0 {
+		t.Fatalf("sibling brands Adidas/Asics must retain non-zero counts when brands=Nike: %+v", facets.Brands)
+	}
+
+	// 2) Multi-select OR within dimension + AND across dimensions: (Nike OR Asics) AND sizes=42.
+	multiFilters := models.SearchFilters{Brands: []string{"Nike", "Asics"}, Sizes: []string{"42"}}
+	multiOut, err := svc.HybridSearchDetailed(ctx, "shoes", 100, 0, 0.5, multiFilters)
+	if err != nil || len(multiOut.Results) < 2 {
+		t.Fatalf("expected both Nike and Asics footwear matching size 42, got len=%d err=%v", len(multiOut.Results), err)
+	}
+	seenBrands := map[string]bool{}
+	for _, r := range multiOut.Results {
+		b := strings.ToLower(r.Brands[0])
+		if b != "nike" && b != "asics" {
+			t.Fatalf("unexpected brand %s in (Nike OR Asics) AND size=42 results", r.Brands[0])
+		}
+		seenBrands[b] = true
+	}
+	if !seenBrands["nike"] || !seenBrands["asics"] {
+		t.Fatalf("expected both nike and asics in multi-brand results, got %v", seenBrands)
+	}
+}

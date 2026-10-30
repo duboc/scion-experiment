@@ -6,7 +6,9 @@ type SearchRequest struct {
 	MinScore          *float64 `json:"min_score,omitempty" form:"min_score"`
 	Alpha             *float64 `json:"alpha,omitempty" form:"alpha"`
 	Category          string   `json:"category,omitempty" form:"category"`
+	Categories        []string `json:"categories,omitempty" form:"categories"` // ADR-013 (#41): disjunctive multi-select categories
 	Brand             string   `json:"brand,omitempty" form:"brand"`
+	Brands            []string `json:"brands,omitempty" form:"brands"` // ADR-013 (#41): disjunctive multi-select brands
 	OnlyInStock       bool     `json:"only_in_stock,omitempty" form:"only_in_stock"`
 	Channel           string   `json:"channel,omitempty" form:"channel"`
 	TenantID          string   `json:"tenant_id,omitempty" form:"tenant_id"`
@@ -16,10 +18,13 @@ type SearchRequest struct {
 	MaxSLAHours       int64    `json:"max_sla_hours,omitempty" form:"max_sla_hours"`
 	MinPrice          float64  `json:"min_price,omitempty" form:"min_price"`
 	MaxPrice          float64  `json:"max_price,omitempty" form:"max_price"`
+	PriceRanges       []string `json:"price_ranges,omitempty" form:"price_ranges"` // ADR-013 (#41): disjunctive price range buckets ("0-100", "100-500", "500-1500", "1500+")
 	ParseIntent       *bool    `json:"parse_intent,omitempty" form:"parse_intent"`
 	PriceTable        string   `json:"price_table_id,omitempty" form:"price_table_id"`
 	Color             string   `json:"color,omitempty" form:"color"`
+	Colors            []string `json:"colors,omitempty" form:"colors"` // ADR-013 (#41): disjunctive multi-select SKU colors
 	Size              string   `json:"size,omitempty" form:"size"`
+	Sizes             []string `json:"sizes,omitempty" form:"sizes"` // ADR-013 (#41): disjunctive multi-select SKU sizes
 	SortBy            string   `json:"sort_by,omitempty" form:"sort_by"`
 	SessionID         string   `json:"session_id,omitempty" form:"session_id"`
 	SessionProductIDs []string `json:"session_product_ids,omitempty" form:"session_product_ids"` // default true (ADR-007); false disables
@@ -35,19 +40,24 @@ type SearchRequest struct {
 type SearchFilters struct {
 	OnlyInStock bool
 	Channel     string
-	Category    string  // exact (case-insensitive) category match; empty = all (Issue #5 facet drill-down)
-	Brand       string  // exact (case-insensitive) brand match; empty = all
-	TenantID    string  // ADR-002 / Issue #4; empty = "default"
-	Locale      string  // ADR-002 / Issue #4 (pt-BR, en-US, es-MX); empty = all locales
-	Zip5        string  // ADR-005 / Issue #8: 5-digit CEP prefix; empty = no delivery filter
-	MaxSLAHours int64   // ADR-005: maximum delivery SLA in hours; 0 = any
-	RelaxText   bool    // ADR-008 (#21): run the text leg with OR between terms
-	PriceTable  string  // ADR-008 (#22): contract price table; "" = list price
-	Color       string  // ADR-009 (#32): in-stock child SKU color; "" = any
-	Size        string  // ADR-009 (#32): in-stock child SKU size; "" = any
-	SortBy      string  // ADR-008 (#22): relevance | price_asc | price_desc
-	MinPrice    float64 // ADR-007/008: minimum price (0 = none)
-	MaxPrice    float64 // ADR-007/008: maximum price (0 = none)
+	Category    string   // exact (case-insensitive) category match; empty = all (Issue #5 facet drill-down)
+	Categories  []string // ADR-013 (#41): disjunctive categories (OR within dimension)
+	Brand       string   // exact (case-insensitive) brand match; empty = all
+	Brands      []string // ADR-013 (#41): disjunctive brands (OR within dimension)
+	TenantID    string   // ADR-002 / Issue #4; empty = "default"
+	Locale      string   // ADR-002 / Issue #4 (pt-BR, en-US, es-MX); empty = all locales
+	Zip5        string   // ADR-005 / Issue #8: 5-digit CEP prefix; empty = no delivery filter
+	MaxSLAHours int64    // ADR-005: maximum delivery SLA in hours; 0 = any
+	RelaxText   bool     // ADR-008 (#21): run the text leg with OR between terms
+	PriceTable  string   // ADR-008 (#22): contract price table; "" = list price
+	Color       string   // ADR-009 (#32): in-stock child SKU color; "" = any
+	Colors      []string // ADR-013 (#41): disjunctive SKU colors (OR within dimension)
+	Size        string   // ADR-009 (#32): in-stock child SKU size; "" = any
+	Sizes       []string // ADR-013 (#41): disjunctive SKU sizes (OR within dimension)
+	PriceRanges []string // ADR-013 (#41): disjunctive price range buckets ("0-100", "100-500", "500-1500", "1500+")
+	SortBy      string   // ADR-008/012 (#22/#40): relevance | price_asc | price_desc | popularity | rating_desc
+	MinPrice    float64  // ADR-007/008: minimum price (0 = none)
+	MaxPrice    float64  // ADR-007/008: maximum price (0 = none)
 	// ADR-010 (#33): query image vector (gemini-embedding-2, same space as
 	// embedding_v2) and its share of the fused vector. Not a catalog filter; it
 	// rides along so recovery/relaxation re-runs keep the image.
@@ -96,8 +106,9 @@ type SearchResponse struct {
 }
 
 type FacetBucket struct {
-	Value string `json:"value"`
-	Count int64  `json:"count"`
+	Value    string `json:"value"`
+	Count    int64  `json:"count"`
+	Selected bool   `json:"selected,omitempty"` // ADR-013 (#41): true when value is actively selected in the request
 }
 
 type Facets struct {

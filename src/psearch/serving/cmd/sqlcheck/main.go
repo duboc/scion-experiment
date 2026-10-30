@@ -94,6 +94,8 @@ func main() {
 		{"laptop", 0.5, models.SearchFilters{Color: "prata"}},                                             // #32
 		{"shoes", 0.5, models.SearchFilters{SortBy: "popularity"}},                                        // #40 popularity sort
 		{"shoes", 0.5, models.SearchFilters{SortBy: "rating_desc"}},                                       // #40 rating_desc sort
+		{"shoes", 0.5, models.SearchFilters{Brands: []string{"Nike", "Asics"}, Sizes: []string{"42"}}},    // #41 disjunctive multi-select
+		{"notebook", 0.5, models.SearchFilters{Categories: []string{"Computers", "Audio"}, PriceRanges: []string{"100-500", "500-1500"}}}, // #41 disjunctive categories + price_ranges
 	}
 	failed := false
 	for _, c := range cases {

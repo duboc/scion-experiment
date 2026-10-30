@@ -195,7 +195,9 @@ func (c *Controller) Search(ctx *gin.Context) {
 			req.Limit = &n
 		}
 		req.Category = ctx.Query("category")
+		req.Categories = append(append([]string{}, ctx.QueryArray("category")...), ctx.QueryArray("categories")...)
 		req.Brand = ctx.Query("brand")
+		req.Brands = append(append([]string{}, ctx.QueryArray("brand")...), ctx.QueryArray("brands")...)
 		req.Locale = ctx.Query("locale")
 		req.TenantID = ctx.Query("tenant_id")
 		req.LTR = ctx.Query("ltr") == "true" || ctx.Query("ltr") == "1"
@@ -206,7 +208,10 @@ func (c *Controller) Search(ctx *gin.Context) {
 		req.PriceTable = ctx.Query("price_table_id")
 		req.SortBy = ctx.Query("sort_by")
 		req.Color = ctx.Query("color")
+		req.Colors = append(append([]string{}, ctx.QueryArray("color")...), ctx.QueryArray("colors")...)
 		req.Size = ctx.Query("size")
+		req.Sizes = append(append([]string{}, ctx.QueryArray("size")...), ctx.QueryArray("sizes")...)
+		req.PriceRanges = append(append([]string{}, ctx.QueryArray("price_range")...), ctx.QueryArray("price_ranges")...)
 		req.SessionID = ctx.Query("session_id")
 		if v := ctx.Query("session_product_ids"); v != "" {
 			req.SessionProductIDs = strings.Split(v, ",")
@@ -324,10 +329,38 @@ func (c *Controller) Search(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "color must be <= 64 chars and size <= 32 chars"})
 		return
 	}
+	categories, err := services.ParseAndValidateFacetSlice("categories", services.MaxFacetValueLength, []string{req.Category}, req.Categories)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	brands, err := services.ParseAndValidateFacetSlice("brands", services.MaxFacetValueLength, []string{req.Brand}, req.Brands)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	colors, err := services.ParseAndValidateFacetSlice("colors", 64, []string{req.Color}, req.Colors)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	sizes, err := services.ParseAndValidateFacetSlice("sizes", 32, []string{req.Size}, req.Sizes)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	priceRanges, err := services.ValidatePriceRanges(req.PriceRanges)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	filters := models.SearchFilters{
 		Color:       req.Color,
+		Colors:      colors,
 		Size:        req.Size,
+		Sizes:       sizes,
 		PriceTable:  req.PriceTable,
+		PriceRanges: priceRanges,
 		SortBy:      req.SortBy,
 		MinPrice:    req.MinPrice,
 		MaxPrice:    req.MaxPrice,
@@ -336,7 +369,9 @@ func (c *Controller) Search(ctx *gin.Context) {
 		OnlyInStock: req.OnlyInStock,
 		Channel:     strings.ToLower(strings.TrimSpace(req.Channel)),
 		Category:    req.Category,
+		Categories:  categories,
 		Brand:       req.Brand,
+		Brands:      brands,
 		TenantID:    req.TenantID,
 		Locale:      req.Locale,
 	}
@@ -481,7 +516,7 @@ intentDone:
 		facetIDs = facetIDs[:facetCandidates]
 	}
 	facetStart := time.Now()
-	facets, ferr := c.spannerSvc.Facets(ctx.Request.Context(), facetIDs, filters.PriceTable, filters.TenantID)
+	facets, ferr := c.spannerSvc.DisjunctiveFacets(ctx.Request.Context(), searchQuery, minScore, alpha, filters, facetIDs)
 	facetsMs := float64(time.Since(facetStart).Microseconds()) / 1000.0
 	if ferr != nil {
 		log.Printf("WARN: facets unavailable: %v", ferr)

@@ -14,12 +14,12 @@ import (
 // parent product_id; child SKUs (interleaved in products) carry color/size/stock.
 
 // variantFilterSQL keeps a parent only if an in-stock child SKU matches the
-// requested color / size (EXISTS on the interleaved skus table).
-const variantFilterSQL = `(@color = '' OR EXISTS (SELECT 1 FROM skus AS vc
-						WHERE vc.product_id = products.product_id AND LOWER(IFNULL(vc.color, '')) = @color
+// requested color / size (EXISTS on the interleaved skus table; disjunctive OR within dimension per ADR-013 #41).
+const variantFilterSQL = `((@color = '' AND ARRAY_LENGTH(@colors) = 0) OR EXISTS (SELECT 1 FROM skus AS vc
+						WHERE vc.product_id = products.product_id AND (LOWER(IFNULL(vc.color, '')) = @color OR LOWER(IFNULL(vc.color, '')) IN UNNEST(@colors))
 							AND IFNULL(vc.is_available, TRUE) AND IFNULL(vc.stock, 0) > 0))
-					AND (@size = '' OR EXISTS (SELECT 1 FROM skus AS vs
-						WHERE vs.product_id = products.product_id AND LOWER(IFNULL(vs.size, '')) = @size
+					AND ((@size = '' AND ARRAY_LENGTH(@sizes) = 0) OR EXISTS (SELECT 1 FROM skus AS vs
+						WHERE vs.product_id = products.product_id AND (LOWER(IFNULL(vs.size, '')) = @size OR LOWER(IFNULL(vs.size, '')) IN UNNEST(@sizes))
 							AND IFNULL(vs.is_available, TRUE) AND IFNULL(vs.stock, 0) > 0))`
 
 // variantsArraySQL aggregates a parent's variants (restricted to the requested
@@ -29,8 +29,8 @@ func variantsArraySQL(alias string) string {
 					IFNULL(s.stock, 0) AS stock, (IFNULL(s.is_available, TRUE) AND IFNULL(s.stock, 0) > 0) AS available
 				FROM skus AS s
 				WHERE s.product_id = ` + alias + `.product_id AND (s.color IS NOT NULL OR s.size IS NOT NULL)
-					AND (@color = '' OR LOWER(IFNULL(s.color, '')) = @color)
-					AND (@size = '' OR LOWER(IFNULL(s.size, '')) = @size)
+					AND ((@color = '' AND ARRAY_LENGTH(@colors) = 0) OR LOWER(IFNULL(s.color, '')) = @color OR LOWER(IFNULL(s.color, '')) IN UNNEST(@colors))
+					AND ((@size = '' AND ARRAY_LENGTH(@sizes) = 0) OR LOWER(IFNULL(s.size, '')) = @size OR LOWER(IFNULL(s.size, '')) IN UNNEST(@sizes))
 				ORDER BY s.color, s.size, s.sku_id)`
 }
 
@@ -168,22 +168,46 @@ func (s *SpannerService) memoryVariants() map[string][]models.Variant {
 	return s.variants
 }
 
+func matchesScalarOrSliceFold(val, scalar string, list []string) bool {
+	if scalar != "" && strings.EqualFold(val, scalar) {
+		return true
+	}
+	for _, item := range list {
+		if strings.EqualFold(val, item) {
+			return true
+		}
+	}
+	return false
+}
+
 // memoryVariantMatch applies the color/size filters to a seed product's variants and
 // returns the matching variants (nil, false when the product must be excluded).
 func (s *SpannerService) memoryVariantMatch(productID string, f models.SearchFilters) ([]models.Variant, bool) {
 	all := s.memoryVariants()[productID]
-	if f.Color == "" && f.Size == "" {
+	hasColor := f.Color != "" || len(f.Colors) > 0
+	hasSize := f.Size != "" || len(f.Sizes) > 0
+	if !hasColor && !hasSize {
 		return all, true
 	}
 	var out []models.Variant
-	inStockMatch := false
+	colorOK := !hasColor
+	sizeOK := !hasSize
 	for _, v := range all {
-		if (f.Color == "" || strings.EqualFold(v.Color, f.Color)) && (f.Size == "" || strings.EqualFold(v.Size, f.Size)) {
+		cMatch := !hasColor || matchesScalarOrSliceFold(v.Color, f.Color, f.Colors)
+		sMatch := !hasSize || matchesScalarOrSliceFold(v.Size, f.Size, f.Sizes)
+		if v.Available {
+			if cMatch {
+				colorOK = true
+			}
+			if sMatch {
+				sizeOK = true
+			}
+		}
+		if cMatch && sMatch {
 			out = append(out, v)
-			inStockMatch = inStockMatch || v.Available
 		}
 	}
-	return out, inStockMatch
+	return out, colorOK && sizeOK
 }
 
 // variantFacets counts in-stock colors and sizes across the candidate parents

@@ -859,3 +859,45 @@ func TestSearchPaginationTotalFoundAndExtendedSortModes(t *testing.T) {
 	}
 }
 
+// Issue #41 (ADR-013): Disjunctive multi-select faceting (OR within dimension, AND across dimensions, exclude-own-dimension counts).
+func TestDisjunctiveMultiSelectFacetsAPI(t *testing.T) {
+	r := newTestRouter()
+
+	// Single brand selected via brands=Nike: results are Nike only, but facets.brands retains sibling brands.
+	nikeResp := doSearch(t, r, "q=shoes&brands=Nike&ads=false")
+	if len(nikeResp.Results) == 0 {
+		t.Fatal("expected results for q=shoes&brands=Nike")
+	}
+	for _, item := range nikeResp.Results {
+		if !strings.EqualFold(item.Brands[0], "Nike") {
+			t.Fatalf("expected only Nike results, got %s (%v)", item.ID, item.Brands)
+		}
+	}
+	siblingFound := false
+	nikeSelected := false
+	for _, b := range nikeResp.Facets.Brands {
+		if strings.EqualFold(b.Value, "Nike") && b.Selected && b.Count > 0 {
+			nikeSelected = true
+		}
+		if (strings.EqualFold(b.Value, "Adidas") || strings.EqualFold(b.Value, "Asics")) && b.Count > 0 {
+			siblingFound = true
+		}
+	}
+	if !nikeSelected || !siblingFound {
+		t.Fatalf("facets.brands missing selected Nike or sibling counts: %+v", nikeResp.Facets.Brands)
+	}
+
+	// Multi-select (Nike OR Asics) AND sizes=42.
+	multiResp := doSearch(t, r, "q=shoes&brands=Nike,Asics&sizes=42&ads=false")
+	if len(multiResp.Results) < 2 {
+		t.Fatalf("expected >=2 results for brands=Nike,Asics&sizes=42, got %d", len(multiResp.Results))
+	}
+
+	// Invalid price_ranges bucket or >20 values must return HTTP 400.
+	wBad := httptest.NewRecorder()
+	r.ServeHTTP(wBad, httptest.NewRequest(http.MethodGet, "/api/search?q=shoes&price_ranges=invalid-bucket", nil))
+	if wBad.Code != http.StatusBadRequest {
+		t.Fatalf("invalid price_ranges status = %d, want 400", wBad.Code)
+	}
+}
+

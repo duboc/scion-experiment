@@ -423,7 +423,8 @@ func (s *SpannerService) planImageQuery(ctx context.Context, query string, filte
 	return vectorPlan{column: vectorColumnV2, embedding: FuseVectors(filters.ImageVector, tv, w), cacheHit: txt.cacheHit, multimodal: true}
 }
 
-// catalogFilterSQL is applied inside BOTH retrieval legs (ADR-002 / Issue #3):
+// catalogFilterSQL is applied inside BOTH retrieval legs (ADR-002 / Issue #3;
+// disjunctive multi-select OR within dimension, AND across dimensions per ADR-013 #41):
 // hidden products are never returned; channel and only-available filters are
 // optional (empty channel / false flag disables them). NULL columns default to
 // visible, all channels, available.
@@ -432,10 +433,11 @@ var catalogFilterSQL = `COALESCE(is_visible, TRUE)
 					AND (NOT @only_available OR (IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0))
 					AND IFNULL(products.tenant_id, 'default') = @tenant_id
 					AND (@locale = '' OR IFNULL(locale, '') = @locale)
-					AND (@category = '' OR LOWER(IFNULL(category, '')) = @category)
-					AND (@brand = '' OR LOWER(IFNULL(brand, '')) = @brand)
+					AND ((@category = '' AND ARRAY_LENGTH(@categories) = 0) OR LOWER(IFNULL(category, '')) = @category OR LOWER(IFNULL(category, '')) IN UNNEST(@categories))
+					AND ((@brand = '' AND ARRAY_LENGTH(@brands) = 0) OR LOWER(IFNULL(brand, '')) = @brand OR LOWER(IFNULL(brand, '')) IN UNNEST(@brands))
 					AND (@min_price <= 0 OR IFNULL(` + effectivePriceSQL("products") + `, 0) >= @min_price)
 					AND (@max_price <= 0 OR IFNULL(` + effectivePriceSQL("products") + `, 0) <= @max_price)
+					AND (ARRAY_LENGTH(@price_ranges) = 0 OR (` + facetPriceSQL + `) IN UNNEST(@price_ranges))
 					AND ` + assortmentSQL + `
 					AND ` + variantFilterSQL + `
 					AND ` + deliveryFilterSQL
@@ -455,15 +457,17 @@ const annStoringFilterSQL = `COALESCE(is_visible, TRUE)
 					AND (@min_price <= 0 OR IFNULL(price, 0) >= @min_price)`
 
 func catalogFilterForAlias(alias string) string {
+	priceBucketAlias := strings.ReplaceAll(facetPriceTmpl, "EFF", effectivePriceSQL(alias))
 	return `COALESCE(` + alias + `.is_visible, TRUE)
 					AND (@channel = '' OR @channel IN UNNEST(IFNULL(` + alias + `.channels, ['web', 'mobile', 'store'])))
 					AND (NOT @only_available OR (IFNULL(` + alias + `.is_available, TRUE) AND IFNULL(` + alias + `.stock, 1) > 0))
 					AND IFNULL(` + alias + `.tenant_id, 'default') = @tenant_id
 					AND (@locale = '' OR IFNULL(` + alias + `.locale, '') = @locale)
-					AND (@category = '' OR LOWER(IFNULL(` + alias + `.category, '')) = @category)
-					AND (@brand = '' OR LOWER(IFNULL(` + alias + `.brand, '')) = @brand)
+					AND ((@category = '' AND ARRAY_LENGTH(@categories) = 0) OR LOWER(IFNULL(` + alias + `.category, '')) = @category OR LOWER(IFNULL(` + alias + `.category, '')) IN UNNEST(@categories))
+					AND ((@brand = '' AND ARRAY_LENGTH(@brands) = 0) OR LOWER(IFNULL(` + alias + `.brand, '')) = @brand OR LOWER(IFNULL(` + alias + `.brand, '')) IN UNNEST(@brands))
 					AND (@min_price <= 0 OR IFNULL(` + effectivePriceSQL(alias) + `, 0) >= @min_price)
 					AND (@max_price <= 0 OR IFNULL(` + effectivePriceSQL(alias) + `, 0) <= @max_price)
+					AND (ARRAY_LENGTH(@price_ranges) = 0 OR (` + priceBucketAlias + `) IN UNNEST(@price_ranges))
 					AND ` + strings.ReplaceAll(assortmentSQL, "products.", alias+".") + `
 					AND ` + strings.ReplaceAll(variantFilterSQL, "products.", alias+".") + `
 					AND ` + strings.ReplaceAll(deliveryFilterSQL, "products.", alias+".")
@@ -788,12 +792,17 @@ func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query s
 		"tenant_id":      f.TenantID,
 		"locale":         f.Locale,
 		"category":       f.Category,
+		"categories":     nonNilStrings(f.Categories),
 		"brand":          f.Brand,
+		"brands":         nonNilStrings(f.Brands),
 		"zip5":           f.Zip5,
 		"min_price":      f.MinPrice,
 		"price_table":    f.PriceTable,
+		"price_ranges":   nonNilStrings(f.PriceRanges),
 		"color":          f.Color,
+		"colors":         nonNilStrings(f.Colors),
 		"size":           f.Size,
+		"sizes":          nonNilStrings(f.Sizes),
 		"sort_by":        priceSortKey(f.SortBy),
 		"max_price":      f.MaxPrice,
 		"max_sla":        f.MaxSLAHours,
@@ -1022,7 +1031,8 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 			continue
 		}
 		if !s.memPricing().visible(filters.PriceTable, items[i].prod.ID) ||
-			(filters.MinPrice > 0 && eff < filters.MinPrice) || (filters.MaxPrice > 0 && eff > filters.MaxPrice) {
+			(filters.MinPrice > 0 && eff < filters.MinPrice) || (filters.MaxPrice > 0 && eff > filters.MaxPrice) ||
+			(len(filters.PriceRanges) > 0 && !containsFold(filters.PriceRanges, PriceBucket(eff))) {
 			continue
 		}
 		if !matchesChannel(filters.Channel, items[i].prod.Channels) || !matchesCatalog(filters, items[i].prod) ||
@@ -1098,13 +1108,49 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 	return out, totalFound
 }
 
-// normalizeFilters lowercases/trims filter values and applies ADR-002 defaults.
+func normalizeLowerSlice(scalar string, slice []string) (string, []string) {
+	var out []string
+	seen := map[string]bool{}
+	add := func(s string) {
+		for _, part := range strings.Split(s, ",") {
+			v := strings.ToLower(strings.TrimSpace(part))
+			if v != "" && !seen[v] {
+				seen[v] = true
+				out = append(out, v)
+			}
+		}
+	}
+	add(scalar)
+	for _, s := range slice {
+		add(s)
+	}
+	if len(out) == 1 {
+		return out[0], out
+	}
+	return "", out
+}
+
+// normalizeFilters lowercases/trims filter values and applies ADR-002 / ADR-013 defaults.
 func normalizeFilters(f models.SearchFilters) models.SearchFilters {
 	f.Channel = strings.ToLower(strings.TrimSpace(f.Channel))
-	f.Category = strings.ToLower(strings.TrimSpace(f.Category))
-	f.Brand = strings.ToLower(strings.TrimSpace(f.Brand))
-	f.Color = strings.ToLower(strings.TrimSpace(f.Color))
-	f.Size = strings.ToLower(strings.TrimSpace(f.Size))
+	f.Category, f.Categories = normalizeLowerSlice(f.Category, f.Categories)
+	f.Brand, f.Brands = normalizeLowerSlice(f.Brand, f.Brands)
+	f.Color, f.Colors = normalizeLowerSlice(f.Color, f.Colors)
+	f.Size, f.Sizes = normalizeLowerSlice(f.Size, f.Sizes)
+	if len(f.PriceRanges) > 0 {
+		var pr []string
+		seen := map[string]bool{}
+		for _, raw := range f.PriceRanges {
+			for _, part := range strings.Split(raw, ",") {
+				v := strings.TrimSpace(part)
+				if v != "" && !seen[v] {
+					seen[v] = true
+					pr = append(pr, v)
+				}
+			}
+		}
+		f.PriceRanges = pr
+	}
 	f.TenantID = strings.TrimSpace(f.TenantID)
 	if f.TenantID == "" {
 		f.TenantID = "default"
@@ -1113,7 +1159,8 @@ func normalizeFilters(f models.SearchFilters) models.SearchFilters {
 	return f
 }
 
-// matchesCatalog applies tenant / locale / category / brand filters in memory mode.
+// matchesCatalog applies tenant / locale / category / brand filters in memory mode
+// (disjunctive OR within dimension, AND across dimensions per ADR-013 #41).
 func matchesCatalog(f models.SearchFilters, p models.SearchResult) bool {
 	tenant := p.TenantID
 	if tenant == "" {
@@ -1125,10 +1172,32 @@ func matchesCatalog(f models.SearchFilters, p models.SearchResult) bool {
 	if f.Locale != "" && p.Locale != f.Locale {
 		return false
 	}
-	if f.Category != "" && !containsFold(p.Categories, f.Category) {
+	if len(f.Categories) > 0 {
+		matched := false
+		for _, want := range f.Categories {
+			if containsFold(p.Categories, want) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	} else if f.Category != "" && !containsFold(p.Categories, f.Category) {
 		return false
 	}
-	if f.Brand != "" && !containsFold(p.Brands, f.Brand) {
+	if len(f.Brands) > 0 {
+		matched := false
+		for _, want := range f.Brands {
+			if containsFold(p.Brands, want) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	} else if f.Brand != "" && !containsFold(p.Brands, f.Brand) {
 		return false
 	}
 	return true // price filters use the effective (contract) price, applied by the caller
@@ -1189,9 +1258,11 @@ func (s *SpannerService) spannerBrowse(ctx context.Context, limit int, filters m
 	f := normalizeFilters(filters)
 	params := map[string]interface{}{
 		"limit": int64(limit), "channel": f.Channel, "only_available": f.OnlyInStock, "tenant_id": f.TenantID,
-		"locale": f.Locale, "category": f.Category, "brand": f.Brand, "zip5": f.Zip5, "max_sla": f.MaxSLAHours,
-		"min_price": f.MinPrice, "max_price": f.MaxPrice, "price_table": f.PriceTable, "sort_by": priceSortKey(f.SortBy),
-		"color": f.Color, "size": f.Size,
+		"locale": f.Locale, "category": f.Category, "categories": nonNilStrings(f.Categories),
+		"brand": f.Brand, "brands": nonNilStrings(f.Brands), "zip5": f.Zip5, "max_sla": f.MaxSLAHours,
+		"min_price": f.MinPrice, "max_price": f.MaxPrice, "price_table": f.PriceTable, "price_ranges": nonNilStrings(f.PriceRanges),
+		"sort_by": priceSortKey(f.SortBy),
+		"color": f.Color, "colors": nonNilStrings(f.Colors), "size": f.Size, "sizes": nonNilStrings(f.Sizes),
 		"boost_weight": s.config.BoostWeight,
 	}
 	iter := s.client.Single().Query(ctx, spanner.Statement{SQL: browseSQL(), Params: params})
