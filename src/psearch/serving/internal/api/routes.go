@@ -50,6 +50,7 @@ func SetupRouter(router *gin.Engine, cfg *config.Config) {
 	router.POST("/search", controller.Search)
 	router.GET("/api/search", controller.Search)
 	router.POST("/api/search", controller.Search)
+	registerWave6Routes(router, controller)
 
 	if cfg.StaticDir != "" {
 		if info, err := os.Stat(cfg.StaticDir); err == nil && info.IsDir() {
