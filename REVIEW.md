@@ -328,4 +328,17 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
     - **(d) Concurrent Batched & Chunk-Checkpointed Backfill (`cmd/backfill-embeddings`):** `EmbedDocumentsBatch` batches documents into a single `EmbedContent` RPC (`RETRIEVAL_DOCUMENT`, 1024-d) with exponential-backoff retry on `429`/`503`; `RunEmbeddingBackfill` runs `-workers=8` concurrent workers with `-embed-batch=32` and commits chunks of `-write-chunk=200` rows per `client.Apply` (well below Spanner's 80,000 mutation limit).
     - **(e) `cmd/sqlcheck` & Dual-Engine Parity:** `cmd/sqlcheck` verifies both `USE_VECTOR_INDEX=true` and `USE_VECTOR_INDEX=false` via `CheckSpannerQueryANN`; memory-mode fallback cleanly reports `vector_index_used: false`. Issues: none.
 
+## #40 True Pagination, Pre-Slice `total_found` & Extended Sort Modes (`a527cda`, `79c367f`, ADR-012)
+- **Date:** 2026-10-30
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), isolated `/tmp/review-40` archive (removed)
+- **Status:** PASS (APPROVED)
+- **Checks:**
+    - `go vet ./...` and `go test -race -count=1 ./...` in `src/psearch/serving`: PASS (`internal/api`, `internal/config`, `internal/services` incl. `TestSearchPaginationTotalFoundAndExtendedSortModes`, `TestMemorySortByPopularityAndRatingDesc`, `TestStorefrontPaginationAndSort`, `TestStorefrontInlineJSParses`).
+    - `npm run build` in `src/application/ui`: PASS (pre-existing eslint warnings only).
+    - **(a) Candidate window, pre-slice `total_found` & pagination metadata:** Stage-1 retrieves `max(100, effectiveOffset + limit)` (capped at `500`), captures pre-slice organic `total_found` (`outcome.TotalFound`), runs Stage-2 LTR and Session Personalization across the candidate window before slicing `[effectiveOffset : min(len(results), effectiveOffset+limit)]`, and returns `page`, `page_size`, `offset`, `total_pages`, and `has_next`. Page 1 and page 2 return disjoint organic IDs and identical `total_found`.
+    - **(b) ADR-011 sponsored invariant & bounds validation:** Sponsored items are injected only when `effectiveOffset == 0` (`sponsored_count = 0` on page 2+) and excluded from `total_found`. Out-of-range `offset` (`< 0` or `> 1000`), `limit` (`< 1` or `> 100`), `page < 1`, or invalid `sort_by` return `HTTP 400`.
+    - **(c) Extended `sort_by` modes & OOS-last (`ADR-002`):** `ValidatePricing`, `buildHybridSQLANN`, `browseSQL`, `memoryHybridSearchExpandedWithTotal`, and `SessionService.Personalize` support `relevance`, `price_asc`, `price_desc`, `popularity`, and `rating_desc` while keeping out-of-stock products last (`unavailable_rank`). `cmd/sqlcheck` exercises all 5 sort modes in both hybrid search and catalog browse.
+    - **(d) Storefront & React UI (#40 scope):** Both `defaultStorefrontHTML` (`routes.go`) and React (`App.js`, `SearchInput.js`) render `"Showing X-Y of Z results"`, Prev/Next + numbered page buttons, page-size selector (`12` / `24` / `48`), and expanded Sort dropdown (`Relevance`, `Price: Low to High`, `Price: High to Low`, `Best Selling`, `Top Rated`), resetting `page` to `1` on query or filter changes. Issues: none.
+
+
 
