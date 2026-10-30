@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00031-n6v`** (100% traffic, follows latest): Issue #39, deployed from a clean `git archive` of `350f63b`. **ScaNN ANN is not serving yet.** Every query falls back to exact `COSINE_DISTANCE` (see the #39 entry). Rollback target: `psearch-serving-00030-pqq`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00032-46c`** (100% traffic, follows latest): Issue #40, deployed from a clean `git archive` of `2b3d49b`. ScaNN ANN (#39) is still on the exact fallback. Rollback target: `psearch-serving-00031-n6v`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -108,7 +108,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `00028-klr` | `2b9a75e` | #33 | visual & multimodal search (image → `embedding_v2`, text-fused, image cache) + photo-search UI |
 | `00029-7ss` | `4e8951b` | #34 | clickable facets (storefront only: facet clicks re-run the search, active-filter chips) |
 | **`00030-pqq`** | `5e6bf63` | #35 | sponsored products (ADR-011): `sponsored_matches` CTE, fixed ad slots, idempotent CPC click billing with real-time budget burn, campaign CRUD, Sponsored badge + campaign manager UI |
-| **`00031-n6v`** | `350f63b` | #39 | ScaNN ANN code path (ADR-012) + chunked concurrent backfill CLI. Index built, but the ANN query is rejected, so every request uses the exact fallback (`vector_index_used=false`). **current** |
+| **`00031-n6v`** | `350f63b` | #39 | ScaNN ANN code path (ADR-012) + chunked concurrent backfill CLI. Index built, but the ANN query is rejected, so every request uses the exact fallback (`vector_index_used=false`) |
+| **`00032-46c`** | `2b3d49b` | #40 (+ #41 UI) | pagination (`page`/`offset`/`limit`, `has_next`, `total_pages`), `popularity`/`rating_desc` sorts, pager UI. ⚠️ `total_found` equals the candidate window, so it is wrong past page 8 (see #40 entry). **current** |
 
 ---
 
@@ -644,3 +645,37 @@ Source: clean `git archive` of **`350f63b`** in `/tmp/deploy-39` (code `fecadde`
 **Rollback:** `gcloud run services update-traffic psearch-serving --project=<PROJECT_ID> --region=us-central1 --to-revisions=psearch-serving-00030-pqq=100`. The vector index is additive, and `00030-pqq` does not use it. Search results are unaffected, because the exact fallback matches the pre-#39 behaviour.
 
 **Status:** #39 stays open until `vector_index_used=true` shows up in `/api/search`.
+
+## Issue #40 Pagination and sorts (ADR-012 part 2): DEPLOYED 2026-10-30, `total_found` DEFECT
+
+Source: clean `git archive` of **`2b3d49b`** in `/tmp/deploy-40` (code `a527cda` + UI `79c367f`, which also contains the #41 multi-select UI; `2b3d49b` adds REVIEW.md only). Backend's uncommitted #39-fix edits in the shared tree were not deployed. **No DDL. Env unchanged.**
+
+| Step | Result |
+|---|---|
+| `cmd/sqlcheck` (archive, prod env) | ✅ 50 OK / 0 FAIL, exit 0 |
+| Deploy → **`psearch-serving-00032-46c`** | ✅ 100%, follows latest |
+
+| Check (`<SERVICE_URL>`) | Result |
+|---|---|
+| `GET /api/health` | ✅ 200 |
+| `q=protetor&limit=12&page=1` / `page=2` / `page=3` | ✅ 12 organic results each; pages 1∩2 and 2∩3 have **0 shared IDs**; `total_found=100` on all three (> 24); `has_next=true`; `total_pages=9`; page 2 `sponsored_count=0` |
+| `sort_by=popularity` / `rating_desc` (`protetor`, `shoes`, `running shoes`, `fone`, `limit=100`) | ✅ 200; order differs from `relevance`; **OOS items last** (`running shoes` OOS at index 99; `shoes` at 98–99) |
+| `sort_by=bogus` / `offset=2000` / `page=0` / `limit=0` | ✅ 400 with clear messages (`invalid sort_by ...`, `offset must be between 0 and 1000`, `page must be >= 1`, `limit must be between 1 and 100`) |
+| Single-select facets (no #41 regression) | ✅ `category=Footwear` 4 results, Footwear only; `brand=Nike` 1 Nike; `min_price=100&max_price=500` 3 results (149.50, 189.90, 169.90). `brands=Nike&brands=Adidas` returns 20 results unfiltered (backend #41 not live yet, as expected) |
+| Regression `q=running+shoes&alpha=0.5` | ✅ `hybrid_v2`, 20 results, `sponsored_count=2` |
+| Storefront `/` (jsdom against live API, `protetor`) | ✅ "Showing 1-24 of 100 results"; pager `Prev(disabled) 1 2 3 4 5 Next`; Next → "Showing 25-48 of 100 results"; sort select offers `relevance, price_asc, price_desc, popularity, rating_desc` |
+
+**❌ Defect: `total_found` and `has_next` are only correct while `offset + limit <= 100`.** `handlers.go` fetches `candidateLimit = max(100, offset+limit)` (capped at `maxSearchWindow = 500`). The hybrid path returns `TotalFound: len(res)`, and because the vector leg always fills `@limit`, this equals `candidateLimit`:
+
+| `q=protetor&limit=12` | `total_found` | results | `has_next` | `total_pages` |
+|---|---|---|---|---|
+| page 1 / 4 / 8 | 100 | 12 | true | 9 |
+| page 9 | **108** | 12 | **false** | 9 |
+| page 10 / 20 / 40 | **120 / 240 / 480** | 12 | **false** | 10 / 20 / 40 |
+| offset 492 / 504 / 900 | 500 | 8 / **0** / **0** | false | 42 / 43 / 76 |
+
+The count changes from page to page; `has_next=false` while 40 more pages are reachable; offsets 500–1000 pass validation (≤ 1000) but return empty pages. For comparison, only 80 rows match `protetor` lexically; the rest of the hybrid results come from the vector leg. The storefront pager looks correct on the first pages only because they stay inside the 100-row window.
+
+**Rollback:** `gcloud run services update-traffic psearch-serving --project=<PROJECT_ID> --region=us-central1 --to-revisions=psearch-serving-00031-n6v=100` (no schema changes).
+
+**Status:** #40 commented, **not closed**; lead decides.
