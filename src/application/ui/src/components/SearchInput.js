@@ -82,6 +82,8 @@ const SearchInput = memo(({
     setPriceTableId: controlledSetPriceTableId,
     sortBy: controlledSortBy,
     setSortBy: controlledSetSortBy,
+    pageSize: controlledPageSize,
+    setPageSize: controlledSetPageSize,
     color: controlledColor,
     setColor: controlledSetColor,
     size: controlledSize,
@@ -104,7 +106,8 @@ const SearchInput = memo(({
     const [internalLtr, setInternalLtr] = useState(false);
     const [internalParseIntent, setInternalParseIntent] = useState(true);
     const [internalPriceTableId, setInternalPriceTableId] = useState('');
-    const [internalSortBy, setInternalSortBy] = useState('');
+    const [internalSortBy, setInternalSortBy] = useState('relevance');
+    const [internalPageSize, setInternalPageSize] = useState(24);
     const [internalColor, setInternalColor] = useState('');
     const [internalSize, setInternalSize] = useState('');
     const [cepError, setCepError] = useState('');
@@ -138,6 +141,8 @@ const SearchInput = memo(({
     const setPriceTableId = controlledSetPriceTableId || setInternalPriceTableId;
     const sortBy = controlledSortBy !== undefined ? controlledSortBy : internalSortBy;
     const setSortBy = controlledSetSortBy || setInternalSortBy;
+    const pageSize = controlledPageSize !== undefined ? controlledPageSize : internalPageSize;
+    const setPageSize = controlledSetPageSize || setInternalPageSize;
     const color = controlledColor !== undefined ? controlledColor : internalColor;
     const setColor = controlledSetColor || setInternalColor;
     const size = controlledSize !== undefined ? controlledSize : internalSize;
@@ -213,6 +218,7 @@ const SearchInput = memo(({
             parseIntent,
             priceTableId,
             sortBy,
+            pageSize,
             color,
             size,
             image: imageDataUrl,
@@ -253,6 +259,7 @@ const SearchInput = memo(({
             parseIntent,
             priceTableId,
             sortBy,
+            pageSize,
             color,
             size,
             image: imageDataUrl,
@@ -261,7 +268,7 @@ const SearchInput = memo(({
 
     const searchOptions = (image) => ({
         alpha: localAlpha, channel, onlyInStock, tenantId, locale, cep, maxSla24h,
-        ltr, parseIntent, priceTableId, sortBy, color, size, image,
+        ltr, parseIntent, priceTableId, sortBy, pageSize, color, size, image,
     });
 
     const handleImagePicked = async (event) => {
@@ -510,19 +517,37 @@ const SearchInput = memo(({
                     </Select>
                 </FormControl>
 
-                {/* Ordenar por Selector */}
-                <FormControl size="small" sx={{ minWidth: 150 }}>
-                    <InputLabel id="sort-by-select-label">Ordenar por</InputLabel>
+                {/* Sort by Selector */}
+                <FormControl size="small" sx={{ minWidth: 170 }}>
+                    <InputLabel id="sort-by-select-label">Sort by</InputLabel>
                     <Select
                         labelId="sort-by-select-label"
                         id="sort-by-select"
-                        value={sortBy}
-                        label="Ordenar por"
+                        value={sortBy || 'relevance'}
+                        label="Sort by"
                         onChange={(e) => setSortBy(e.target.value)}
                     >
-                        <MenuItem value="">Relevância</MenuItem>
-                        <MenuItem value="price_asc">Menor preço</MenuItem>
-                        <MenuItem value="price_desc">Maior preço</MenuItem>
+                        <MenuItem value="relevance">Relevance</MenuItem>
+                        <MenuItem value="price_asc">Price: Low to High</MenuItem>
+                        <MenuItem value="price_desc">Price: High to Low</MenuItem>
+                        <MenuItem value="popularity">Best Selling</MenuItem>
+                        <MenuItem value="rating_desc">Top Rated</MenuItem>
+                    </Select>
+                </FormControl>
+
+                {/* Page Size Selector */}
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                    <InputLabel id="page-size-select-label">Page size</InputLabel>
+                    <Select
+                        labelId="page-size-select-label"
+                        id="page-size-select"
+                        value={Number(pageSize) || 24}
+                        label="Page size"
+                        onChange={(e) => setPageSize(Number(e.target.value))}
+                    >
+                        <MenuItem value={12}>12 per page</MenuItem>
+                        <MenuItem value={24}>24 per page</MenuItem>
+                        <MenuItem value={48}>48 per page</MenuItem>
                     </Select>
                 </FormControl>
 

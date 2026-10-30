@@ -123,19 +123,24 @@ function ProductSearch({
     const [appliedRules, setAppliedRules] = useState([]);
     const [priceTableId, setPriceTableId] = useState('');
     const [effectivePriceTableId, setEffectivePriceTableId] = useState('');
-    const [sortBy, setSortBy] = useState('');
+    const [sortBy, setSortBy] = useState('relevance');
     const [effectiveSortBy, setEffectiveSortBy] = useState('');
     const [color, setColor] = useState('');
     const [size, setSize] = useState('');
     const [serverFacets, setServerFacets] = useState(null);
     const [facetsLatencyMs, setFacetsLatencyMs] = useState(null);
     const [sponsoredCount, setSponsoredCount] = useState(0);
+    const [vectorIndexUsed, setVectorIndexUsed] = useState(null);
     // State for the filters component - now a dynamic object
     const [selectedFilters, setSelectedFilters] = useState({});
     // Store filter configurations
     const [filterConfigs, setFilterConfigs] = useState([]);
     const [currentPage, setCurrentPage] = useState(1);
-    const productsPerPage = 24; // Increased from 12 to show more products per page
+    const [productsPerPage, setProductsPerPage] = useState(24);
+    const [totalFound, setTotalFound] = useState(0);
+    const [serverTotalPages, setServerTotalPages] = useState(0);
+    const [serverHasNext, setServerHasNext] = useState(false);
+    const [serverOffset, setServerOffset] = useState(0);
 
     // Format a filter name for display (convert lens_color to Lens Color)
     const formatFilterName = (name) => {
@@ -438,92 +443,140 @@ function ProductSearch({
         return finalFilters;
     }, []);
 
-    // Generate filter configurations from server-side facets
-    const generateFilterConfigsFromFacets = useCallback((facets) => {
+    // Generate filter configurations from server-side facets (#41, ADR-013)
+    const generateFilterConfigsFromFacets = useCallback((facets, currentSelected = {}) => {
         if (!facets || typeof facets !== 'object') return [];
+
+        const mergeSelectedOptions = (options, selectedList, formatLabel) => {
+            const list = Array.isArray(options) ? [...options] : [];
+            const sel = Array.isArray(selectedList) ? selectedList : [];
+            sel.forEach(val => {
+                if (!val) return;
+                const exists = list.some(o => String(o.value).toLowerCase() === String(val).toLowerCase());
+                if (!exists) {
+                    list.push({
+                        label: formatLabel ? formatLabel(val) : val,
+                        value: val,
+                        count: 0,
+                        selected: true,
+                    });
+                }
+            });
+            return list;
+        };
+
+        const formatPriceLabel = (val) => {
+            if (typeof val === 'string') {
+                if (val.endsWith('+')) {
+                    return `$${val.slice(0, -1)}+`;
+                }
+                if (val.includes('-')) {
+                    const parts = val.split('-');
+                    return `$${parts[0]} - $${parts[1]}`;
+                }
+            }
+            return val;
+        };
 
         const configs = [];
 
-        if (Array.isArray(facets.categories) && facets.categories.length > 0) {
+        const catOptions = mergeSelectedOptions(
+            (facets.categories || []).map(c => ({
+                label: typeof c === 'object' ? c.value : c,
+                value: typeof c === 'object' ? c.value : c,
+                count: typeof c === 'object' ? c.count : undefined,
+                selected: typeof c === 'object' ? Boolean(c.selected) : false,
+            })),
+            currentSelected.categories
+        );
+        if (catOptions.length > 0) {
             configs.push({
                 id: 'categories',
                 title: 'Department',
                 priority: 100,
                 type: 'checkbox',
-                options: facets.categories.map(c => ({
-                    label: typeof c === 'object' ? c.value : c,
-                    value: typeof c === 'object' ? c.value : c,
-                    count: typeof c === 'object' ? c.count : undefined,
-                }))
+                options: catOptions,
             });
         }
 
-        if (Array.isArray(facets.brands) && facets.brands.length > 0) {
+        const brandOptions = mergeSelectedOptions(
+            (facets.brands || []).map(b => ({
+                label: typeof b === 'object' ? b.value : b,
+                value: typeof b === 'object' ? b.value : b,
+                count: typeof b === 'object' ? b.count : undefined,
+                selected: typeof b === 'object' ? Boolean(b.selected) : false,
+            })),
+            currentSelected.brands
+        );
+        if (brandOptions.length > 0) {
             configs.push({
                 id: 'brands',
                 title: 'Brands',
                 priority: 90,
                 type: 'checkbox',
-                options: facets.brands.map(b => ({
-                    label: typeof b === 'object' ? b.value : b,
-                    value: typeof b === 'object' ? b.value : b,
-                    count: typeof b === 'object' ? b.count : undefined,
-                }))
+                options: brandOptions,
             });
         }
 
-        if (Array.isArray(facets.price_ranges) && facets.price_ranges.length > 0) {
+        const priceOptions = mergeSelectedOptions(
+            (facets.price_ranges || []).map(p => {
+                const val = typeof p === 'object' ? p.value : p;
+                const count = typeof p === 'object' ? p.count : undefined;
+                return {
+                    label: formatPriceLabel(val),
+                    value: val,
+                    count,
+                    selected: typeof p === 'object' ? Boolean(p.selected) : false,
+                };
+            }),
+            currentSelected.prices,
+            formatPriceLabel
+        );
+        if (priceOptions.length > 0) {
             configs.push({
                 id: 'prices',
                 title: 'Price',
                 priority: 80,
                 type: 'checkbox',
-                options: facets.price_ranges.map(p => {
-                    const val = typeof p === 'object' ? p.value : p;
-                    const count = typeof p === 'object' ? p.count : undefined;
-                    let label = val;
-                    if (typeof val === 'string') {
-                        if (val.endsWith('+')) {
-                            label = `$${val.slice(0, -1)}+`;
-                        } else if (val.includes('-')) {
-                            const parts = val.split('-');
-                            label = `$${parts[0]} - $${parts[1]}`;
-                        }
-                    }
-                    return {
-                        label,
-                        value: val,
-                        count,
-                    };
-                })
+                options: priceOptions,
             });
         }
 
-        if (Array.isArray(facets.colors) && facets.colors.length > 0) {
+        const colorOptions = mergeSelectedOptions(
+            (facets.colors || []).map(c => ({
+                label: typeof c === 'object' ? c.value : c,
+                value: typeof c === 'object' ? c.value : c,
+                count: typeof c === 'object' ? c.count : undefined,
+                selected: typeof c === 'object' ? Boolean(c.selected) : false,
+            })),
+            currentSelected.colors
+        );
+        if (colorOptions.length > 0) {
             configs.push({
                 id: 'colors',
                 title: 'Cor',
                 priority: 75,
                 type: 'checkbox',
-                options: facets.colors.map(c => ({
-                    label: typeof c === 'object' ? c.value : c,
-                    value: typeof c === 'object' ? c.value : c,
-                    count: typeof c === 'object' ? c.count : undefined,
-                }))
+                options: colorOptions,
             });
         }
 
-        if (Array.isArray(facets.sizes) && facets.sizes.length > 0) {
+        const sizeOptions = mergeSelectedOptions(
+            (facets.sizes || []).map(s => ({
+                label: typeof s === 'object' ? s.value : s,
+                value: typeof s === 'object' ? s.value : s,
+                count: typeof s === 'object' ? s.count : undefined,
+                selected: typeof s === 'object' ? Boolean(s.selected) : false,
+            })),
+            currentSelected.sizes
+        );
+        if (sizeOptions.length > 0) {
             configs.push({
                 id: 'sizes',
                 title: 'Tamanho',
                 priority: 72,
                 type: 'checkbox',
-                options: facets.sizes.map(s => ({
-                    label: typeof s === 'object' ? s.value : s,
-                    value: typeof s === 'object' ? s.value : s,
-                    count: typeof s === 'object' ? s.count : undefined,
-                }))
+                options: sizeOptions,
             });
         }
 
@@ -560,7 +613,7 @@ function ProductSearch({
     // Use memoized filter configurations: prioritize serverFacets, fall back to generateFilterConfigs
     useEffect(() => {
         if (serverFacets) {
-            const facetConfigs = generateFilterConfigsFromFacets(serverFacets);
+            const facetConfigs = generateFilterConfigsFromFacets(serverFacets, selectedFilters);
             if (facetConfigs.length > 0) {
                 setFilterConfigs(facetConfigs);
                 return;
@@ -568,22 +621,36 @@ function ProductSearch({
         }
         const configs = generateFilterConfigs(products);
         setFilterConfigs(configs);
-    }, [products, serverFacets, generateFilterConfigs, generateFilterConfigsFromFacets]);
+    }, [products, serverFacets, selectedFilters, generateFilterConfigs, generateFilterConfigsFromFacets]);
 
     // The ProductImage component has been moved to its own file for better performance
 
-    const selectedCategory = (selectedFilters.categories && selectedFilters.categories.length > 0)
-        ? selectedFilters.categories[0]
-        : '';
-    const selectedBrand = (selectedFilters.brands && selectedFilters.brands.length > 0)
-        ? selectedFilters.brands[0]
-        : '';
-    const selectedColor = color || ((selectedFilters.colors && selectedFilters.colors.length > 0)
-        ? selectedFilters.colors[0]
-        : '');
-    const selectedSize = size || ((selectedFilters.sizes && selectedFilters.sizes.length > 0)
-        ? selectedFilters.sizes[0]
-        : '');
+    const selectedCategories = useMemo(
+        () => (Array.isArray(selectedFilters.categories) ? selectedFilters.categories.filter(Boolean) : []),
+        [selectedFilters.categories]
+    );
+    const selectedBrands = useMemo(
+        () => (Array.isArray(selectedFilters.brands) ? selectedFilters.brands.filter(Boolean) : []),
+        [selectedFilters.brands]
+    );
+    const selectedColors = useMemo(() => {
+        const set = new Set(Array.isArray(selectedFilters.colors) ? selectedFilters.colors.filter(Boolean) : []);
+        if (color) set.add(color);
+        return Array.from(set);
+    }, [selectedFilters.colors, color]);
+    const selectedSizes = useMemo(() => {
+        const set = new Set(Array.isArray(selectedFilters.sizes) ? selectedFilters.sizes.filter(Boolean) : []);
+        if (size) set.add(size);
+        return Array.from(set);
+    }, [selectedFilters.sizes, size]);
+    const selectedPriceRanges = useMemo(
+        () => (Array.isArray(selectedFilters.prices) ? selectedFilters.prices.filter(Boolean) : []),
+        [selectedFilters.prices]
+    );
+    const selectedAvailability = useMemo(
+        () => (Array.isArray(selectedFilters.availability) ? selectedFilters.availability.filter(Boolean) : []),
+        [selectedFilters.availability]
+    );
 
     const queryImageRef = useRef(null); // #33: current photo query (data URL) or null
     const fetchProducts = useCallback(async (searchParams) => {
@@ -605,25 +672,39 @@ function ProductSearch({
             const sortByToUse = (searchParams && searchParams.sortBy !== undefined)
                 ? searchParams.sortBy
                 : sortBy;
-            const colorToUse = (searchParams && searchParams.color !== undefined)
-                ? searchParams.color
-                : selectedColor;
-            const sizeToUse = (searchParams && searchParams.size !== undefined)
-                ? searchParams.size
-                : selectedSize;
+            const colorsToUse = (searchParams && searchParams.color !== undefined)
+                ? (searchParams.color ? [searchParams.color] : [])
+                : selectedColors;
+            const sizesToUse = (searchParams && searchParams.size !== undefined)
+                ? (searchParams.size ? [searchParams.size] : [])
+                : selectedSizes;
             const imageToUse = (searchParams && searchParams.image !== undefined)
                 ? searchParams.image
                 : queryImageRef.current;
             const sessionIdToUse = (searchParams && searchParams.sessionId !== undefined)
                 ? searchParams.sessionId
                 : (sessionIdRef.current || getSessionId());
+            const pageToUse = (searchParams && searchParams.page !== undefined)
+                ? Math.max(1, Number(searchParams.page) || 1)
+                : 1;
+            const pageSizeToUse = (searchParams && searchParams.pageSize !== undefined)
+                ? (Number(searchParams.pageSize) || 24)
+                : productsPerPage;
+            const offsetToUse = (pageToUse - 1) * pageSizeToUse;
+
+            const effectiveOnlyInStock = Boolean(
+                onlyInStock ||
+                (selectedAvailability.includes('IN_STOCK') && !selectedAvailability.includes('OUT_OF_STOCK'))
+            );
 
             const payload = {
                 query: queryToUse,
-                limit: 300,
+                limit: pageSizeToUse,
+                page: pageToUse,
+                offset: offsetToUse,
                 min_score: 0.01,
                 alpha: typeof alpha === 'number' ? alpha : 0.5,
-                only_in_stock: Boolean(onlyInStock),
+                only_in_stock: effectiveOnlyInStock,
                 tenant_id: tenantId || 'default',
             };
             if (sessionIdToUse) {
@@ -655,17 +736,32 @@ function ProductSearch({
             if (channel && channel !== 'All' && channel !== 'all') {
                 payload.channel = channel;
             }
-            if (selectedCategory && (!extractedFiltersToUse || !extractedFiltersToUse.category)) {
-                payload.category = selectedCategory;
+            if (selectedCategories.length > 0 && (!extractedFiltersToUse || !extractedFiltersToUse.category)) {
+                payload.categories = selectedCategories;
+                if (selectedCategories.length === 1) {
+                    payload.category = selectedCategories[0];
+                }
             }
-            if (selectedBrand && (!extractedFiltersToUse || !extractedFiltersToUse.brand)) {
-                payload.brand = selectedBrand;
+            if (selectedBrands.length > 0 && (!extractedFiltersToUse || !extractedFiltersToUse.brand)) {
+                payload.brands = selectedBrands;
+                if (selectedBrands.length === 1) {
+                    payload.brand = selectedBrands[0];
+                }
             }
-            if (colorToUse) {
-                payload.color = colorToUse;
+            if (colorsToUse.length > 0) {
+                payload.colors = colorsToUse;
+                if (colorsToUse.length === 1) {
+                    payload.color = colorsToUse[0];
+                }
             }
-            if (sizeToUse) {
-                payload.size = sizeToUse;
+            if (sizesToUse.length > 0) {
+                payload.sizes = sizesToUse;
+                if (sizesToUse.length === 1) {
+                    payload.size = sizesToUse[0];
+                }
+            }
+            if (selectedPriceRanges.length > 0) {
+                payload.price_ranges = selectedPriceRanges;
             }
             if (cep && cep.trim()) {
                 payload.cep = cep.trim();
@@ -784,10 +880,34 @@ function ProductSearch({
                 } else {
                     setSponsoredCount(0);
                 }
+                if (response.data.vector_index_used !== undefined) {
+                    setVectorIndexUsed(Boolean(response.data.vector_index_used));
+                } else {
+                    setVectorIndexUsed(null);
+                }
             }
 
             // Simple processing - just map products without modifying anything
             const processedResults = response.data.results || [];
+            const resTotalFound = typeof response.data?.total_found === 'number'
+                ? response.data.total_found
+                : processedResults.length;
+            setTotalFound(resTotalFound);
+            setServerTotalPages(
+                typeof response.data?.total_pages === 'number' && response.data.total_pages > 0
+                    ? response.data.total_pages
+                    : Math.max(1, Math.ceil(resTotalFound / pageSizeToUse))
+            );
+            setServerHasNext(
+                typeof response.data?.has_next === 'boolean'
+                    ? response.data.has_next
+                    : (pageToUse * pageSizeToUse < resTotalFound)
+            );
+            setServerOffset(
+                typeof response.data?.offset === 'number'
+                    ? response.data.offset
+                    : offsetToUse
+            );
 
             // Debug: Print the first product's image URL to console
             if (processedResults.length > 0 && processedResults[0].images && processedResults[0].images.length > 0) {
@@ -808,9 +928,9 @@ function ProductSearch({
             });
             localStorage.setItem('searchResults', JSON.stringify(productsForStorage));
 
-            // Set products and reset to first page
+            // Set products and active page
             setProducts(processedResults);
-            setCurrentPage(1);
+            setCurrentPage(pageToUse);
 
             // Show AI filter suggestions if we have products and a search query
             setShowAIFilterSuggestions(processedResults.length > 0 && activeSearchQuery.trim() !== '');
@@ -822,6 +942,11 @@ function ProductSearch({
             setEffectiveSortBy('');
             setPersonalized(false);
             setSponsoredCount(0);
+            setVectorIndexUsed(null);
+            setTotalFound(0);
+            setServerTotalPages(0);
+            setServerHasNext(false);
+            setServerOffset(0);
             const serverErrMsg = error.response?.data?.error || error.response?.data?.message;
             const displayError = serverErrMsg || error.message || 'An error occurred while searching';
             setError(displayError);
@@ -830,7 +955,7 @@ function ProductSearch({
         } finally {
             setLoading(false);
         }
-    }, [activeSearchQuery, alpha, channel, onlyInStock, selectedCategory, selectedBrand, selectedColor, selectedSize, tenantId, locale, cep, maxSla24h, ltr, priceTableId, sortBy]);
+    }, [activeSearchQuery, alpha, channel, onlyInStock, selectedCategories, selectedBrands, selectedColors, selectedSizes, selectedPriceRanges, selectedAvailability, tenantId, locale, cep, maxSla24h, ltr, priceTableId, sortBy, productsPerPage]);
 
     // Handler for filter changes from the Filters component - now works with dynamic filter IDs
     const handleFilterChange = useCallback((filterId, value, isChecked) => {
@@ -838,21 +963,110 @@ function ProductSearch({
             const currentSelection = prevFilters[filterId] || [];
             let newSelection;
             if (isChecked) {
-                newSelection = [...currentSelection, value];
+                if (currentSelection.some(item => String(item).toLowerCase() === String(value).toLowerCase())) {
+                    newSelection = currentSelection;
+                } else {
+                    newSelection = [...currentSelection, value];
+                }
             } else {
-                newSelection = currentSelection.filter(item => item !== value);
+                newSelection = currentSelection.filter(
+                    item => String(item).toLowerCase() !== String(value).toLowerCase()
+                );
             }
             return {
                 ...prevFilters,
                 [filterId]: newSelection,
             };
         });
+        if (!isChecked && filterId === 'colors' && String(color).toLowerCase() === String(value).toLowerCase()) {
+            setColor('');
+        }
+        if (!isChecked && filterId === 'sizes' && String(size).toLowerCase() === String(value).toLowerCase()) {
+            setSize('');
+        }
         setCurrentPage(1); // Reset to first page when filters change
+    }, [color, size]);
+
+    const handleClearAllFilters = useCallback(() => {
+        setSelectedFilters({});
+        setColor('');
+        setSize('');
+        setOnlyInStock(false);
+        setCurrentPage(1);
     }, []);
+
+    const activeFilterPills = useMemo(() => {
+        const pills = [];
+        const labelMap = {
+            categories: 'Department',
+            brands: 'Brand',
+            prices: 'Price',
+            colors: 'Color',
+            sizes: 'Size',
+            availability: 'Availability',
+        };
+        Object.entries(selectedFilters || {}).forEach(([filterId, values]) => {
+            if (!Array.isArray(values) || values.length === 0) return;
+            const prefix = labelMap[filterId] || (filterId.startsWith('attr_') ? formatFilterName(filterId.substring(5)) : formatFilterName(filterId));
+            values.forEach((val) => {
+                if (!val) return;
+                let displayVal = val;
+                if (filterId === 'prices' && typeof val === 'string') {
+                    if (val.endsWith('+')) {
+                        displayVal = `$${val.slice(0, -1)}+`;
+                    } else if (val.includes('-')) {
+                        const parts = val.split('-');
+                        displayVal = `$${parts[0]} - $${parts[1]}`;
+                    }
+                }
+                pills.push({
+                    key: `${filterId}:${val}`,
+                    label: `${prefix}: ${displayVal}`,
+                    onRemove: () => handleFilterChange(filterId, val, false),
+                });
+            });
+        });
+        if (color && !(selectedFilters.colors || []).some(c => String(c).toLowerCase() === String(color).toLowerCase())) {
+            pills.push({
+                key: `color:${color}`,
+                label: `Color: ${color}`,
+                onRemove: () => {
+                    setColor('');
+                    setCurrentPage(1);
+                },
+            });
+        }
+        if (size && !(selectedFilters.sizes || []).some(s => String(s).toLowerCase() === String(size).toLowerCase())) {
+            pills.push({
+                key: `size:${size}`,
+                label: `Size: ${size}`,
+                onRemove: () => {
+                    setSize('');
+                    setCurrentPage(1);
+                },
+            });
+        }
+        if (onlyInStock) {
+            pills.push({
+                key: 'only_in_stock',
+                label: 'In Stock Only',
+                onRemove: () => {
+                    setOnlyInStock(false);
+                    setCurrentPage(1);
+                },
+            });
+        }
+        return pills;
+    }, [selectedFilters, color, size, onlyInStock, handleFilterChange]);
 
     // Dynamic filter logic with optimized memory usage
     const filteredProducts = useMemo(() => {
         if (!products.length || !Object.keys(selectedFilters).length) {
+            return products;
+        }
+        // When serverFacets is active, the backend has already applied disjunctive
+        // filters across categories, brands, colors, sizes, and price_ranges.
+        if (serverFacets) {
             return products;
         }
 
@@ -869,23 +1083,24 @@ function ProductSearch({
         // Create filter functions for each active filter type
         // This avoids recreating them for each product
         const filterFunctions = activeFilters.map(([filterId, selectedValues]) => {
+            const lowerSelected = selectedValues.map(v => String(v).toLowerCase());
             switch (filterId) {
                 case 'categories':
                     return product =>
                         product.categories &&
-                        product.categories.some(cat => selectedValues.includes(cat));
+                        product.categories.some(cat => lowerSelected.includes(String(cat).toLowerCase()));
 
                 case 'brands':
                     return product => {
                         // Check direct brands first
-                        if (product.brands && product.brands.some(brand => selectedValues.includes(brand))) {
+                        if (product.brands && product.brands.some(brand => lowerSelected.includes(String(brand).toLowerCase()))) {
                             return true;
                         }
                         // Check attribute brands as fallback
                         if (product.attributes) {
                             const brandAttr = product.attributes.find(attr => attr.key === 'brand');
                             return brandAttr && brandAttr.value?.text &&
-                                brandAttr.value.text.some(b => selectedValues.includes(b));
+                                brandAttr.value.text.some(b => lowerSelected.includes(String(b).toLowerCase()));
                         }
                         return false;
                     };
@@ -910,37 +1125,37 @@ function ProductSearch({
                 case 'colors':
                     return product => {
                         if (Array.isArray(product.available_colors) &&
-                            product.available_colors.some(c => selectedValues.includes(c))) {
+                            product.available_colors.some(c => lowerSelected.includes(String(c).toLowerCase()))) {
                             return true;
                         }
                         if (Array.isArray(product.variants) &&
-                            product.variants.some(v => v.available && selectedValues.includes(v.color))) {
+                            product.variants.some(v => v.available && lowerSelected.includes(String(v.color).toLowerCase()))) {
                             return true;
                         }
                         const colorInfo = product.colorInfo;
                         if (!colorInfo) return false;
 
                         // Check direct colors
-                        if (colorInfo.colors && colorInfo.colors.some(color => selectedValues.includes(color))) {
+                        if (colorInfo.colors && colorInfo.colors.some(c => lowerSelected.includes(String(c).toLowerCase()))) {
                             return true;
                         }
                         // Check color families
                         return colorInfo.colorFamilies &&
-                            colorInfo.colorFamilies.some(color => selectedValues.includes(color));
+                            colorInfo.colorFamilies.some(c => lowerSelected.includes(String(c).toLowerCase()));
                     };
 
                 case 'sizes':
                     return product => {
                         if (Array.isArray(product.available_sizes) &&
-                            product.available_sizes.some(s => selectedValues.includes(s))) {
+                            product.available_sizes.some(s => lowerSelected.includes(String(s).toLowerCase()))) {
                             return true;
                         }
                         if (Array.isArray(product.variants) &&
-                            product.variants.some(v => v.available && selectedValues.includes(v.size))) {
+                            product.variants.some(v => v.available && lowerSelected.includes(String(v.size).toLowerCase()))) {
                             return true;
                         }
                         return product.sizes &&
-                            product.sizes.some(size => selectedValues.includes(size));
+                            product.sizes.some(sz => lowerSelected.includes(String(sz).toLowerCase()));
                     };
 
                 case 'availability':
@@ -952,9 +1167,12 @@ function ProductSearch({
                         const attrKey = filterId.substring(5); // Remove 'attr_' prefix
                         return product => {
                             if (!product.attributes) return false;
-                            const attr = product.attributes.find(a => a.key === attrKey);
-                            return attr && attr.value?.text &&
-                                attr.value.text.some(val => selectedValues.includes(val));
+                            if (Array.isArray(product.attributes)) {
+                                const attr = product.attributes.find(a => a.key === attrKey);
+                                return attr && attr.value?.text &&
+                                    attr.value.text.some(val => lowerSelected.includes(String(val).toLowerCase()));
+                            }
+                            return false;
                         };
                     }
 
@@ -967,7 +1185,7 @@ function ProductSearch({
         return products.filter(product =>
             filterFunctions.every(filterFn => filterFn(product))
         );
-    }, [products, selectedFilters]);
+    }, [products, selectedFilters, serverFacets]);
 
     // Handle search submission from SearchInput component - now resets all filters
     const handleSearch = useCallback((searchText, options = {}) => {
@@ -1015,12 +1233,16 @@ function ProductSearch({
         if (options.sortBy !== undefined) {
             setSortBy(options.sortBy);
         }
+        if (options.pageSize !== undefined) {
+            setProductsPerPage(Number(options.pageSize) || 24);
+        }
         if (options.color !== undefined) {
             setColor(options.color);
         }
         if (options.size !== undefined) {
             setSize(options.size);
         }
+        setCurrentPage(1);
         setParsedQuery(null);
         setActiveExtractedFilters(null);
         activeExtractedFiltersRef.current = null;
@@ -1035,6 +1257,8 @@ function ProductSearch({
         if (nextQuery === activeSearchQuery && (nextQuery.trim() || imageChanged)) {
             fetchProducts({
                 query: nextQuery,
+                page: 1,
+                pageSize: options.pageSize !== undefined ? options.pageSize : productsPerPage,
                 parseIntent: options.parseIntent !== undefined ? options.parseIntent : parseIntentRef.current,
                 priceTableId: options.priceTableId !== undefined ? options.priceTableId : priceTableId,
                 sortBy: options.sortBy !== undefined ? options.sortBy : sortBy,
@@ -1046,7 +1270,7 @@ function ProductSearch({
         setActiveSearchQuery(nextQuery);
         // Reset AI filter suggestions when a new search is performed
         setShowAIFilterSuggestions(true);
-    }, [setTenantId, setLocale, fetchProducts, activeSearchQuery, priceTableId, sortBy, color, size]);
+    }, [setTenantId, setLocale, fetchProducts, activeSearchQuery, priceTableId, sortBy, productsPerPage, color, size]);
 
     const handleRemoveExtractedFilter = useCallback((filterKey) => {
         const currentFilters = activeExtractedFiltersRef.current || {};
@@ -1060,10 +1284,12 @@ function ProductSearch({
         activeExtractedFiltersRef.current = nextFilters;
         setParseIntent(false);
         parseIntentRef.current = false;
+        setCurrentPage(1);
 
         const q = cleanQueryBaseRef.current || activeSearchQuery;
         fetchProducts({
             query: q,
+            page: 1,
             parseIntent: false,
             extractedFilters: nextFilters,
         });
@@ -1071,7 +1297,7 @@ function ProductSearch({
 
     useEffect(() => {
         if (activeSearchQuery.trim()) {
-            fetchProducts();
+            fetchProducts({ page: 1 });
         }
 
         // Cleanup function to prevent memory leaks
@@ -1084,16 +1310,41 @@ function ProductSearch({
         };
     }, [fetchProducts, activeSearchQuery]);
 
-    const indexOfLastProduct = currentPage * productsPerPage;
-    const indexOfFirstProduct = indexOfLastProduct - productsPerPage;
     const currentProducts = useMemo(() => {
-        return filteredProducts.slice(indexOfFirstProduct, indexOfLastProduct);
-    }, [filteredProducts, indexOfFirstProduct, indexOfLastProduct]);
+        if (filteredProducts.length > productsPerPage) {
+            const indexOfLastProduct = currentPage * productsPerPage;
+            const indexOfFirstProduct = indexOfLastProduct - productsPerPage;
+            return filteredProducts.slice(indexOfFirstProduct, indexOfLastProduct);
+        }
+        return filteredProducts;
+    }, [filteredProducts, currentPage, productsPerPage]);
 
-    const totalPages = Math.ceil(filteredProducts.length / productsPerPage);
+    const organicDisplayedCount = useMemo(() => {
+        return currentProducts.filter(p => !p || !p.sponsored).length;
+    }, [currentProducts]);
+
+    const effectiveTotalFound = totalFound > 0 ? totalFound : filteredProducts.length;
+    const effectiveOffset = serverOffset > 0 ? serverOffset : (currentPage - 1) * productsPerPage;
+    const displayedCount = organicDisplayedCount || currentProducts.length;
+    const showingStart = effectiveTotalFound === 0 || displayedCount === 0 ? 0 : effectiveOffset + 1;
+    const showingEnd = effectiveTotalFound === 0 ? 0 : Math.min(effectiveTotalFound, effectiveOffset + displayedCount);
+    const totalPages = serverTotalPages > 0
+        ? serverTotalPages
+        : Math.max(1, Math.ceil(effectiveTotalFound / productsPerPage));
 
     const handlePageChange = (newPage) => {
-        setCurrentPage(newPage);
+        const nextPage = Math.max(1, newPage);
+        setCurrentPage(nextPage);
+        fetchProducts({ page: nextPage });
+    };
+
+    const handlePageSizeChange = (newSize) => {
+        const nextSize = Number(newSize) || 24;
+        setProductsPerPage(nextSize);
+        setCurrentPage(1);
+        if (activeSearchQuery.trim() || products.length > 0) {
+            fetchProducts({ page: 1, pageSize: nextSize });
+        }
     };
 
 
@@ -1483,6 +1734,7 @@ function ProductSearch({
                             filterConfigs={filterConfigs}
                             selectedFilters={selectedFilters}
                             onFilterChange={handleFilterChange}
+                            onClearAll={handleClearAllFilters}
                             facetsLatencyMs={facetsLatencyMs}
                         />
                     </Card>
@@ -1522,6 +1774,7 @@ function ProductSearch({
                             filterConfigs={filterConfigs}
                             selectedFilters={selectedFilters}
                             onFilterChange={handleFilterChange}
+                            onClearAll={handleClearAllFilters}
                             facetsLatencyMs={facetsLatencyMs}
                         />
                     </Card>
@@ -1560,7 +1813,12 @@ function ProductSearch({
                         priceTableId={priceTableId}
                         setPriceTableId={setPriceTableId}
                         sortBy={sortBy}
-                        setSortBy={setSortBy}
+                        setSortBy={(val) => {
+                            setCurrentPage(1);
+                            setSortBy(val);
+                        }}
+                        pageSize={productsPerPage}
+                        setPageSize={handlePageSizeChange}
                         color={color}
                         setColor={setColor}
                         size={size}
@@ -1583,6 +1841,37 @@ function ProductSearch({
                             allProducts={products} // Pass all products for smart filtering
                         />
 
+                        {/* Active multi-select filter pills + Clear all (Issue #41, ADR-013) */}
+                        {activeFilterPills.length > 0 && (
+                            <Box
+                                data-testid="active-filter-pills"
+                                sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}
+                            >
+                                <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.secondary', mr: 0.5 }}>
+                                    Active filters:
+                                </Typography>
+                                {activeFilterPills.map((pill) => (
+                                    <Chip
+                                        key={pill.key}
+                                        size="small"
+                                        color="primary"
+                                        variant="outlined"
+                                        label={pill.label}
+                                        onDelete={pill.onRemove}
+                                    />
+                                ))}
+                                <Button
+                                    size="small"
+                                    variant="text"
+                                    color="secondary"
+                                    onClick={handleClearAllFilters}
+                                    sx={{ textTransform: 'none', fontWeight: 600, ml: 0.5 }}
+                                >
+                                    Clear all
+                                </Button>
+                            </Box>
+                        )}
+
                         {/* Zero-results recovery banner (Issue #21) */}
                         {autoCorrected && didYouMean ? (
                             <Alert severity="info" sx={{ mb: 2, alignItems: 'center' }}>
@@ -1598,6 +1887,7 @@ function ProductSearch({
                                         setActiveSearchQuery(orig);
                                         fetchProducts({
                                             query: orig,
+                                            page: 1,
                                             parseIntent: false,
                                             extractedFilters: null,
                                         });
@@ -1626,6 +1916,7 @@ function ProductSearch({
                                         setActiveSearchQuery(didYouMean);
                                         fetchProducts({
                                             query: didYouMean,
+                                            page: 1,
                                             parseIntent: parseIntentRef.current,
                                             extractedFilters: null,
                                         });
@@ -1714,10 +2005,13 @@ function ProductSearch({
                         )}
 
                         <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-                            <Typography variant="body2" color="text.secondary">
-                                {products.length ? `Found ${products.length} products` : 'No products found. Try a search!'}
+                            <Typography variant="body2" color="text.secondary" data-testid="pagination-summary">
+                                {currentProducts.length
+                                    ? `Showing ${showingStart}-${showingEnd} of ${effectiveTotalFound} results`
+                                    : 'No products found. Try a search!'}
                                 {effectiveAlpha !== null && ` • effective_alpha: ${effectiveAlpha}`}
                                 {retrievalMode && ` • retrieval_mode: ${retrievalMode}`}
+                                {vectorIndexUsed !== null && ` • vector_index_used: ${vectorIndexUsed}`}
                                 {effectiveTenantId && ` • tenant: ${effectiveTenantId}`}
                                 {effectiveLocale && ` • locale: ${effectiveLocale}`}
                                 {facetsLatencyMs !== null && ` • facets: ${Number(facetsLatencyMs).toFixed(1)}ms`}
@@ -1730,6 +2024,14 @@ function ProductSearch({
                                 {sponsoredCount > 0 && ` • sponsored: ${sponsoredCount}`}
                             </Typography>
                             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                                {vectorIndexUsed !== null && (
+                                    <Chip
+                                        size="small"
+                                        color={vectorIndexUsed ? 'success' : 'default'}
+                                        variant="outlined"
+                                        label={vectorIndexUsed ? 'ANN: ScaNN' : 'ANN: exact'}
+                                    />
+                                )}
                                 {sponsoredCount > 0 && (
                                     <Chip
                                         size="small"
@@ -1812,111 +2114,125 @@ function ProductSearch({
                     </Box>
 
                     {/* Pagination Controls */}
-                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mt: 2 }}>
-                        <Button
-                            disabled={currentPage === 1}
-                            onClick={() => handlePageChange(currentPage - 1)}
-                        >
-                            Previous
-                        </Button>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2, flexWrap: 'wrap', gap: 2 }}>
+                        <Typography variant="body2" color="text.secondary">
+                            {`Showing ${showingStart}-${showingEnd} of ${effectiveTotalFound} results`}
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Button
+                                disabled={currentPage <= 1}
+                                onClick={() => handlePageChange(currentPage - 1)}
+                            >
+                                Previous
+                            </Button>
 
-                        {/* Advanced pagination with ellipsis */}
-                        {(() => {
-                            // Pages to always show - first page, last page, and pages around current
-                            const pageButtons = [];
-                            const showEllipsisStart = currentPage > 4;
-                            const showEllipsisEnd = currentPage < totalPages - 3;
+                            {/* Advanced pagination with ellipsis */}
+                            {(() => {
+                                const pageButtons = [];
+                                const showEllipsisStart = currentPage > 4;
+                                const showEllipsisEnd = currentPage < totalPages - 3;
 
-                            // Logic for which page numbers to show
-                            for (let i = 1; i <= totalPages; i++) {
-                                // Always show first and last page
-                                if (i === 1 || i === totalPages) {
-                                    pageButtons.push(
-                                        <Button
-                                            key={i}
-                                            onClick={() => handlePageChange(i)}
-                                            color={currentPage === i ? 'primary' : 'inherit'}
-                                            sx={{ minWidth: '36px' }}
-                                        >
-                                            {i}
-                                        </Button>
-                                    );
-                                    continue;
+                                for (let i = 1; i <= totalPages; i++) {
+                                    if (i === 1 || i === totalPages) {
+                                        pageButtons.push(
+                                            <Button
+                                                key={i}
+                                                onClick={() => handlePageChange(i)}
+                                                variant={currentPage === i ? 'contained' : 'text'}
+                                                color={currentPage === i ? 'primary' : 'inherit'}
+                                                sx={{ minWidth: '36px' }}
+                                            >
+                                                {i}
+                                            </Button>
+                                        );
+                                        continue;
+                                    }
+
+                                    if (i >= currentPage - 1 && i <= currentPage + 1) {
+                                        pageButtons.push(
+                                            <Button
+                                                key={i}
+                                                onClick={() => handlePageChange(i)}
+                                                variant={currentPage === i ? 'contained' : 'text'}
+                                                color={currentPage === i ? 'primary' : 'inherit'}
+                                                sx={{ minWidth: '36px' }}
+                                            >
+                                                {i}
+                                            </Button>
+                                        );
+                                        continue;
+                                    }
+
+                                    if (i < 5 && currentPage < 6) {
+                                        pageButtons.push(
+                                            <Button
+                                                key={i}
+                                                onClick={() => handlePageChange(i)}
+                                                variant={currentPage === i ? 'contained' : 'text'}
+                                                color={currentPage === i ? 'primary' : 'inherit'}
+                                                sx={{ minWidth: '36px' }}
+                                            >
+                                                {i}
+                                            </Button>
+                                        );
+                                        continue;
+                                    }
+
+                                    if (i > totalPages - 4 && currentPage > totalPages - 5) {
+                                        pageButtons.push(
+                                            <Button
+                                                key={i}
+                                                onClick={() => handlePageChange(i)}
+                                                variant={currentPage === i ? 'contained' : 'text'}
+                                                color={currentPage === i ? 'primary' : 'inherit'}
+                                                sx={{ minWidth: '36px' }}
+                                            >
+                                                {i}
+                                            </Button>
+                                        );
+                                        continue;
+                                    }
+
+                                    if (i === 2 && showEllipsisStart) {
+                                        pageButtons.push(
+                                            <Box key="ellipsis-start" sx={{ mx: 1 }}>
+                                                ...
+                                            </Box>
+                                        );
+                                    }
+
+                                    if (i === totalPages - 1 && showEllipsisEnd) {
+                                        pageButtons.push(
+                                            <Box key="ellipsis-end" sx={{ mx: 1 }}>
+                                                ...
+                                            </Box>
+                                        );
+                                    }
                                 }
 
-                                // Show pages around current page (current-1, current, current+1)
-                                if (i >= currentPage - 1 && i <= currentPage + 1) {
-                                    pageButtons.push(
-                                        <Button
-                                            key={i}
-                                            onClick={() => handlePageChange(i)}
-                                            color={currentPage === i ? 'primary' : 'inherit'}
-                                            sx={{ minWidth: '36px' }}
-                                        >
-                                            {i}
-                                        </Button>
-                                    );
-                                    continue;
-                                }
+                                return pageButtons;
+                            })()}
 
-                                // Show early pages if we're not too far
-                                if (i < 5 && currentPage < 6) {
-                                    pageButtons.push(
-                                        <Button
-                                            key={i}
-                                            onClick={() => handlePageChange(i)}
-                                            color={currentPage === i ? 'primary' : 'inherit'}
-                                            sx={{ minWidth: '36px' }}
-                                        >
-                                            {i}
-                                        </Button>
-                                    );
-                                    continue;
-                                }
-
-                                // Show late pages if we're close to the end
-                                if (i > totalPages - 4 && currentPage > totalPages - 5) {
-                                    pageButtons.push(
-                                        <Button
-                                            key={i}
-                                            onClick={() => handlePageChange(i)}
-                                            color={currentPage === i ? 'primary' : 'inherit'}
-                                            sx={{ minWidth: '36px' }}
-                                        >
-                                            {i}
-                                        </Button>
-                                    );
-                                    continue;
-                                }
-
-                                // Add ellipsis at the start if needed
-                                if (i === 2 && showEllipsisStart) {
-                                    pageButtons.push(
-                                        <Box key="ellipsis-start" sx={{ mx: 1 }}>
-                                            ...
-                                        </Box>
-                                    );
-                                }
-
-                                // Add ellipsis at the end if needed
-                                if (i === totalPages - 1 && showEllipsisEnd) {
-                                    pageButtons.push(
-                                        <Box key="ellipsis-end" sx={{ mx: 1 }}>
-                                            ...
-                                        </Box>
-                                    );
-                                }
-                            }
-
-                            return pageButtons;
-                        })()}
-
-                        <Button
-                            disabled={currentPage === totalPages || totalPages === 0}
-                            onClick={() => handlePageChange(currentPage + 1)}
-                        >
-                            Next
-                        </Button>
+                            <Button
+                                disabled={(!serverHasNext && currentPage >= totalPages) || totalPages === 0}
+                                onClick={() => handlePageChange(currentPage + 1)}
+                            >
+                                Next
+                            </Button>
+                        </Box>
+                        <FormControl size="small" sx={{ minWidth: 110 }}>
+                            <InputLabel id="bottom-page-size-label">Per page</InputLabel>
+                            <Select
+                                labelId="bottom-page-size-label"
+                                value={productsPerPage}
+                                label="Per page"
+                                onChange={(e) => handlePageSizeChange(e.target.value)}
+                            >
+                                <MenuItem value={12}>12</MenuItem>
+                                <MenuItem value={24}>24</MenuItem>
+                                <MenuItem value={48}>48</MenuItem>
+                            </Select>
+                        </FormControl>
                     </Box>
                 </Grid>
             </Grid>

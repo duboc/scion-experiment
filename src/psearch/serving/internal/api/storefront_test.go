@@ -101,3 +101,58 @@ func TestStorefrontClickableFacets(t *testing.T) {
 		}
 	}
 }
+
+// #40 (ADR-012): pagination ('Showing X-Y of Z'), Prev/Next + numbered buttons,
+// page size 12/24/48, extended sort modes, and reset page=1 on query/filter change.
+func TestStorefrontPaginationAndSort(t *testing.T) {
+	for _, frag := range []string{
+		`id="page_size"`,
+		`<option value="12">12 per page</option>`,
+		`<option value="24" selected>24 per page</option>`,
+		`<option value="48">48 per page</option>`,
+		`<option value="relevance">Relevance</option>`,
+		`<option value="price_asc">Price: Low to High</option>`,
+		`<option value="price_desc">Price: High to Low</option>`,
+		`<option value="popularity">Best Selling</option>`,
+		`<option value="rating_desc">Top Rated</option>`,
+		`id="pagination-bar"`,
+		"function goToPage(",
+		"function renderPagination(",
+		"'Showing ' + startItem + '-' + endItem + ' of ' + totalFound + ' results'",
+		"if (!opts.keepPage) {\n        currentPage = 1;",
+		"'&page=' + encodeURIComponent(currentPage)",
+		"'&offset=' + encodeURIComponent((currentPage - 1) * pageSize)",
+		`id="ann-badge"`,
+		"data.vector_index_used",
+	} {
+		if !strings.Contains(defaultStorefrontHTML, frag) {
+			t.Errorf("storefront missing %q", frag)
+		}
+	}
+}
+
+// #41 (ADR-013): multi-select checkbox facets + active filter pills + Clear all
+// sending brands/categories/colors/sizes/price_ranges arrays.
+func TestStorefrontDisjunctiveMultiSelectFacets(t *testing.T) {
+	for _, frag := range []string{
+		"function getFacetArray(",
+		"function syncFacetDimension(",
+		"function clearAllFacets()",
+		"cb.type = 'checkbox'",
+		"cb.className = 'facet-checkbox'",
+		"clearBtn.textContent = 'Clear all'",
+		`id="sidebar-clear-facets"`,
+		"clearBtn.id = 'clear-all-filters-btn'",
+		"'&categories=' + encodeURIComponent(activeCategories.join(','))",
+		"'&brands=' + encodeURIComponent(activeBrands.join(','))",
+		"'&colors=' + encodeURIComponent(activeColors.join(','))",
+		"'&sizes=' + encodeURIComponent(activeSizes.join(','))",
+		"'&price_ranges=' + encodeURIComponent(activePriceRanges.join(','))",
+	} {
+		if !strings.Contains(defaultStorefrontHTML, frag) {
+			t.Errorf("storefront missing %q", frag)
+		}
+	}
+}
+
+

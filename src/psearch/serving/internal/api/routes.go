@@ -111,6 +111,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     .facet-active { background: #0c4a6e; color: #e0f2fe; font-weight: 600; }
     .filter-chip { display: inline-flex; align-items: center; gap: 4px; background: #0c4a6e; border: 1px solid #38bdf8; color: #e0f2fe; border-radius: 999px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
     .facet-count { background: #0f172a; padding: 1px 6px; border-radius: 999px; font-size: 11px; color: #cbd5e1; }
+    .page-btn { background: #1e293b; color: #e2e8f0; border: 1px solid #475569; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .page-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .page-btn-active { background: var(--accent); color: #0f172a; border-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -123,6 +126,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <span class="badge" data-testid="repo-badge">Repo: duboc/scion-experiment | Sandbox: riojucu-sandbox</span>
       <span class="badge" id="backend-badge">Spanner</span>
       <span class="badge" id="retrieval-badge">Retrieval: -</span>
+      <span class="badge" id="ann-badge" style="display:none;background:#065f46;border:1px solid #10b981;color:#d1fae5;"></span>
       <span class="badge" id="tenant-badge" style="display:none;"></span>
       <span class="badge" id="locale-badge" style="display:none;"></span>
       <span class="badge" id="ltr-badge" style="display:none;"></span>
@@ -151,30 +155,37 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       </div>
       <input type="text" id="session_id" placeholder="Session (sess-...)" style="flex:0 0 140px;min-width:120px;" title="ID da Sessão" onkeydown="if(event.key==='Enter') runSearch()" />
       <input type="text" id="tenant_id" value="default" placeholder="Tenant" style="flex:0 0 110px;min-width:90px;" title="Tenant ID" />
-      <select id="locale" title="Locale">
+      <select id="locale" title="Locale" onchange="currentPage=1;runSearch({ keepFacets: true })">
         <option value="">All Locales</option>
         <option value="pt-BR">pt-BR</option>
         <option value="en-US">en-US</option>
         <option value="es-MX">es-MX</option>
       </select>
-      <select id="channel">
+      <select id="channel" onchange="currentPage=1;runSearch({ keepFacets: true })">
         <option value="">All Channels</option>
         <option value="web">web</option>
         <option value="mobile">mobile</option>
         <option value="store">store</option>
       </select>
-      <select id="price_table_id" title="Tabela de preço">
+      <select id="price_table_id" title="Tabela de preço" onchange="currentPage=1;runSearch({ keepFacets: true })">
         <option value="">Varejo Padrão</option>
         <option value="b2b-corporate">B2B Corporate</option>
         <option value="b2b-gold">B2B Gold</option>
         <option value="vip-club">VIP Club</option>
       </select>
-      <select id="sort_by" title="Ordenar por">
-        <option value="">Relevância</option>
-        <option value="price_asc">Menor preço</option>
-        <option value="price_desc">Maior preço</option>
+      <select id="sort_by" title="Sort by" onchange="currentPage=1;runSearch({ keepFacets: true })">
+        <option value="relevance">Relevance</option>
+        <option value="price_asc">Price: Low to High</option>
+        <option value="price_desc">Price: High to Low</option>
+        <option value="popularity">Best Selling</option>
+        <option value="rating_desc">Top Rated</option>
       </select>
-      <select id="color" title="Cor">
+      <select id="page_size" title="Page size" onchange="currentPage=1;runSearch({ keepFacets: true })">
+        <option value="12">12 per page</option>
+        <option value="24" selected>24 per page</option>
+        <option value="48">48 per page</option>
+      </select>
+      <select id="color" title="Cor" onchange="currentPage=1;runSearch({ keepFacets: true })">
         <option value="">Todas as cores</option>
         <option value="preto">preto</option>
         <option value="branco">branco</option>
@@ -182,7 +193,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         <option value="prata">prata</option>
         <option value="grafite">grafite</option>
       </select>
-      <select id="size" title="Tamanho">
+      <select id="size" title="Tamanho" onchange="currentPage=1;runSearch({ keepFacets: true })">
         <option value="">Todos os tamanhos</option>
         <option value="38">38</option>
         <option value="39">39</option>
@@ -193,25 +204,28 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       </select>
       <input type="text" id="cep" placeholder="CEP (01310-100)" style="flex:0 0 130px;min-width:110px;" title="Calcular Entrega" onkeydown="if(event.key==='Enter') runSearch()" />
       <label class="checkbox-wrap">
-        <input type="checkbox" id="max_sla_24h" /> 24h
+        <input type="checkbox" id="max_sla_24h" onchange="currentPage=1;runSearch({ keepFacets: true })" /> 24h
       </label>
       <label class="checkbox-wrap">
-        <input type="checkbox" id="only_in_stock" /> Only in stock
+        <input type="checkbox" id="only_in_stock" onchange="currentPage=1;runSearch({ keepFacets: true })" /> Only in stock
       </label>
       <label class="checkbox-wrap">
-        <input type="checkbox" id="ltr" /> Re-rank (LTR)
+        <input type="checkbox" id="ltr" onchange="currentPage=1;runSearch({ keepFacets: true })" /> Re-rank (LTR)
       </label>
       <label class="checkbox-wrap">
-        <input type="checkbox" id="parse_intent" checked /> Smart query
+        <input type="checkbox" id="parse_intent" checked onchange="currentPage=1;runSearch({ keepFacets: true })" /> Smart query
       </label>
       <button onclick="runSearch()">Search</button>
       <button id="show-all-btn" onclick="showAllCatalog()" title="Show every product across locales">Show All Catalog</button>
     </div>
     <div style="display:flex;gap:24px;margin-top:20px;align-items:flex-start;">
       <aside id="facet-sidebar" style="width:230px;flex-shrink:0;background:var(--card);padding:16px;border-radius:12px;border:1px solid #334155;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:6px;">
           <h3 style="margin:0;font-size:15px;color:var(--accent);">Facets</h3>
-          <span id="facets-latency" style="font-size:11px;color:var(--muted);"></span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span id="facets-latency" style="font-size:11px;color:var(--muted);"></span>
+            <button type="button" id="sidebar-clear-facets" onclick="clearAllFacets()" style="display:none;background:transparent;border:none;color:var(--accent);font-size:11px;font-weight:600;padding:0;cursor:pointer;text-decoration:underline;">Clear all</button>
+          </div>
         </div>
         <div class="facet-group">
           <div class="facet-title">Department</div>
@@ -245,6 +259,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         <div id="recovery-banner" style="display:none;margin:-8px 0 16px 0;padding:10px 14px;background:var(--card);border:1px solid #38bdf8;border-radius:8px;font-size:14px;color:var(--text);"></div>
         <div id="parsed-query-chips" style="display:none;margin:-8px 0 16px 0;gap:8px;flex-wrap:wrap;align-items:center;"></div>
         <div class="grid" id="results"></div>
+        <div id="pagination-bar" style="display:none;justify-content:space-between;align-items:center;margin-top:20px;flex-wrap:wrap;gap:12px;"></div>
       </div>
     </div>
   </main>
@@ -291,9 +306,14 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     function imageSearchBody(q, url) {
       // Reuse the GET parameters built by runSearch as the JSON body of POST /api/search.
       const p = new URLSearchParams(url.split('?')[1] || '');
-      const body = { query: q, image_base64: queryImage, image_mime_type: 'image/jpeg', limit: 20 };
+      const body = { query: q, image_base64: queryImage, image_mime_type: 'image/jpeg', limit: parseInt(p.get('limit') || '20', 10) };
+      if (p.get('page')) body.page = parseInt(p.get('page'), 10);
+      if (p.get('offset')) body.offset = parseInt(p.get('offset'), 10);
       ['channel', 'tenant_id', 'locale', 'cep', 'price_table_id', 'sort_by', 'color', 'size', 'session_id', 'category', 'brand'].forEach(function(k) {
         if (p.get(k)) body[k] = p.get(k);
+      });
+      ['categories', 'brands', 'colors', 'sizes', 'price_ranges'].forEach(function(k) {
+        if (p.get(k)) body[k] = p.get(k).split(',').filter(Boolean);
       });
       if (p.get('min_price')) body.min_price = parseFloat(p.get('min_price'));
       if (p.get('max_price')) body.max_price = parseFloat(p.get('max_price'));
@@ -307,13 +327,127 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       return body;
     }
     let alphaTouched = false;
-    // Clickable facets (#34): clicking a facet item re-runs the same search with
-    // that item as an extra filter; clicking an active item removes it. Category,
-    // brand and price live here; color/size/in-stock reuse the existing controls.
+    let currentPage = 1;
+    function goToPage(p) {
+      currentPage = Math.max(1, parseInt(p, 10) || 1);
+      runSearch({ keepFacets: true, keepPage: true });
+    }
+    function renderPagination(data, pageSize) {
+      const bar = document.getElementById('pagination-bar');
+      if (!bar) return { start: 0, end: 0, total: 0 };
+      bar.textContent = '';
+      const totalFound = typeof data.total_found === 'number' ? data.total_found : (data.results ? data.results.length : 0);
+      const page = typeof data.page === 'number' && data.page > 0 ? data.page : currentPage;
+      const effPageSize = typeof data.page_size === 'number' && data.page_size > 0 ? data.page_size : pageSize;
+      const offset = typeof data.offset === 'number' && data.offset >= 0 ? data.offset : (page - 1) * effPageSize;
+      const totalPages = typeof data.total_pages === 'number' && data.total_pages > 0 ? data.total_pages : Math.max(1, Math.ceil(totalFound / effPageSize));
+      const organicResults = (data.results || []).filter(function(r) { return !r.sponsored; });
+      const pageCount = organicResults.length || (data.results ? data.results.length : 0);
+      const startItem = totalFound === 0 || pageCount === 0 ? 0 : offset + 1;
+      const endItem = totalFound === 0 ? 0 : Math.min(totalFound, offset + pageCount);
+      const hasNext = typeof data.has_next === 'boolean' ? data.has_next : (page < totalPages);
+
+      const summary = document.createElement('span');
+      summary.id = 'pagination-summary';
+      summary.style.cssText = 'color:var(--muted);font-size:13px;';
+      summary.textContent = 'Showing ' + startItem + '-' + endItem + ' of ' + totalFound + ' results';
+      bar.appendChild(summary);
+
+      const controls = document.createElement('div');
+      controls.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;';
+
+      const prevBtn = document.createElement('button');
+      prevBtn.type = 'button';
+      prevBtn.id = 'page-prev';
+      prevBtn.className = 'page-btn';
+      prevBtn.textContent = 'Prev';
+      prevBtn.disabled = page <= 1;
+      prevBtn.onclick = function() { goToPage(page - 1); };
+      controls.appendChild(prevBtn);
+
+      for (let i = 1; i <= totalPages; i++) {
+        if (totalPages > 7 && i !== 1 && i !== totalPages && Math.abs(i - page) > 1) {
+          if (i === 2 || i === totalPages - 1) {
+            const dots = document.createElement('span');
+            dots.style.cssText = 'color:var(--muted);padding:0 4px;';
+            dots.textContent = '...';
+            controls.appendChild(dots);
+          }
+          continue;
+        }
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'page-btn' + (i === page ? ' page-btn-active' : '');
+        btn.setAttribute('data-page', String(i));
+        if (i === page) btn.setAttribute('aria-current', 'page');
+        btn.textContent = String(i);
+        btn.onclick = (function(targetPage) {
+          return function() { goToPage(targetPage); };
+        })(i);
+        controls.appendChild(btn);
+      }
+
+      const nextBtn = document.createElement('button');
+      nextBtn.type = 'button';
+      nextBtn.id = 'page-next';
+      nextBtn.className = 'page-btn';
+      nextBtn.textContent = 'Next';
+      nextBtn.disabled = !hasNext && page >= totalPages;
+      nextBtn.onclick = function() { goToPage(page + 1); };
+      controls.appendChild(nextBtn);
+
+      bar.appendChild(controls);
+      bar.style.display = 'flex';
+      return { start: startItem, end: endItem, total: totalFound };
+    }
+    // Disjunctive multi-select facets (#34, #41 ADR-013): clicking a facet checkbox
+    // toggles that option within its dimension array (categories, brands, colors,
+    // sizes, price_ranges) and re-runs the search with page=1.
     let facetFilters = {};
     let lastSearchedQuery = null;
+    const FACET_ARRAY_KEY = {
+      category: 'categories',
+      brand: 'brands',
+      price: 'price_ranges',
+      color: 'colors',
+      size: 'sizes'
+    };
+    function getFacetArray(kind) {
+      const k = FACET_ARRAY_KEY[kind];
+      if (!k) return [];
+      const arr = Array.isArray(facetFilters[k]) ? facetFilters[k].slice() : [];
+      if (kind === 'color' || kind === 'size') {
+        const el = document.getElementById(kind);
+        if (el && el.value && !arr.some(function(x) { return String(x).toLowerCase() === el.value.toLowerCase(); })) {
+          arr.push(el.value);
+        }
+      }
+      return arr;
+    }
+    function syncFacetDimension(kind, arr) {
+      const k = FACET_ARRAY_KEY[kind];
+      if (!k) return;
+      if (arr && arr.length > 0) {
+        facetFilters[k] = arr;
+      } else {
+        delete facetFilters[k];
+      }
+      if (kind === 'category' || kind === 'brand' || kind === 'price') {
+        if (arr && arr.length === 1) {
+          facetFilters[kind] = arr[0];
+        } else {
+          delete facetFilters[kind];
+        }
+      } else if (kind === 'color' || kind === 'size') {
+        setSelectValue(kind, (arr && arr.length === 1) ? arr[0] : '');
+      }
+    }
     function facetIsActive(kind, val) {
       const v = String(val).toLowerCase();
+      const arr = getFacetArray(kind);
+      if (arr.some(function(x) { return String(x).toLowerCase() === v; })) {
+        return true;
+      }
       if (kind === 'category' || kind === 'brand' || kind === 'price') {
         return facetFilters[kind] !== undefined && String(facetFilters[kind]).toLowerCase() === v;
       }
@@ -343,13 +477,30 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     }
     function toggleFacet(kind, val) {
       const active = facetIsActive(kind, val);
-      if (kind === 'category' || kind === 'brand' || kind === 'price') {
-        if (active) { delete facetFilters[kind]; } else { facetFilters[kind] = val; }
-      } else if (kind === 'color' || kind === 'size') {
-        setSelectValue(kind, active ? '' : val);
+      const vLower = String(val).toLowerCase();
+      if (FACET_ARRAY_KEY[kind]) {
+        let arr = getFacetArray(kind);
+        if (active) {
+          arr = arr.filter(function(x) { return String(x).toLowerCase() !== vLower; });
+        } else {
+          arr.push(val);
+        }
+        syncFacetDimension(kind, arr);
       } else if (kind === 'availability') {
         document.getElementById('only_in_stock').checked = !active;
       }
+      currentPage = 1;
+      runSearch({ keepFacets: true });
+    }
+    function clearAllFacets() {
+      facetFilters = {};
+      const colEl = document.getElementById('color');
+      if (colEl) colEl.value = '';
+      const szEl = document.getElementById('size');
+      if (szEl) szEl.value = '';
+      const stockEl = document.getElementById('only_in_stock');
+      if (stockEl) stockEl.checked = false;
+      currentPage = 1;
       runSearch({ keepFacets: true });
     }
     function priceBounds(range) {
@@ -362,32 +513,57 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const el = document.getElementById(elId);
       if (!el) return;
       el.textContent = '';
-      if (!list || !list.length) {
+      const merged = Array.isArray(list) ? list.slice() : [];
+      const activeVals = getFacetArray(kind);
+      activeVals.forEach(function(selVal) {
+        const exists = merged.some(function(it) {
+          const iv = typeof it === 'object' ? String(it.value) : String(it);
+          return iv.toLowerCase() === String(selVal).toLowerCase();
+        });
+        if (!exists) {
+          merged.push({ value: selVal, count: 0, selected: true });
+        }
+      });
+      if (!merged.length) {
         const none = document.createElement('span');
         none.style.cssText = 'color:#64748b;font-size:11px;';
         none.textContent = '(none)';
         el.appendChild(none);
         return;
       }
-      list.forEach(function(item) {
+      merged.forEach(function(item) {
         const val = typeof item === 'object' ? String(item.value) : String(item);
         const cnt = typeof item === 'object' ? item.count : 0;
         const row = document.createElement('div');
         row.className = 'facet-item';
         row.setAttribute('data-facet', kind);
+        const leftWrap = document.createElement('span');
+        leftWrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
+        const clickable = facetClickable(kind, val);
+        const active = clickable && (Boolean(item && item.selected) || facetIsActive(kind, val));
+        if (clickable) {
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.className = 'facet-checkbox';
+          cb.checked = active;
+          cb.tabIndex = -1;
+          cb.style.cssText = 'width:13px;height:13px;margin:0;pointer-events:none;';
+          leftWrap.appendChild(cb);
+        }
         const label = document.createElement('span');
         label.textContent = val === '' ? '(sem valor)' : val;
+        leftWrap.appendChild(label);
         const count = document.createElement('span');
         count.className = 'facet-count';
         count.textContent = String(cnt);
-        row.appendChild(label);
+        row.appendChild(leftWrap);
         row.appendChild(count);
-        if (facetClickable(kind, val)) {
-          const active = facetIsActive(kind, val);
+        if (clickable) {
           row.classList.add('facet-click');
           if (active) row.classList.add('facet-active');
-          row.setAttribute('role', 'button');
+          row.setAttribute('role', 'checkbox');
           row.setAttribute('tabindex', '0');
+          row.setAttribute('aria-checked', active ? 'true' : 'false');
           row.setAttribute('aria-pressed', active ? 'true' : 'false');
           row.title = active ? 'Remover filtro' : 'Filtrar por ' + val;
           row.onclick = function() { toggleFacet(kind, val); };
@@ -401,24 +577,41 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       if (!box) return;
       box.textContent = '';
       const chips = [];
-      [['category', 'Departamento'], ['brand', 'Marca'], ['price', 'Preço']].forEach(function(k) {
-        if (facetFilters[k[0]] !== undefined) chips.push([k[1] + ': ' + facetFilters[k[0]], function() { delete facetFilters[k[0]]; }]);
-      });
-      ['color', 'size'].forEach(function(k) {
-        const el = document.getElementById(k);
-        if (el && el.value) chips.push([(k === 'color' ? 'Cor: ' : 'Tamanho: ') + el.value, function() { el.value = ''; }]);
+      [['category', 'Brand/Dept', 'Category'], ['brand', 'Marca', 'Brand'], ['price', 'Preço', 'Price'], ['color', 'Cor', 'Color'], ['size', 'Tamanho', 'Size']].forEach(function(meta) {
+        const kind = meta[0];
+        const prefix = meta[2];
+        const vals = getFacetArray(kind);
+        vals.forEach(function(val) {
+          chips.push([prefix + ': ' + val, function() {
+            const next = getFacetArray(kind).filter(function(x) { return String(x).toLowerCase() !== String(val).toLowerCase(); });
+            syncFacetDimension(kind, next);
+          }]);
+        });
       });
       const stock = document.getElementById('only_in_stock');
-      if (stock && stock.checked) chips.push(['Em estoque', function() { stock.checked = false; }]);
+      if (stock && stock.checked) chips.push(['In Stock', function() { stock.checked = false; }]);
       chips.forEach(function(c) {
         const chip = document.createElement('button');
         chip.type = 'button';
         chip.className = 'filter-chip';
         chip.textContent = c[0] + ' \u00d7';
         chip.title = 'Remover filtro';
-        chip.onclick = function() { c[1](); runSearch({ keepFacets: true }); };
+        chip.onclick = function() { c[1](); currentPage = 1; runSearch({ keepFacets: true }); };
         box.appendChild(chip);
       });
+      if (chips.length > 0) {
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.id = 'clear-all-filters-btn';
+        clearBtn.className = 'filter-chip';
+        clearBtn.style.cssText = 'background:#1e293b;border-color:#f87171;color:#fecaca;font-weight:700;';
+        clearBtn.textContent = 'Clear all';
+        clearBtn.title = 'Clear all active filters';
+        clearBtn.onclick = function() { clearAllFacets(); };
+        box.appendChild(clearBtn);
+      }
+      const sideClear = document.getElementById('sidebar-clear-facets');
+      if (sideClear) sideClear.style.display = chips.length ? 'inline-block' : 'none';
       box.style.display = chips.length ? 'flex' : 'none';
     }
     async function runSearch(opts) {
@@ -426,6 +619,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const q = document.getElementById('q').value;
       if (!opts.keepFacets && lastSearchedQuery !== null && q.trim() !== lastSearchedQuery) {
         facetFilters = {}; // a new query text starts from a clean facet state
+      }
+      if (!opts.keepPage) {
+        currentPage = 1; // reset page=1 on query or filter change (#40)
       }
       lastSearchedQuery = q.trim();
       const alpha = document.getElementById('alpha').value;
@@ -439,12 +635,16 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const parseIntent = document.getElementById('parse_intent') ? document.getElementById('parse_intent').checked : true;
       const priceTableId = document.getElementById('price_table_id') ? document.getElementById('price_table_id').value : '';
       const sortBy = document.getElementById('sort_by') ? document.getElementById('sort_by').value : '';
+      const pageSizeEl = document.getElementById('page_size');
+      const pageSize = pageSizeEl ? (parseInt(pageSizeEl.value, 10) || 24) : 24;
       const color = document.getElementById('color') ? document.getElementById('color').value : '';
       const size = document.getElementById('size') ? document.getElementById('size').value : '';
       const sessionId = document.getElementById('session_id') ? document.getElementById('session_id').value.trim() : '';
       let url = '/api/search?q=' + encodeURIComponent(q) + '&alpha=' + encodeURIComponent(alpha);
-      if (!queryImage && (opts.browseAll || q.trim() === '' || q.trim() === '*')) {
+      if (!queryImage && opts.browseAll) {
         url += '&limit=100'; // catalog browse: show every product (#30)
+      } else {
+        url += '&limit=' + encodeURIComponent(pageSize) + '&page=' + encodeURIComponent(currentPage) + '&offset=' + encodeURIComponent((currentPage - 1) * pageSize);
       }
       if (sessionId) {
         url += '&session_id=' + encodeURIComponent(sessionId);
@@ -458,19 +658,39 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       if (sortBy) {
         url += '&sort_by=' + encodeURIComponent(sortBy);
       }
+      const activeColors = getFacetArray('color');
+      if (activeColors.length > 0) {
+        url += '&colors=' + encodeURIComponent(activeColors.join(','));
+      }
       if (color) {
         url += '&color=' + encodeURIComponent(color);
+      }
+      const activeCategories = getFacetArray('category');
+      if (activeCategories.length > 0) {
+        url += '&categories=' + encodeURIComponent(activeCategories.join(','));
       }
       if (facetFilters.category) {
         url += '&category=' + encodeURIComponent(facetFilters.category);
       }
+      const activeBrands = getFacetArray('brand');
+      if (activeBrands.length > 0) {
+        url += '&brands=' + encodeURIComponent(activeBrands.join(','));
+      }
       if (facetFilters.brand) {
         url += '&brand=' + encodeURIComponent(facetFilters.brand);
+      }
+      const activePriceRanges = getFacetArray('price');
+      if (activePriceRanges.length > 0) {
+        url += '&price_ranges=' + encodeURIComponent(activePriceRanges.join(','));
       }
       const pb = priceBounds(facetFilters.price);
       if (pb) {
         if (pb.min > 0) url += '&min_price=' + pb.min;
         if (pb.max > 0) url += '&max_price=' + pb.max;
+      }
+      const activeSizes = getFacetArray('size');
+      if (activeSizes.length > 0) {
+        url += '&sizes=' + encodeURIComponent(activeSizes.join(','));
       }
       if (size) {
         url += '&size=' + encodeURIComponent(size);
@@ -513,6 +733,14 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       if (document.getElementById('retrieval-badge')) {
         document.getElementById('retrieval-badge').textContent = 'Mode: ' + (data.retrieval_mode || 'hybrid') +
           (data.image_query ? ' · photo w=' + data.image_weight + (data.image_cache_hit ? ' (cached)' : '') : '');
+      }
+      if (document.getElementById('ann-badge')) {
+        if (data.vector_index_used !== undefined) {
+          document.getElementById('ann-badge').textContent = data.vector_index_used ? 'ANN: ScaNN' : 'ANN: exact';
+          document.getElementById('ann-badge').style.display = 'inline-block';
+        } else {
+          document.getElementById('ann-badge').style.display = 'none';
+        }
       }
       if (document.getElementById('tenant-badge')) {
         if (data.tenant_id) {
@@ -584,8 +812,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       } else {
         document.getElementById('facets-latency').textContent = '';
       }
+      const pgInfo = renderPagination(data, pageSize);
       document.getElementById('meta').textContent =
-        'Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none' ? ', intent=' + data.parsed_query.intent_source : '') + (data.price_table_id ? ', table=' + data.price_table_id : '') + (data.sort_by ? ', sort=' + data.sort_by : '') + (data.personalized ? ', personalized=true' : '') + (data.sponsored_count ? ', sponsored_count=' + data.sponsored_count : '') + ')';
+        'Showing ' + pgInfo.start + '-' + pgInfo.end + ' of ' + pgInfo.total + ' results · Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.vector_index_used !== undefined ? ', vector_index_used=' + data.vector_index_used : '') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none' ? ', intent=' + data.parsed_query.intent_source : '') + (data.price_table_id ? ', table=' + data.price_table_id : '') + (data.sort_by ? ', sort=' + data.sort_by : '') + (data.personalized ? ', personalized=true' : '') + (data.sponsored_count ? ', sponsored_count=' + data.sponsored_count : '') + ')';
       
       const expEl = document.getElementById('expanded-terms');
       if (expEl) {
