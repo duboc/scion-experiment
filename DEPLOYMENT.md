@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00030-pqq`** (100% traffic, follows latest) — Issue #35, deployed from a clean `git archive` of `5e6bf63`. Rollback target: `psearch-serving-00029-7ss`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00031-n6v`** (100% traffic, follows latest): Issue #39, deployed from a clean `git archive` of `350f63b`. **ScaNN ANN is not serving yet.** Every query falls back to exact `COSINE_DISTANCE` (see the #39 entry). Rollback target: `psearch-serving-00030-pqq`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -62,6 +62,7 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `020_query_intent_cache.sql` | DDL | #19 | `query_intent_cache` |
 | `021_user_session_events.sql` | DDL | #20 | `user_session_events` |
 | `023_ad_campaigns.sql` / `023b_seed_ad_campaigns.dml.sql` | DDL / DML | #35 | `ad_campaigns` + `ad_campaigns_by_tenant_product` (STORING) + `ad_clicks` (interleaved in `ad_campaigns`, ON DELETE CASCADE), applied as 3 separate statements; 5 seed campaigns (tenant `default`) |
+| `024_products_vector_index.sql` | DDL | #39 | `CREATE VECTOR INDEX products_embedding_v2_idx ON products(embedding_v2) STORING (is_visible, is_available, stock, tenant_id, locale, category, brand, price) WHERE embedding_v2 IS NOT NULL`, COSINE, `tree_depth=2`, `num_leaves=100`. Online LRO `_auto_op_8e2272d28739ab64` took about 2.5 min |
 
 ## 4. Release procedure
 
@@ -106,7 +107,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `00027-dmv` | `8367cb0` | #32 | variant grouping (color/size over interleaved SKUs, variant facets) + `[]*variantRow` decode fix + UI selects |
 | `00028-klr` | `2b9a75e` | #33 | visual & multimodal search (image → `embedding_v2`, text-fused, image cache) + photo-search UI |
 | `00029-7ss` | `4e8951b` | #34 | clickable facets (storefront only: facet clicks re-run the search, active-filter chips) |
-| **`00030-pqq`** | `5e6bf63` | #35 | sponsored products (ADR-011): `sponsored_matches` CTE, fixed ad slots, idempotent CPC click billing with real-time budget burn, campaign CRUD, Sponsored badge + campaign manager UI — **current** |
+| **`00030-pqq`** | `5e6bf63` | #35 | sponsored products (ADR-011): `sponsored_matches` CTE, fixed ad slots, idempotent CPC click billing with real-time budget burn, campaign CRUD, Sponsored badge + campaign manager UI |
+| **`00031-n6v`** | `350f63b` | #39 | ScaNN ANN code path (ADR-012) + chunked concurrent backfill CLI. Index built, but the ANN query is rejected, so every request uses the exact fallback (`vector_index_used=false`). **current** |
 
 ---
 
@@ -608,3 +610,37 @@ Source: clean `git archive` of **`5e6bf63`** in `/tmp/deploy-5e6bf63` (code = ba
 | Logs (`00030-pqq`, severity ≥ ERROR) | ✅ none |
 
 Note: the smoke test left 1 billed click on `camp-nike-pegasus` (400000 micros, about 0.40 in currency units). This is intentional evidence and was not reverted.
+
+## Issue #39 ScaNN ANN vector index (ADR-012): DEPLOYED 2026-10-30, ANN NOT ACTIVE
+
+Source: clean `git archive` of **`350f63b`** in `/tmp/deploy-39` (code `fecadde`; `350f63b` adds REVIEW.md only). The shared tree held uncommitted #40/#41 work, and none of it was deployed. Runtime SA `<RUNTIME_SA>`. **Env unchanged.** `USE_VECTOR_INDEX` is not set, so the code default applies (`true` on v2). `/api/info` reports `use_vector_index=true` and `ann_num_leaves_to_search=20`.
+
+| Step | Result |
+|---|---|
+| Pre-check (`ddl describe`) | ✅ `embedding_v2 ARRAY<FLOAT32>(vector_length=>1024)` present; all STORING columns exist; no vector index yet. 2515 of 20535 rows have `embedding_v2` |
+| DDL `024_products_vector_index.sql` (`--async`) | ✅ LRO `_auto_op_8e2272d28739ab64` started 16:59:39Z and finished **17:02:11Z** at `progressPercent=100` |
+| Deploy → **`psearch-serving-00031-n6v`** | ✅ 100%, follows latest (`latestRevision: True`) |
+| `cmd/sqlcheck` (archive, prod env) | ✅ 46 OK / 0 FAIL, exit 0. ⚠️ All hybrid cases ran on the exact fallback (same `InvalidArgument` WARN as production) |
+| `backfill-embeddings -dry-run -limit=50` | ❌ exits 1 with the default `-embed-batch=32`: `the embedContent API for this model only supports one content at a time` (gemini-embedding-2). ✅ With `-embed-batch=1` it embedded 50/50 at 48.2 docs/s (8 workers, `written=0`) |
+
+| Check (`<SERVICE_URL>`) | Result |
+|---|---|
+| `GET /api/health` | ✅ 200 `healthy`, `spanner` |
+| `GET /api/info` | ✅ 200. Fields: v2, 1024-d, 20535 products, `use_vector_index=true`, `vector_index=products_embedding_v2_idx`, `vector_index_used=true`. ⚠️ This value reflects config/cooldown state, not actual query execution, so it disagrees with `/api/search` |
+| `GET /api/search?q=running+shoes&alpha=0.5` | ✅ 200, `hybrid_v2`, 20 results, `sponsored_count=2`. ❌ **`vector_index_used=false`** on every request, including requests made after the LRO finished (`trail running shoes`, `wireless headphones` also `false`) |
+| Logs (`00031-n6v`) | ⚠️ `WARN: ScaNN vector index unavailable (spanner: code = "InvalidArgument", desc = "The use of function APPROX_COSINE_DISTANCE is not supported in this query with forced index products_embedding_v2_idx. Try restructuring the query to remove complex filters before the ORDER BY clause ...")`. First seen 17:03:15Z, after the index finished building. It repeats after each 60 s cooldown |
+
+**Root cause (found by probing Spanner directly with a constant 1024-d query vector):** the index works. The query shape is the problem.
+
+| ANN probe (`FORCE_INDEX=products_embedding_v2_idx`, `ORDER BY APPROX_COSINE_DISTANCE`) | Result |
+|---|---|
+| Only `embedding_v2 IS NOT NULL` | ✅ rows returned |
+| + filters on STORING columns (`is_visible`, `tenant_id`, `price`), including `COALESCE`/`IFNULL` and `(@p = '' OR col = @p)` forms | ✅ |
+| `ORDER BY distance` alias, wrapped in `ARRAY(SELECT AS STRUCT ...)` | ✅ |
+| + `'web' IN UNNEST(IFNULL(channels, ...))` (`channels` is **not** a STORING column) | ❌ same `InvalidArgument` |
+
+`catalogFilterSQL`, used inside the `ann` CTE, filters on `channels` and on effective-price, assortment, variant and delivery predicates, which rely on non-stored columns or subqueries. Spanner does not accept these before an ANN `ORDER BY`. Possible fixes: (a) keep only STORING-column predicates in the ANN CTE, over-fetch candidates, and apply the remaining `catalogFilterSQL` in the outer query, or (b) add the needed columns (for example `channels`) to `STORING`, which means rebuilding the index. The subquery-based filters still need (a). Also, `/api/info.vector_index_used` should reflect what queries actually do.
+
+**Rollback:** `gcloud run services update-traffic psearch-serving --project=<PROJECT_ID> --region=us-central1 --to-revisions=psearch-serving-00030-pqq=100`. The vector index is additive, and `00030-pqq` does not use it. Search results are unaffected, because the exact fallback matches the pre-#39 behaviour.
+
+**Status:** #39 stays open until `vector_index_used=true` shows up in `/api/search`.
