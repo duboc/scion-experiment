@@ -144,11 +144,60 @@ function ProductSearch({
 
     // Format a filter name for display (convert lens_color to Lens Color)
     const formatFilterName = (name) => {
-        return name
+        return String(name || '')
             .split('_')
             .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
             .join(' ');
     };
+
+    // Extract normalized dynamic product attributes/specs (#42, ADR-014)
+    const extractProductSpecs = useCallback((product) => {
+        if (!product || typeof product !== 'object') return [];
+        const specs = [];
+        const seen = new Set(['brand']);
+        const addSpec = (rawKey, rawVal) => {
+            const key = String(rawKey || '').trim();
+            if (!key || seen.has(key.toLowerCase())) return;
+            let valStr = '';
+            if (Array.isArray(rawVal)) {
+                valStr = rawVal.filter(v => v !== null && v !== undefined && String(v).trim() !== '').join(', ');
+            } else if (rawVal && typeof rawVal === 'object') {
+                if (Array.isArray(rawVal.text) && rawVal.text.length > 0) {
+                    valStr = rawVal.text.join(', ');
+                } else if (Array.isArray(rawVal.numbers) && rawVal.numbers.length > 0) {
+                    valStr = rawVal.numbers.join(', ');
+                }
+            } else if (rawVal !== null && rawVal !== undefined) {
+                valStr = String(rawVal).trim();
+            }
+            if (!valStr) return;
+            seen.add(key.toLowerCase());
+            specs.push({
+                key,
+                label: formatFilterName(key),
+                value: valStr,
+            });
+        };
+
+        [product.dynamic_attributes, product.specs, product.attrs].forEach((src) => {
+            if (src && typeof src === 'object' && !Array.isArray(src)) {
+                Object.entries(src).forEach(([k, v]) => addSpec(k, v));
+            }
+        });
+        if (product.attributes) {
+            if (Array.isArray(product.attributes)) {
+                product.attributes.forEach((attr) => {
+                    if (!attr) return;
+                    const k = attr.key || attr.name || attr.attr_name;
+                    const v = attr.value !== undefined ? attr.value : attr.attr_value;
+                    addSpec(k, v);
+                });
+            } else if (typeof product.attributes === 'object') {
+                Object.entries(product.attributes).forEach(([k, v]) => addSpec(k, v));
+            }
+        }
+        return specs;
+    }, []);
 
     // Generate filter configurations based on product data (excluding sponsored items per ADR-011)
     const generateFilterConfigs = useCallback((rawProducts) => {
@@ -607,6 +656,69 @@ function ProductSearch({
             });
         }
 
+        // Auto-render dynamic product attribute facet groups (#42, ADR-014)
+        const dynamicGroups = [];
+        const seenAttrKeys = new Set();
+        const rawAttrFacets = facets.attributes;
+        if (Array.isArray(rawAttrFacets)) {
+            rawAttrFacets.forEach((group) => {
+                if (!group) return;
+                const name = String(group.name || group.attr_name || group.key || '').trim();
+                if (!name) return;
+                seenAttrKeys.add(name);
+                dynamicGroups.push({
+                    name,
+                    label: group.label || formatFilterName(name),
+                    buckets: group.buckets || group.values || group.options || [],
+                });
+            });
+        } else if (rawAttrFacets && typeof rawAttrFacets === 'object') {
+            Object.entries(rawAttrFacets).forEach(([name, val]) => {
+                if (!name) return;
+                seenAttrKeys.add(name);
+                const buckets = Array.isArray(val) ? val : (val?.buckets || val?.values || []);
+                dynamicGroups.push({
+                    name,
+                    label: (val && !Array.isArray(val) && val.label) ? val.label : formatFilterName(name),
+                    buckets,
+                });
+            });
+        }
+        Object.keys(currentSelected || {}).forEach((filterId) => {
+            if (filterId.startsWith('attr_')) {
+                const attrName = filterId.substring(5);
+                if (attrName && !seenAttrKeys.has(attrName) && Array.isArray(currentSelected[filterId]) && currentSelected[filterId].length > 0) {
+                    seenAttrKeys.add(attrName);
+                    dynamicGroups.push({
+                        name: attrName,
+                        label: formatFilterName(attrName),
+                        buckets: [],
+                    });
+                }
+            }
+        });
+        dynamicGroups.forEach((group, idx) => {
+            const filterId = `attr_${group.name}`;
+            const attrOptions = mergeSelectedOptions(
+                (group.buckets || []).map((b) => ({
+                    label: typeof b === 'object' ? b.value : b,
+                    value: typeof b === 'object' ? b.value : b,
+                    count: typeof b === 'object' ? b.count : undefined,
+                    selected: typeof b === 'object' ? Boolean(b.selected) : false,
+                })),
+                currentSelected[filterId]
+            );
+            if (attrOptions.length > 0) {
+                configs.push({
+                    id: filterId,
+                    title: group.label || formatFilterName(group.name),
+                    priority: Math.max(10, 65 - idx),
+                    type: 'checkbox',
+                    options: attrOptions,
+                });
+            }
+        });
+
         return configs;
     }, []);
 
@@ -651,6 +763,19 @@ function ProductSearch({
         () => (Array.isArray(selectedFilters.availability) ? selectedFilters.availability.filter(Boolean) : []),
         [selectedFilters.availability]
     );
+    const selectedAttrs = useMemo(() => {
+        const map = {};
+        Object.entries(selectedFilters || {}).forEach(([k, vals]) => {
+            if (k.startsWith('attr_') && Array.isArray(vals)) {
+                const attrName = k.substring(5).trim();
+                const cleanVals = vals.filter(Boolean);
+                if (attrName && cleanVals.length > 0) {
+                    map[attrName] = cleanVals;
+                }
+            }
+        });
+        return map;
+    }, [selectedFilters]);
 
     const queryImageRef = useRef(null); // #33: current photo query (data URL) or null
     const fetchProducts = useCallback(async (searchParams) => {
@@ -762,6 +887,9 @@ function ProductSearch({
             }
             if (selectedPriceRanges.length > 0) {
                 payload.price_ranges = selectedPriceRanges;
+            }
+            if (Object.keys(selectedAttrs).length > 0) {
+                payload.attrs = selectedAttrs;
             }
             if (cep && cep.trim()) {
                 payload.cep = cep.trim();
@@ -955,7 +1083,7 @@ function ProductSearch({
         } finally {
             setLoading(false);
         }
-    }, [activeSearchQuery, alpha, channel, onlyInStock, selectedCategories, selectedBrands, selectedColors, selectedSizes, selectedPriceRanges, selectedAvailability, tenantId, locale, cep, maxSla24h, ltr, priceTableId, sortBy, productsPerPage]);
+    }, [activeSearchQuery, alpha, channel, onlyInStock, selectedCategories, selectedBrands, selectedColors, selectedSizes, selectedPriceRanges, selectedAttrs, selectedAvailability, tenantId, locale, cep, maxSla24h, ltr, priceTableId, sortBy, productsPerPage]);
 
     // Handler for filter changes from the Filters component - now works with dynamic filter IDs
     const handleFilterChange = useCallback((filterId, value, isChecked) => {
@@ -1166,13 +1294,18 @@ function ProductSearch({
                     if (filterId.startsWith('attr_')) {
                         const attrKey = filterId.substring(5); // Remove 'attr_' prefix
                         return product => {
-                            if (!product.attributes) return false;
                             if (Array.isArray(product.attributes)) {
                                 const attr = product.attributes.find(a => a.key === attrKey);
-                                return attr && attr.value?.text &&
-                                    attr.value.text.some(val => lowerSelected.includes(String(val).toLowerCase()));
+                                if (attr && attr.value?.text &&
+                                    attr.value.text.some(val => lowerSelected.includes(String(val).toLowerCase()))) {
+                                    return true;
+                                }
                             }
-                            return false;
+                            const specs = extractProductSpecs(product);
+                            return specs.some(
+                                s => s.key.toLowerCase() === attrKey.toLowerCase() &&
+                                     lowerSelected.includes(String(s.value).toLowerCase())
+                            );
                         };
                     }
 
@@ -1504,6 +1637,39 @@ function ProductSearch({
                                                 />
                                             ))}
                                         </Box>
+                                        {(() => {
+                                            const topSpecs = extractProductSpecs(product).slice(0, 3);
+                                            if (topSpecs.length === 0) return null;
+                                            return (
+                                                <Box
+                                                    data-testid="product-spec-badges"
+                                                    sx={{
+                                                        display: 'flex',
+                                                        flexWrap: 'wrap',
+                                                        gap: 0.5,
+                                                        mt: 0.5,
+                                                        mb: 0.5,
+                                                    }}
+                                                >
+                                                    {topSpecs.map((spec) => (
+                                                        <Chip
+                                                            key={`${spec.key}-${spec.value}`}
+                                                            label={`${spec.label}: ${spec.value}`}
+                                                            size="small"
+                                                            variant="outlined"
+                                                            data-testid="spec-badge"
+                                                            sx={{
+                                                                height: 20,
+                                                                fontSize: '0.68rem',
+                                                                backgroundColor: '#f8fafc',
+                                                                borderColor: '#cbd5e1',
+                                                                color: '#334155',
+                                                            }}
+                                                        />
+                                                    ))}
+                                                </Box>
+                                            );
+                                        })()}
                                     </Box>
 
                                     {/* Price and availability at the bottom */}

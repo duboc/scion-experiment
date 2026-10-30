@@ -251,6 +251,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           <div class="facet-title">Availability</div>
           <div class="facet-list" id="facets-avail-list">-</div>
         </div>
+        <div id="facets-dynamic-groups"></div>
       </aside>
       <div style="flex:1;min-width:0;">
         <div id="active-filters" style="display:none;flex-wrap:wrap;gap:6px;margin-bottom:10px;"></div>
@@ -315,6 +316,15 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       ['categories', 'brands', 'colors', 'sizes', 'price_ranges'].forEach(function(k) {
         if (p.get(k)) body[k] = p.get(k).split(',').filter(Boolean);
       });
+      const attrsMap = {};
+      p.forEach(function(val, key) {
+        if (key.indexOf('attr.') === 0) {
+          const attrName = key.substring(5);
+          const vals = val.split(',').filter(Boolean);
+          if (attrName && vals.length > 0) attrsMap[attrName] = vals;
+        }
+      });
+      if (Object.keys(attrsMap).length > 0) body.attrs = attrsMap;
       if (p.get('min_price')) body.min_price = parseFloat(p.get('min_price'));
       if (p.get('max_price')) body.max_price = parseFloat(p.get('max_price'));
       if (p.get('only_in_stock') === 'true') body.only_in_stock = true;
@@ -400,10 +410,11 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       bar.style.display = 'flex';
       return { start: startItem, end: endItem, total: totalFound };
     }
-    // Disjunctive multi-select facets (#34, #41 ADR-013): clicking a facet checkbox
-    // toggles that option within its dimension array (categories, brands, colors,
-    // sizes, price_ranges) and re-runs the search with page=1.
+    // Disjunctive multi-select facets (#34, #41 ADR-013, #42 ADR-014): clicking a facet
+    // checkbox toggles that option within its dimension array (categories, brands, colors,
+    // sizes, price_ranges, or dynamic attr.<name>) and re-runs the search with page=1.
     let facetFilters = {};
+    let collapsedAttrGroups = {};
     let lastSearchedQuery = null;
     const FACET_ARRAY_KEY = {
       category: 'categories',
@@ -412,7 +423,20 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       color: 'colors',
       size: 'sizes'
     };
+    function humanizeAttrName(name) {
+      return String(name || '')
+        .replace(/[_-]+/g, ' ')
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, function(ch) { return ch.toUpperCase(); });
+    }
     function getFacetArray(kind) {
+      if (kind && kind.indexOf('attr.') === 0) {
+        const attrName = kind.substring(5);
+        const attrs = facetFilters.attrs || {};
+        return Array.isArray(attrs[attrName]) ? attrs[attrName].slice() : [];
+      }
       const k = FACET_ARRAY_KEY[kind];
       if (!k) return [];
       const arr = Array.isArray(facetFilters[k]) ? facetFilters[k].slice() : [];
@@ -425,6 +449,16 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       return arr;
     }
     function syncFacetDimension(kind, arr) {
+      if (kind && kind.indexOf('attr.') === 0) {
+        const attrName = kind.substring(5);
+        if (!facetFilters.attrs) facetFilters.attrs = {};
+        if (arr && arr.length > 0) {
+          facetFilters.attrs[attrName] = arr;
+        } else {
+          delete facetFilters.attrs[attrName];
+        }
+        return;
+      }
       const k = FACET_ARRAY_KEY[kind];
       if (!k) return;
       if (arr && arr.length > 0) {
@@ -478,7 +512,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
     function toggleFacet(kind, val) {
       const active = facetIsActive(kind, val);
       const vLower = String(val).toLowerCase();
-      if (FACET_ARRAY_KEY[kind]) {
+      if (FACET_ARRAY_KEY[kind] || (kind && kind.indexOf('attr.') === 0)) {
         let arr = getFacetArray(kind);
         if (active) {
           arr = arr.filter(function(x) { return String(x).toLowerCase() !== vLower; });
@@ -572,6 +606,107 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         el.appendChild(row);
       });
     }
+    function renderDynamicAttrFacets(attrGroups) {
+      const container = document.getElementById('facets-dynamic-groups');
+      if (!container) return;
+      container.textContent = '';
+      const normalized = [];
+      const seen = {};
+      if (Array.isArray(attrGroups)) {
+        attrGroups.forEach(function(g) {
+          if (!g) return;
+          const name = g.name || g.key || '';
+          const buckets = Array.isArray(g.buckets) ? g.buckets : (Array.isArray(g.values) ? g.values : []);
+          if (name) {
+            seen[name] = true;
+            normalized.push({ name: name, label: g.label || humanizeAttrName(name), buckets: buckets });
+          }
+        });
+      } else if (attrGroups && typeof attrGroups === 'object') {
+        Object.keys(attrGroups).forEach(function(name) {
+          const val = attrGroups[name];
+          const buckets = Array.isArray(val) ? val : (val && Array.isArray(val.buckets) ? val.buckets : []);
+          seen[name] = true;
+          normalized.push({ name: name, label: (val && val.label) || humanizeAttrName(name), buckets: buckets });
+        });
+      }
+      const activeAttrs = facetFilters.attrs || {};
+      Object.keys(activeAttrs).forEach(function(name) {
+        if (!seen[name] && Array.isArray(activeAttrs[name]) && activeAttrs[name].length > 0) {
+          normalized.push({ name: name, label: humanizeAttrName(name), buckets: [] });
+        }
+      });
+      normalized.forEach(function(group) {
+        const kind = 'attr.' + group.name;
+        const activeVals = getFacetArray(kind);
+        if ((!group.buckets || group.buckets.length === 0) && activeVals.length === 0) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'facet-group';
+        wrap.setAttribute('data-attr-group', group.name);
+        const header = document.createElement('div');
+        header.className = 'facet-title';
+        header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;';
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = group.label || humanizeAttrName(group.name);
+        const toggleIcon = document.createElement('span');
+        const isCollapsed = Boolean(collapsedAttrGroups[group.name]);
+        toggleIcon.textContent = isCollapsed ? '\u25b8' : '\u25be';
+        header.appendChild(titleSpan);
+        header.appendChild(toggleIcon);
+        const listEl = document.createElement('div');
+        listEl.className = 'facet-list';
+        listEl.id = 'facets-attr-' + group.name;
+        listEl.style.display = isCollapsed ? 'none' : 'block';
+        header.onclick = function() {
+          collapsedAttrGroups[group.name] = !collapsedAttrGroups[group.name];
+          const nowCollapsed = Boolean(collapsedAttrGroups[group.name]);
+          listEl.style.display = nowCollapsed ? 'none' : 'block';
+          toggleIcon.textContent = nowCollapsed ? '\u25b8' : '\u25be';
+        };
+        wrap.appendChild(header);
+        wrap.appendChild(listEl);
+        container.appendChild(wrap);
+        renderFacetGroup(listEl.id, group.buckets, kind);
+      });
+    }
+    function extractCardSpecs(p) {
+      if (!p || typeof p !== 'object') return [];
+      const specs = [];
+      const seen = {};
+      function addSpec(k, v) {
+        if (!k || v === undefined || v === null || v === '') return;
+        const normKey = String(k).trim();
+        if (!normKey) return;
+        const lower = normKey.toLowerCase();
+        if (lower === 'brand' || lower === 'category' || lower === 'color' || lower === 'size' || seen[lower]) return;
+        const valStr = Array.isArray(v) ? v.filter(Boolean).join(', ') : String(v).trim();
+        if (!valStr) return;
+        seen[lower] = true;
+        specs.push({ key: normKey, label: humanizeAttrName(normKey), value: valStr });
+      }
+      [p.dynamic_attributes, p.specs, p.attrs].forEach(function(src) {
+        if (src && typeof src === 'object' && !Array.isArray(src)) {
+          Object.keys(src).forEach(function(k) { addSpec(k, src[k]); });
+        }
+      });
+      if (Array.isArray(p.attributes)) {
+        p.attributes.forEach(function(attr) {
+          if (!attr || !attr.key) return;
+          const val = (attr.value && Array.isArray(attr.value.text)) ? attr.value.text : (attr.value !== undefined ? attr.value : attr.text);
+          addSpec(attr.key, val);
+        });
+      } else if (p.attributes && typeof p.attributes === 'object') {
+        Object.keys(p.attributes).forEach(function(k) {
+          const v = p.attributes[k];
+          if (v && typeof v === 'object' && !Array.isArray(v) && Array.isArray(v.text)) {
+            addSpec(k, v.text);
+          } else {
+            addSpec(k, v);
+          }
+        });
+      }
+      return specs;
+    }
     function renderActiveFilters() {
       const box = document.getElementById('active-filters');
       if (!box) return;
@@ -580,6 +715,17 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       [['category', 'Brand/Dept', 'Category'], ['brand', 'Marca', 'Brand'], ['price', 'Preço', 'Price'], ['color', 'Cor', 'Color'], ['size', 'Tamanho', 'Size']].forEach(function(meta) {
         const kind = meta[0];
         const prefix = meta[2];
+        const vals = getFacetArray(kind);
+        vals.forEach(function(val) {
+          chips.push([prefix + ': ' + val, function() {
+            const next = getFacetArray(kind).filter(function(x) { return String(x).toLowerCase() !== String(val).toLowerCase(); });
+            syncFacetDimension(kind, next);
+          }]);
+        });
+      });
+      Object.keys(facetFilters.attrs || {}).forEach(function(attrName) {
+        const kind = 'attr.' + attrName;
+        const prefix = humanizeAttrName(attrName);
         const vals = getFacetArray(kind);
         vals.forEach(function(val) {
           chips.push([prefix + ': ' + val, function() {
@@ -695,6 +841,12 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       if (size) {
         url += '&size=' + encodeURIComponent(size);
       }
+      Object.keys(facetFilters.attrs || {}).forEach(function(attrName) {
+        const vals = facetFilters.attrs[attrName];
+        if (Array.isArray(vals) && vals.length > 0) {
+          url += '&attr.' + encodeURIComponent(attrName) + '=' + encodeURIComponent(vals.join(','));
+        }
+      });
       if (onlyInStock) {
         url += '&only_in_stock=true';
       }
@@ -927,6 +1079,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       renderFacetGroup('facets-color-list', facets.colors, 'color');
       renderFacetGroup('facets-size-list', facets.sizes, 'size');
       renderFacetGroup('facets-avail-list', facets.availability, 'availability');
+      renderDynamicAttrFacets(facets.attributes);
       renderActiveFilters();
       const container = document.getElementById('results');
       container.innerHTML = (data.results || []).map(p => {
@@ -954,6 +1107,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           '<div style="color:#94a3b8;font-size:13px;">' + (p.description || '') + '</div>' +
           '<div class="price"><span class="price-val">$' + ((p.priceInfo && p.priceInfo.price) || '0.00') + '</span><span class="base-price" style="display:none;text-decoration:line-through;color:var(--muted);font-size:14px;font-weight:normal;margin-left:8px;"></span><span class="contract-badge" style="display:none;margin-left:8px;"></span></div>' +
           '<div class="variant-chips" style="display:none;gap:4px;flex-wrap:wrap;align-items:center;"></div>' +
+          '<div class="spec-badges" data-testid="product-spec-badges" style="display:none;gap:4px;flex-wrap:wrap;align-items:center;margin-top:6px;"></div>' +
           '<div class="scores">hybrid=' + finalScore.toFixed(4) + ' | vec=' + vecScore.toFixed(4) + ' | txt=' + txtScore.toFixed(4) + ltrScore + '</div>' +
           '<div style="margin-top:10px;display:flex;justify-content:flex-end;"><button type="button" class="record-click-btn" style="background:#1e293b;border:1px solid #64748b;color:#f8fafc;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">+ Clique</button></div>' +
         '</div>';
@@ -1086,6 +1240,26 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
               moreChip.textContent = '+' + extraVars + ' variantes';
               varContainer.appendChild(moreChip);
             }
+          }
+        }
+        const specContainer = card.querySelector('.spec-badges');
+        if (specContainer) {
+          const topSpecs = extractCardSpecs(p).slice(0, 3);
+          if (topSpecs.length > 0) {
+            specContainer.style.display = 'flex';
+            topSpecs.forEach(function(spec) {
+              const badge = document.createElement('span');
+              badge.className = 'badge spec-badge';
+              badge.setAttribute('data-testid', 'spec-badge');
+              badge.style.background = '#0f172a';
+              badge.style.border = '1px solid #475569';
+              badge.style.color = '#e2e8f0';
+              badge.style.fontSize = '11px';
+              badge.style.padding = '2px 6px';
+              badge.style.borderRadius = '4px';
+              badge.textContent = spec.label + ': ' + spec.value;
+              specContainer.appendChild(badge);
+            });
           }
         }
         const recordBtn = card.querySelector('.record-click-btn');

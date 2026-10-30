@@ -155,4 +155,23 @@ func TestStorefrontDisjunctiveMultiSelectFacets(t *testing.T) {
 	}
 }
 
-
+// #42 (ADR-014): auto-rendered facets.attributes groups + spec badges (attr.<name>).
+func TestStorefrontDynamicAttributeFacetsAndSpecs(t *testing.T) {
+	for _, frag := range []string{
+		`id="facets-dynamic-groups"`,
+		"function humanizeAttrName(",
+		"function renderDynamicAttrFacets(",
+		"function extractCardSpecs(",
+		"renderDynamicAttrFacets(facets.attributes)",
+		"'&attr.' + encodeURIComponent(attrName) + '=' + encodeURIComponent(vals.join(','))",
+		"if (Object.keys(attrsMap).length > 0) body.attrs = attrsMap;",
+		`class="spec-badges"`,
+		`data-testid="product-spec-badges"`,
+		`badge.setAttribute('data-testid', 'spec-badge')`,
+		"const topSpecs = extractCardSpecs(p).slice(0, 3);",
+	} {
+		if !strings.Contains(defaultStorefrontHTML, frag) {
+			t.Errorf("storefront missing %q", frag)
+		}
+	}
+}
