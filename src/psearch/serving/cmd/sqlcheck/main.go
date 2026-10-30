@@ -204,6 +204,14 @@ func main() {
 	} else {
 		log.Printf("OK   product_attributes dynamic facet groups=%d", n)
 	}
+	// Item-to-item similar products, substitutes & session co-visitation (Issue #44, ADR-016).
+	sessSvc := services.NewSessionService(services.SpannerSessionStore{Client: svc.Client()}, svc, cfg.SessionBoostWeight)
+	if n, err := svc.CheckSpannerSimilar(ctx, sessSvc); err != nil {
+		failed = true
+		log.Printf("FAIL similar/substitutes: %v", err)
+	} else {
+		log.Printf("OK   similar/substitutes rows=%d", n)
+	}
 	// Visual search (Issue #33): live image embedding + vector-only and fused SQL.
 	// SQLCHECK_IMAGE may point at a JPEG; otherwise a generated 64x64 JPEG is used
 	// (validates the image API and SQL shape, not relevance).

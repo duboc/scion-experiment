@@ -10,4 +10,8 @@ func registerWave6Routes(router *gin.Engine, controller *Controller) {
 	// Issue #42 (ADR-014): dynamic product attributes upsert (admin-guarded).
 	router.PUT("/products/:id/attributes", controller.UpsertProductAttributes)
 	router.PUT("/api/products/:id/attributes", controller.UpsertProductAttributes)
+
+	// Issue #44 (ADR-016): item-to-item similar products, in-stock substitutes & co-visitation.
+	router.GET("/products/:id/similar", controller.SimilarProducts)
+	router.GET("/api/products/:id/similar", controller.SimilarProducts)
 }

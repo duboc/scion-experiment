@@ -34,9 +34,10 @@ type SpannerService struct {
 	pricing      *memoryPricing              // memory-mode contract prices (Issue #22)
 	variants           map[string][]models.Variant          // memory-mode SKU variants (Issue #32)
 	varOnce            sync.Once
-	attrs              map[string]map[string][]string       // memory-mode dynamic product attributes (Issue #42)
+	attrs              map[string]map[string][]string // memory-mode dynamic product attributes (Issue #42)
 	attrOnce           sync.Once
 	attrMu             sync.RWMutex
+	nullVectorIDs      map[string]bool // memory-mode NULL vector override for ADR-016 fallback tests
 	priceOnce          sync.Once
 	annCooldownUntil   atomic.Int64 // ADR-012 (#39): UnixNano timestamp until which ScaNN ANN is cooled down after index error
 	lastANNSucceeded   atomic.Bool  // ADR-012 (#39): true when the most recent ScaNN ANN query succeeded

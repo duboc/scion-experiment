@@ -1026,3 +1026,54 @@ func (c *Controller) UpsertProductAttributes(ctx *gin.Context) {
 		"count":      len(saved),
 	})
 }
+
+// SimilarProducts: GET /api/products/:id/similar?mode=similar|substitutes|co_viewed&limit=6&... (Issue #44, ADR-016).
+func (c *Controller) SimilarProducts(ctx *gin.Context) {
+	seedID := strings.TrimSpace(ctx.Param("id"))
+	if seedID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "product id is required"})
+		return
+	}
+	mode, err := services.ValidateSimilarMode(ctx.Query("mode"))
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	limit := services.DefaultSimilarLimit
+	if rawLimit := strings.TrimSpace(ctx.Query("limit")); rawLimit != "" {
+		v, err := strconv.Atoi(rawLimit)
+		if err != nil || v < 1 || v > services.MaxSimilarLimit {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 24"})
+			return
+		}
+		limit = v
+	}
+	onlyInStock := mode == services.SimilarModeSubstitutes
+	if v := strings.ToLower(strings.TrimSpace(ctx.Query("only_in_stock"))); v != "" {
+		onlyInStock = v == "true" || v == "1"
+	}
+	if mode == services.SimilarModeSubstitutes {
+		onlyInStock = true
+	}
+
+	resp, err := c.spannerSvc.SimilarProducts(ctx.Request.Context(), c.session, services.SimilarOptions{
+		SeedID:      seedID,
+		Mode:        mode,
+		Limit:       limit,
+		TenantID:    tenantParam(ctx),
+		Locale:      strings.TrimSpace(ctx.Query("locale")),
+		Channel:     strings.TrimSpace(ctx.Query("channel")),
+		PriceTable:  strings.TrimSpace(ctx.Query("price_table_id")),
+		CEP:         strings.TrimSpace(ctx.Query("cep")),
+		OnlyInStock: onlyInStock,
+	})
+	if err != nil {
+		if errors.Is(err, services.ErrProductNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, resp)
+}

@@ -97,6 +97,29 @@ func (s *SessionService) Recent(ctx context.Context, tenant, session string) ([]
 	return s.store.Recent(ctx, tenant, session, sessionWindow)
 }
 
+// CoVisitationStore is an optional extension of SessionStore for item-to-item co-visitation (ADR-016, Issue #44).
+type CoVisitationStore interface {
+	CoVisitation(ctx context.Context, tenant, seedProductID string, limit int) (map[string]float64, map[string]int64, error)
+}
+
+// CoVisitation returns co-occurring product weights (purchase=3x, click=1x) and raw session counts
+// for sessions that interacted with seedProductID (ADR-016, Issue #44).
+func (s *SessionService) CoVisitation(ctx context.Context, tenant, seedProductID string, limit int) (map[string]float64, map[string]int64, error) {
+	if s == nil || s.store == nil || seedProductID == "" {
+		return map[string]float64{}, map[string]int64{}, nil
+	}
+	if tenant == "" {
+		tenant = "default"
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if cs, ok := s.store.(CoVisitationStore); ok {
+		return cs.CoVisitation(ctx, tenant, seedProductID, limit)
+	}
+	return map[string]float64{}, map[string]int64{}, nil
+}
+
 // Centroid builds the normalized weighted mean of the session products' vectors
 // (purchase x3, click x1, recency decay 0.85^i from newest).
 func Centroid(events []SessionEvent, vectors map[string][]float64) []float64 {
@@ -291,6 +314,42 @@ func (m *MemorySessionStore) Recent(_ context.Context, tenant, session string, n
 	return out, nil
 }
 
+// CoVisitation aggregates co-occurring products across all in-memory sessions for tenant (ADR-016, #44).
+func (m *MemorySessionStore) CoVisitation(_ context.Context, tenant, seedProductID string, _ int) (map[string]float64, map[string]int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	weights := map[string]float64{}
+	counts := map[string]int64{}
+	prefix := tenant + "|"
+	for k, evs := range m.events {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		hasSeed := false
+		for _, e := range evs {
+			if e.ProductID == seedProductID {
+				hasSeed = true
+				break
+			}
+		}
+		if !hasSeed {
+			continue
+		}
+		for _, e := range evs {
+			if e.ProductID == "" || e.ProductID == seedProductID {
+				continue
+			}
+			w := clickWeight
+			if e.EventType == "purchase" {
+				w = purchaseWeight
+			}
+			weights[e.ProductID] += w
+			counts[e.ProductID]++
+		}
+	}
+	return weights, counts, nil
+}
+
 // SpannerSessionStore uses user_session_events (migration 021).
 type SpannerSessionStore struct{ Client *spanner.Client }
 
@@ -322,5 +381,58 @@ func (s SpannerSessionStore) Recent(ctx context.Context, tenant, session string,
 			return nil, err
 		}
 		out = append(out, e)
+	}
+}
+
+const coVisitationSQL = `SELECT e2.product_id,
+		SUM(CASE e2.event_type WHEN 'purchase' THEN 3.0 ELSE 1.0 END) AS co_weight,
+		COUNT(*) AS co_count
+	FROM user_session_events AS e1
+	JOIN user_session_events AS e2
+		ON e1.tenant_id = e2.tenant_id AND e1.session_id = e2.session_id
+	WHERE e1.tenant_id = @tenant_id
+		AND e1.product_id = @seed_id
+		AND e2.product_id != @seed_id
+	GROUP BY e2.product_id
+	ORDER BY co_weight DESC
+	LIMIT @limit`
+
+// CoVisitation runs the self-join over user_session_events in Cloud Spanner (ADR-016, #44).
+func (s SpannerSessionStore) CoVisitation(ctx context.Context, tenant, seedProductID string, limit int) (map[string]float64, map[string]int64, error) {
+	weights := map[string]float64{}
+	counts := map[string]int64{}
+	if s.Client == nil {
+		return weights, counts, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	iter := s.Client.Single().Query(ctx, spanner.Statement{
+		SQL: coVisitationSQL,
+		Params: map[string]interface{}{
+			"tenant_id": tenant,
+			"seed_id":   seedProductID,
+			"limit":     int64(limit),
+		},
+	})
+	defer iter.Stop()
+	for {
+		row, err := iter.Next()
+		if err == iterator.Done {
+			return weights, counts, nil
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		var pid string
+		var w float64
+		var c int64
+		if err := row.Columns(&pid, &w, &c); err != nil {
+			return nil, nil, err
+		}
+		if pid != "" {
+			weights[pid] = w
+			counts[pid] = c
+		}
 	}
 }

@@ -159,9 +159,23 @@ type SearchResult struct {
 	VariantCount      int                `json:"variant_count,omitempty"`
 	AvailableColors   []string           `json:"available_colors,omitempty"`
 	AvailableSizes    []string           `json:"available_sizes,omitempty"`
-	Sponsored         bool               `json:"sponsored,omitempty"`      // ADR-011 (#35): true when injected from ad_campaigns
-	AdCampaignID      string             `json:"ad_campaign_id,omitempty"` // ADR-011 (#35): campaign_id that placed this result
-	AdClickID         string             `json:"ad_click_id,omitempty"`    // ADR-011 (#35): opaque click token for idempotent CPC billing
+	Sponsored         bool                   `json:"sponsored,omitempty"`          // ADR-011 (#35): true when injected from ad_campaigns
+	AdCampaignID      string                 `json:"ad_campaign_id,omitempty"`     // ADR-011 (#35): campaign_id that placed this result
+	AdClickID         string                 `json:"ad_click_id,omitempty"`        // ADR-011 (#35): opaque click token for idempotent CPC billing
+	SimilarityScore   float64                `json:"similarity_score,omitempty"`   // ADR-016 (#44): item-to-item similarity/blended score
+	CoViewCount       int64                  `json:"co_view_count,omitempty"`      // ADR-016 (#44): session co-visitation count
+	SubstituteReason  string                 `json:"substitute_reason,omitempty"`  // ADR-016 (#44): human-readable substitute explanation
+}
+
+// SimilarProductsResponse is the payload returned by GET /api/products/:id/similar (ADR-016, Issue #44).
+type SimilarProductsResponse struct {
+	SeedProductID   string         `json:"seed_product_id"`
+	Mode            string         `json:"mode"`
+	Results         []SearchResult `json:"results"`
+	TotalFound      int            `json:"total_found"`
+	LatencyMs       float64        `json:"latency_ms"`
+	BackendMode     string         `json:"backend_mode"`
+	VectorIndexUsed bool           `json:"vector_index_used"`
 }
 
 type DeliveryPromise struct {

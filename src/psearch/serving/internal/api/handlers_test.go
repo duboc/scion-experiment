@@ -1026,3 +1026,57 @@ func TestDynamicAttributesSearchAndAdminUpsertAPI(t *testing.T) {
 	}
 }
 
+// Issue #44 (ADR-016): GET /api/products/:id/similar (similar, substitutes, co_viewed, 404).
+func TestSimilarProductsSubstitutesAndCoViewedAPI(t *testing.T) {
+	r := newTestRouter()
+
+	// 1) Out-of-stock item prod-004 with mode=substitutes returns only IN_STOCK Footwear items.
+	wSub := httptest.NewRecorder()
+	r.ServeHTTP(wSub, httptest.NewRequest(http.MethodGet, "/api/products/prod-004/similar?mode=substitutes&limit=4", nil))
+	if wSub.Code != http.StatusOK {
+		t.Fatalf("GET substitutes status = %d: %s", wSub.Code, wSub.Body.String())
+	}
+	var subResp models.SimilarProductsResponse
+	if err := json.Unmarshal(wSub.Body.Bytes(), &subResp); err != nil {
+		t.Fatalf("unmarshal SimilarProductsResponse: %v", err)
+	}
+	if subResp.SeedProductID != "prod-004" || subResp.Mode != "substitutes" || len(subResp.Results) == 0 {
+		t.Fatalf("unexpected substitutes response: %+v", subResp)
+	}
+	for _, item := range subResp.Results {
+		if item.ID == "prod-004" || item.Availability != "IN_STOCK" || !strings.EqualFold(item.Categories[0], "Footwear") {
+			t.Fatalf("invalid substitute item: %+v", item)
+		}
+	}
+
+	// 2) Record session co-visitation and query mode=co_viewed.
+	for _, pid := range []string{"prod-001", "prod-008"} {
+		wEv := httptest.NewRecorder()
+		reqEv := httptest.NewRequest(http.MethodPost, "/api/session/events", strings.NewReader(`{"session_id":"sess-api-covis1","product_id":"`+pid+`","event_type":"click"}`))
+		reqEv.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(wEv, reqEv)
+		if wEv.Code != http.StatusCreated {
+			t.Fatalf("POST /api/session/events = %d", wEv.Code)
+		}
+	}
+	wCo := httptest.NewRecorder()
+	r.ServeHTTP(wCo, httptest.NewRequest(http.MethodGet, "/api/products/prod-001/similar?mode=co_viewed&limit=6", nil))
+	var coResp models.SimilarProductsResponse
+	_ = json.Unmarshal(wCo.Body.Bytes(), &coResp)
+	if wCo.Code != http.StatusOK || len(coResp.Results) == 0 || coResp.Results[0].ID != "prod-008" || coResp.Results[0].CoViewCount != 1 {
+		t.Fatalf("expected prod-008 boosted in co_viewed mode, got %d %+v", wCo.Code, coResp)
+	}
+
+	// 3) Unknown product ID returns HTTP 404; invalid mode returns HTTP 400.
+	w404 := httptest.NewRecorder()
+	r.ServeHTTP(w404, httptest.NewRequest(http.MethodGet, "/api/products/prod-unknown/similar", nil))
+	if w404.Code != http.StatusNotFound {
+		t.Fatalf("unknown product status = %d, want 404", w404.Code)
+	}
+	w400 := httptest.NewRecorder()
+	r.ServeHTTP(w400, httptest.NewRequest(http.MethodGet, "/api/products/prod-001/similar?mode=badmode", nil))
+	if w400.Code != http.StatusBadRequest {
+		t.Fatalf("invalid mode status = %d, want 400", w400.Code)
+	}
+}
+
