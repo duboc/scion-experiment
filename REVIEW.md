@@ -344,5 +344,18 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
     - **(c) Extended `sort_by` modes & OOS-last (`ADR-002`):** `ValidatePricing`, `buildHybridSQLANN`, `browseSQL`, `memoryHybridSearchExpandedWithTotal`, and `SessionService.Personalize` support `relevance`, `price_asc`, `price_desc`, `popularity`, and `rating_desc` while keeping out-of-stock products last (`unavailable_rank`). `cmd/sqlcheck` exercises all 5 sort modes in both hybrid search and catalog browse.
     - **(d) Storefront & React UI (#40 scope):** Both `defaultStorefrontHTML` (`routes.go`) and React (`App.js`, `SearchInput.js`) render `"Showing X-Y of Z results"`, Prev/Next + numbered page buttons, page-size selector (`12` / `24` / `48`), and expanded Sort dropdown (`Relevance`, `Price: Low to High`, `Price: High to Low`, `Best Selling`, `Top Rated`), resetting `page` to `1` on query or filter changes. Issues: none.
 
+## #41 Disjunctive Multi-Select Faceting & Exclude-Own-Dimension Counts (`6ce3b8c`, `79c367f`, ADR-013)
+- **Date:** 2026-10-30
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), isolated `/tmp/review-41` archive (removed)
+- **Status:** PASS (APPROVED)
+- **Checks:**
+    - `go vet ./...` and `go test -race -count=1 ./...` in `src/psearch/serving`: PASS (`internal/api`, `internal/config`, `internal/services` incl. `TestDisjunctiveMultiSelectFacetsAPI`, `TestDisjunctiveFacets_ExcludeOwnDimensionAndMultiSelect`, `TestStorefrontDisjunctiveMultiSelectFacets`).
+    - `npm run build` in `src/application/ui`: PASS (pre-existing eslint warnings only).
+    - **(a) Disjunctive request contract & validation:** `SearchRequest` and `SearchFilters` accept `categories`, `brands`, `colors`, `sizes`, and `price_ranges` alongside legacy singular `category`, `brand`, `color`, `size` (supporting repeated query params, comma-separated lists, and JSON slices). `ParseAndValidateFacetSlice` and `ValidatePriceRanges` enforce max 20 values/dimension, max value lengths (`128`/`64`/`32` chars), and valid price range buckets (`0-100`, `100-500`, `500-1500`, `1500+`), returning `HTTP 400` on invalid input.
+    - **(b) `OR` within dimension, `AND` across dimensions & SQL safety:** `catalogFilterSQL`, `catalogFilterForAlias`, and `variantFilterSQL` use bound `@categories`, `@brands`, `@colors`, `@sizes`, and `@price_ranges` array parameters with `UNNEST(...)` (zero string interpolation), while keeping `annStoringFilterSQL` restricted to scalar `STORING` predicates (`normalizeLowerSlice` leaves scalar `@brand`/`@category` empty when `>= 2` values are selected so the outer join applies `UNNEST`). `cmd/sqlcheck` exercises multi-brand + size and multi-category + price-range queries.
+    - **(c) Exclude-own-dimension counts (`DisjunctiveFacets`):** When no facet filter is active, `DisjunctiveFacets` takes the zero-overhead fast path (`s.Facets`). When dimension $D$ is active, `idsForDim` evaluates candidates with `withoutDimension(filters, D)` concurrently (`errgroup`), preserving non-zero sibling counts (e.g., `brands=Nike` returns only Nike results while `facets.brands` retains `Adidas` and `Asics` counts), and `markSelectedBuckets` preserves selected zero-count buckets with `selected: true, count: 0`.
+    - **(d) Storefront & React UI (`79c367f`):** Both `defaultStorefrontHTML` and React (`App.js`, `Filters.js`) render multi-select checkboxes, active filter chips/pills, and `Clear all` controls, sending `categories`, `brands`, `colors`, `sizes`, and `price_ranges` to `/api/search`. Issues: none.
+
+
 
 
