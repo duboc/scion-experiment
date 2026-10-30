@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00033-4n8`** (100% traffic, follows latest): #39 hotfix, deployed from a clean `git archive` of `f32ecf3` (includes #40). **ScaNN ANN active** (`vector_index_used=true`); `embedding_v2` covers 100% of the catalog; index rebuilt on the full catalog. Rollback target: `psearch-serving-00032-46c`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00034-wnr`** (100% traffic, follows latest): #40 hotfix + #41 (+ #42 UI), deployed from a clean `git archive` of `952cf20`. ScaNN ANN active. ⚠️ #40 `total_found` is still window-driven when the lexical count is below 100 (see the 00034 entry). Rollback target: `psearch-serving-00033-4n8`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -110,7 +110,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00030-pqq`** | `5e6bf63` | #35 | sponsored products (ADR-011): `sponsored_matches` CTE, fixed ad slots, idempotent CPC click billing with real-time budget burn, campaign CRUD, Sponsored badge + campaign manager UI |
 | **`00031-n6v`** | `350f63b` | #39 | ScaNN ANN code path (ADR-012) + chunked concurrent backfill CLI. Index built, but the ANN query is rejected, so every request uses the exact fallback (`vector_index_used=false`) |
 | **`00032-46c`** | `2b3d49b` | #40 (+ #41 UI) | pagination (`page`/`offset`/`limit`, `has_next`, `total_pages`), `popularity`/`rating_desc` sorts, pager UI. ⚠️ `total_found` equals the candidate window, so it is wrong past page 8 (see #40 entry) |
-| **`00033-4n8`** | `f32ecf3` | #39 fix | ANN CTE limited to STORING-column predicates with over-fetch; `vector_index_used` reflects real query execution; single-content embedding calls. **ANN live.** **current** |
+| **`00033-4n8`** | `f32ecf3` | #39 fix | ANN CTE limited to STORING-column predicates with over-fetch; `vector_index_used` reflects real query execution; single-content embedding calls. **ANN live** |
+| **`00034-wnr`** | `952cf20` | #40 fix, #41 (+ #42 UI) | true lexical/browse COUNT for `total_found`, reachable window ≤ 500; disjunctive multi-select facets (ADR-013). ✅ #41. ⚠️ #40 only partly fixed. **current** |
 
 ---
 
@@ -711,3 +712,41 @@ Note: `alpha=0` responses also report `vector_index_used=true` (the vector leg s
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00032-46c=100`. The rebuilt index and the backfilled embeddings are additive.
 
 **Status:** #39 **closed**.
+
+## #40 hotfix + #41 Disjunctive multi-select facets (ADR-013): DEPLOYED 2026-10-30
+
+Source: clean `git archive` of **`952cf20`** in `/tmp/deploy-952` (#40 fix `5076d80`, #41 backend `6ce3b8c`, UI `79c367f` + #42 UI `c20964d`, and the #39 fix). **No DDL. Env unchanged.**
+
+| Step | Result |
+|---|---|
+| `cmd/sqlcheck` (archive, prod env) | ✅ 54 OK / 0 FAIL (new: `count q="running shoes" total_found=1`, `count q="*" total_found=20535`) |
+| Deploy → **`psearch-serving-00034-wnr`** | ✅ 100%, follows latest; `vector_index_used=true` |
+
+### #41: all checks pass ✅
+
+| Check (`<SERVICE_URL>`, `ads=false` unless noted) | Result |
+|---|---|
+| `q=shoes&brands=Nike` | ✅ only `prod-003` (Nike). `facets.brands` still lists siblings with counts > 0 (Adidas 1, Asics 1, Apple 1, Bose 1, Vichy 2, …): each dimension's facet ignores its own filter. With ads on, `prod-003` appears as the **sponsored** result (active campaign) and is removed from the organic list |
+| `q=shoes&brands=Nike,Asics&sizes=42` (also as repeated `brands=` params) | ✅ `prod-003` (Nike) + `prod-002` (Asics). Brand facet narrows to footwear (Adidas/Asics/Nike, 1 each), because the size filter applies to the brand facet |
+| `q=shoes&sizes=42` | ✅ 3 results (Adidas, Nike, Asics) |
+| Legacy `q=shoes&brand=Nike` | ✅ unchanged: 1 result, Nike |
+| 21 values in `brands` / 20 values | ✅ 400 `too many brands values (max 20)` / 200 |
+| Storefront (jsdom against the live API, `shoes`) | ✅ 37 checkboxes; ticking Nike, then Asics sends `brands=Nike%2CAsics`; pills `Brand: Nike ×`, `Brand: Asics ×`, `Clear all`; "Showing 1-2 of 2 results"; both stay checked; Adidas sibling still offered. **Clear all** → request without `brands`, no facet checked (only the separate "Smart query" toggle stays on), no filter pills, "Showing 1-21 of 100 results". **0 JS errors.** #42 attribute facets are not rendered (`facets.attributes` is absent; backend not live yet) and cause no error |
+
+### #40 hotfix: partly fixed ❌, #40 stays open
+
+| Query (`limit=12`) | Lexical count | Result |
+|---|---|---|
+| `q=po` | 249 | ✅ `total_found=249` on pages 1, 2, 9 and 20; `total_pages=21` |
+| `q=` (browse) | 20535 | ✅ `total_found=20535` on pages 1 and 2 |
+| `q=running+shoes&alpha=0.5` (lead's check) | 1 | ✅ page 1 `total_found=100`, `has_next=true`, 10 organic + 2 sponsored; page 2 has 12 results, disjoint from page 1, `sponsored_count=0`; page 3 has 12 results |
+| `q=protetor` | 80 | ❌ pages 1–8 `total_found=100`; **page 9 → 108, `has_next=false`**; page 10 → 120; offset 480 → 492; offset 492 → 500 (8 results); **offsets 504 and 900 → `total_found=100`, empty** |
+| `q=po` past the true count | 249 | ❌ page 21 → 252, page 22 → 264, still 12 results each |
+
+**Cause** (`handlers.go`): `organicTotal = max(outcome.TotalFound, len(results))`. `candidateLimit` still grows as `offset + limit` (up to 500), and the ANN leg always fills it, so `len(results)` beats the lexical count whenever that count is below the window. For `protetor` the total therefore grows with each page and drops back to 100 once offset ≥ 500 empties the window. **Possible fix:** fix the window per query (for example `window = min(max(lexical_count, 100), 500)`, independent of offset), fetch `candidateLimit = window`, report `total_found = window`, and return an empty page with that same total when offset ≥ window.
+
+Other notes: page 1 shows "Showing 1-21" because the 3 sponsored products occupy slots and are removed from the organic list. No organic result is skipped: comparing with `ads=false` ranks 0–44, only the 3 sponsored items are absent from pages 1+2 organic, and they are shown in sponsored slots. This is cosmetic.
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00033-4n8=100` (no schema changes).
+
+**Status:** #41 **closed**; #40 **open** (comment posted).
