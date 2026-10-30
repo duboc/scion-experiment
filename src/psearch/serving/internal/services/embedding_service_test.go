@@ -171,6 +171,13 @@ func TestBuildHybridSQL_CatalogFiltersAndUnavailableLast(t *testing.T) {
 				t.Errorf("lexical=%v: SQL missing %q", lexical, frag)
 			}
 		}
+		// Issue #45: unavailable_rank must appear ONLY in the outer ORDER BY (after LIMIT @limit),
+		// never before LIMIT @limit, so OOS lexical matches are not excluded from Stage-1 candidates.
+		limitIdx := strings.LastIndex(sql, "LIMIT @limit")
+		unavailIdx := strings.Index(sql, "unavailable_rank")
+		if limitIdx < 0 || unavailIdx < limitIdx {
+			t.Errorf("lexical=%v: unavailable_rank (idx=%d) must appear after Stage-1 LIMIT @limit (idx=%d)", lexical, unavailIdx, limitIdx)
+		}
 	}
 }
 

@@ -341,6 +341,47 @@ func fixedSearchWindow(lexicalCount int) int {
 	return w
 }
 
+// trimWindowPreservingOOSLexical ensures that when a specific query has few lexical
+// matches (0 < lexicalCount < pageWindow) and at least one of those lexical matches is
+// out-of-stock (e.g. q="urban sneaker" -> prod-004), vector-only in-stock filler items
+// do not push the OOS lexical match off page 1, while keeping all in-stock items before
+// all OOS items (Issue #45, ADR-002).
+func (s *SpannerService) trimWindowPreservingOOSLexical(res []models.SearchResult, lexicalCount int) []models.SearchResult {
+	const oosPage1Window = 20
+	if lexicalCount <= 0 || lexicalCount >= oosPage1Window || len(res) <= oosPage1Window {
+		return res
+	}
+	var inStock, oos []models.SearchResult
+	hasOOSLexical := false
+	for _, r := range res {
+		if isUnavailable(r.Availability, r.AvailableQuantity) {
+			oos = append(oos, r)
+			if r.Score["text"] > 0 {
+				hasOOSLexical = true
+			}
+		} else {
+			inStock = append(inStock, r)
+		}
+	}
+	if !hasOOSLexical || len(oos) == 0 {
+		return res
+	}
+	keepInStock := oosPage1Window - len(oos)
+	if keepInStock < lexicalCount {
+		keepInStock = lexicalCount
+	}
+	if keepInStock < 1 {
+		keepInStock = 1
+	}
+	if len(inStock) > keepInStock {
+		inStock = inStock[:keepInStock]
+	}
+	combined := make([]models.SearchResult, 0, len(inStock)+len(oos))
+	combined = append(combined, inStock...)
+	combined = append(combined, oos...)
+	return combined
+}
+
 // HybridSearch executes hybrid vector + full-text RRF search against Cloud Spanner (with deterministic fallback).
 func (s *SpannerService) HybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64, filters models.SearchFilters) ([]models.SearchResult, error) {
 	out, err := s.HybridSearchDetailed(ctx, query, limit, minScore, alpha, filters)
@@ -462,6 +503,9 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		res, sponsored, vecIdxUsed, err := s.spannerHybridSearchWithAds(ctx, query, queryLimit, minScore, alpha, plan, filters)
 		if len(res) > w {
 			res = res[:w]
+		}
+		if limit >= 100 {
+			res = s.trimWindowPreservingOOSLexical(res, lexCnt)
 		}
 		totalFound := len(res)
 		if lexCnt > totalFound {
@@ -806,7 +850,10 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 					) AS a
 					JOIN products AS p ON p.product_id = a.product_id` + outerWhere + `
 				)
-				ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */,
+				/* Issue #45: select Stage-1 @limit candidates by relevance/sort regardless of availability
+				   so ANN fill cannot push strong lexical OOS matches out of the window; ADR-002 OOS-last
+				   ordering is applied in the outer SELECT over the selected candidate window. */
+				ORDER BY
 					pin_rank, buried,
 					IF(@sort_by = 'price_asc', effective_price, NULL) ASC, IF(@sort_by = 'price_desc', effective_price, NULL) DESC,
 					IF(@sort_by = 'popularity', popularity_sort, NULL) DESC, IF(@sort_by = 'rating_desc', rating_sort, NULL) DESC,
@@ -1259,17 +1306,16 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 		out = append(out, res)
 	}
 
+	// Issue #45: Stage-1 candidate selection orders by relevance/sort regardless of
+	// availability so OOS lexical matches are never pushed out of the candidate window
+	// by in-stock vector neighbors; ADR-002 OOS-last ordering is applied after slicing
+	// the candidate window.
 	sort.SliceStable(out, func(i, j int) bool {
-		ui := isUnavailable(out[i].Availability, out[i].AvailableQuantity)
-		uj := isUnavailable(out[j].Availability, out[j].AvailableQuantity)
-		if ui != uj {
-			return !ui // available products first (ADR-002)
-		}
 		if pi, pj := pinRank(rules.Pins, out[i].ID), pinRank(rules.Pins, out[j].ID); pi != pj {
 			return pi < pj // pinned products first, in rule order (ADR-004)
 		}
 		if bi, bj := containsID(rules.Buries, out[i].ID), containsID(rules.Buries, out[j].ID); bi != bj {
-			return !bi // buried products last (within availability group)
+			return !bi // buried products last
 		}
 		if decided, less := compareExplicitSort(out[i], out[j], filters.SortBy); decided {
 			return less
@@ -1295,6 +1341,18 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 	}
 	if len(out) > w {
 		out = out[:w]
+	}
+	// Apply ADR-002 unavailable-last ordering over the selected Stage-1 candidate window.
+	sort.SliceStable(out, func(i, j int) bool {
+		ui := isUnavailable(out[i].Availability, out[i].AvailableQuantity)
+		uj := isUnavailable(out[j].Availability, out[j].AvailableQuantity)
+		if ui != uj {
+			return !ui
+		}
+		return false
+	})
+	if limit >= 100 {
+		out = s.trimWindowPreservingOOSLexical(out, lexicalCount)
 	}
 	// ADR-012 (#40 fix-3): total_found = max(lexical_count, len(truncated)).
 	totalFound := len(out)
@@ -1432,22 +1490,33 @@ func IsBrowseQuery(q string) bool {
 	return q == "" || q == "*"
 }
 
-// browseSQL lists catalog products with all catalog filters applied, available
-// products first, then by business-signal boost (or effective price / popularity / rating sorts).
+// browseSQL lists catalog products with all catalog filters applied, selecting the
+// Stage-1 @limit window by sort/boost score regardless of availability (#45) and
+// ordering available products first over the selected window (ADR-002).
 func browseSQL() string {
 	boost := regexp.MustCompile(`\bp\.`).ReplaceAllString(boostSignalSQL, "products.")
-	return optimizerHint + `SELECT product_id, title, product_data, is_available, stock,
-			` + effectivePriceSQL("products") + ` AS effective_price,
-			@boost_weight * ` + boost + ` AS boost_score,
-			` + variantsArraySQL("products") + ` AS variants
-		FROM products
-		WHERE ` + catalogFilterSQL + `
+	return optimizerHint + `SELECT product_id, title, product_data, is_available, stock, effective_price, boost_score, variants
+		FROM (
+			SELECT product_id, title, product_data, is_available, stock,
+				` + effectivePriceSQL("products") + ` AS effective_price,
+				@boost_weight * ` + boost + ` AS boost_score,
+				` + variantsArraySQL("products") + ` AS variants,
+				` + popularitySortSQL("products") + ` AS popularity_sort,
+				` + ratingSortSQL("products") + ` AS rating_sort
+			FROM products
+			WHERE ` + catalogFilterSQL + `
+			ORDER BY
+				IF(@sort_by = 'price_asc', effective_price, NULL) ASC, IF(@sort_by = 'price_desc', effective_price, NULL) DESC,
+				IF(@sort_by = 'popularity', popularity_sort, NULL) DESC,
+				IF(@sort_by = 'rating_desc', rating_sort, NULL) DESC,
+				boost_score DESC, product_id
+			LIMIT @limit
+		)
 		ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1),
 			IF(@sort_by = 'price_asc', effective_price, NULL) ASC, IF(@sort_by = 'price_desc', effective_price, NULL) DESC,
-			IF(@sort_by = 'popularity', ` + popularitySortSQL("products") + `, NULL) DESC,
-			IF(@sort_by = 'rating_desc', ` + ratingSortSQL("products") + `, NULL) DESC,
-			boost_score DESC, product_id
-		LIMIT @limit`
+			IF(@sort_by = 'popularity', popularity_sort, NULL) DESC,
+			IF(@sort_by = 'rating_desc', rating_sort, NULL) DESC,
+			boost_score DESC, product_id`
 }
 
 func (s *SpannerService) spannerBrowse(ctx context.Context, limit int, filters models.SearchFilters) ([]models.SearchResult, error) {

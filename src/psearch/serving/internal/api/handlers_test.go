@@ -1254,3 +1254,123 @@ func TestSearchAnalyticsEventsSummaryAndRollupAPI(t *testing.T) {
 	}
 }
 
+// Issue #45: Out-of-stock products with strong lexical relevance (e.g. prod-004 for "urban sneaker")
+// enter the Stage-1 candidate window W even when >100 in-stock products fill the vector leg, and
+// rank after all in-stock items in the window (ADR-002).
+func TestOOSProductReachableInUnfilteredHybridSearchAfterVectorFill(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Port:                   8080,
+		Environment:            "test",
+		ProjectID:              "psearch-sandbox",
+		DefaultAlpha:           0.5,
+		DefaultLimit:           20,
+		UseMemoryStore:         true,
+		ActiveEmbeddingVersion: "v1",
+	}
+	ctrl, err := NewController(cfg)
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+
+	// Build a 150-item catalog: 140 IN_STOCK running footwear items, 9 OUT_OF_STOCK running
+	// footwear items, plus prod-004 (OUT_OF_STOCK) which is the ONLY lexical match for "urban sneaker".
+	catalog := make([]models.SearchResult, 0, 150)
+	inStockQty := 15
+	oosQty := 0
+	for i := 1; i <= 140; i++ {
+		catalog = append(catalog, models.SearchResult{
+			ID:                "instock-" + strconv.Itoa(i),
+			Title:             "Running Footwear Model " + strconv.Itoa(i),
+			Description:       "Athletic marathon shoe",
+			Brands:            []string{"Adidas"},
+			Categories:        []string{"Footwear"},
+			PriceInfo:         models.PriceInfo{CurrencyCode: "USD", Price: "120.00", NumericPrice: 120.00},
+			Availability:      "IN_STOCK",
+			AvailableQuantity: &inStockQty,
+			TenantID:          "default",
+		})
+	}
+	for i := 1; i <= 9; i++ {
+		catalog = append(catalog, models.SearchResult{
+			ID:                "oos-running-" + strconv.Itoa(i),
+			Title:             "Running Footwear Pro Elite " + strconv.Itoa(i),
+			Description:       "Athletic marathon running shoe elite",
+			Brands:            []string{"Nike"},
+			Categories:        []string{"Footwear"},
+			PriceInfo:         models.PriceInfo{CurrencyCode: "USD", Price: "130.00", NumericPrice: 130.00},
+			Availability:      "OUT_OF_STOCK",
+			AvailableQuantity: &oosQty,
+			TenantID:          "default",
+		})
+	}
+	catalog = append(catalog, models.SearchResult{
+		ID:                "prod-004",
+		Title:             "Classic Leather Urban Sneaker",
+		Description:       "Casual everyday white leather shoes for streetwear comfort",
+		Brands:            []string{"Reebok"},
+		Categories:        []string{"Footwear"},
+		PriceInfo:         models.PriceInfo{CurrencyCode: "USD", Price: "95.00", NumericPrice: 95.00},
+		Availability:      "OUT_OF_STOCK",
+		AvailableQuantity: &oosQty,
+		TenantID:          "default",
+	})
+	ctrl.spannerSvc = services.NewMemorySpannerServiceForTest(cfg, catalog)
+
+	r := gin.New()
+	r.GET("/api/search", ctrl.Search)
+
+	// 1) Acceptance Criterion 1: When GET /api/search?q=urban+sneaker is called,
+	// prod-004 is returned on page 1 and ranks after all in-stock results.
+	urban := doSearch(t, r, "q=urban+sneaker&ads=false")
+	if len(urban.Results) == 0 {
+		t.Fatal("expected results for q=urban+sneaker")
+	}
+	lastItem := urban.Results[len(urban.Results)-1]
+	if lastItem.ID != "prod-004" || lastItem.Availability != "OUT_OF_STOCK" {
+		t.Fatalf("expected prod-004 (OUT_OF_STOCK) at end of q=urban+sneaker results, got %s (%s)", lastItem.ID, lastItem.Availability)
+	}
+	for i := 0; i < len(urban.Results)-1; i++ {
+		if urban.Results[i].Availability == "OUT_OF_STOCK" {
+			t.Fatalf("expected all items before prod-004 to be IN_STOCK, got OOS at index %d (%s)", i, urban.Results[i].ID)
+		}
+	}
+
+	// 2) Acceptance Criterion 2: Given an unfiltered broad query ("running"), when the result
+	// pages are walked, OOS items appear only after all in-stock items in the window and #40 invariants hold.
+	var broadResults []models.SearchResult
+	seenIDs := map[string]bool{}
+	wantTotal := 0
+	for page := 1; page <= 8; page++ {
+		resp := doSearch(t, r, "q=running&limit=24&ads=false&page="+strconv.Itoa(page))
+		if page == 1 {
+			wantTotal = resp.TotalFound
+		} else if resp.TotalFound != wantTotal {
+			t.Fatalf("broad query page %d total_found=%d != page 1 total_found=%d", page, resp.TotalFound, wantTotal)
+		}
+		for _, item := range resp.Results {
+			if seenIDs[item.ID] {
+				t.Fatalf("duplicate ID %s on page %d", item.ID, page)
+			}
+			seenIDs[item.ID] = true
+			broadResults = append(broadResults, item)
+		}
+		if !resp.HasNext {
+			break
+		}
+	}
+	seenOOS := false
+	oosCount := 0
+	for idx, item := range broadResults {
+		if item.Availability == "OUT_OF_STOCK" {
+			seenOOS = true
+			oosCount++
+		} else if seenOOS {
+			t.Fatalf("in-stock item %s at index %d appeared after an OOS item when walking pages", item.ID, idx)
+		}
+	}
+	if oosCount == 0 {
+		t.Fatal("expected OOS running footwear items to be reachable at the end of the broad query window")
+	}
+}
+

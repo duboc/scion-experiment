@@ -90,8 +90,7 @@ func buildSimilarVectorSQL(column string, useANN bool, numLeaves int) string {
 			JOIN products AS p ON p.product_id = v.product_id
 			WHERE p.product_id != @seed_id
 				AND ` + catalogFilterForAlias("p") + `
-			ORDER BY IF(IFNULL(p.is_available, TRUE) AND IFNULL(p.stock, 1) > 0, 0, 1),
-				v.distance ASC, p.product_id
+			ORDER BY v.distance ASC, p.product_id
 			LIMIT @limit`
 	}
 	return optimizerHint + `
@@ -103,8 +102,7 @@ func buildSimilarVectorSQL(column string, useANN bool, numLeaves int) string {
 		WHERE products.` + column + ` IS NOT NULL
 			AND products.product_id != @seed_id
 			AND ` + catalogFilterSQL + `
-		ORDER BY IF(IFNULL(products.is_available, TRUE) AND IFNULL(products.stock, 1) > 0, 0, 1),
-			distance ASC, products.product_id
+		ORDER BY distance ASC, products.product_id
 		LIMIT @limit`
 }
 

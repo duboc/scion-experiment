@@ -97,6 +97,7 @@ func main() {
 		{"shoes", 0.5, models.SearchFilters{Brands: []string{"Nike", "Asics"}, Sizes: []string{"42"}}},    // #41 disjunctive multi-select
 		{"notebook", 0.5, models.SearchFilters{Categories: []string{"Computers", "Audio"}, PriceRanges: []string{"100-500", "500-1500"}}}, // #41 disjunctive categories + price_ranges
 		{"notebook", 0.5, models.SearchFilters{Attrs: map[string][]string{"ram": {"16GB", "32GB"}}}},      // #42 dynamic attribute EXISTS filter
+		{"urban sneaker", 0.5, models.SearchFilters{}},                                                    // #45 OOS lexical match reachable after ANN fill
 	}
 	failed := false
 	for _, c := range cases {
