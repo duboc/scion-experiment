@@ -1180,3 +1180,73 @@ func TestPaginationFixedWindowInvariantsForLexical80And249(t *testing.T) {
 	}
 }
 
+// Issue #43 (ADR-015): Closed-loop search telemetry (query_id), click/purchase attribution,
+// idempotent replay, zero-result query tracking, A/B experiment KPIs, and LTR signal rollup.
+func TestSearchAnalyticsEventsSummaryAndRollupAPI(t *testing.T) {
+	r := newTokenRouter("s3cret")
+
+	// 1) Execute a search with experiment_id=ltr_v2 and verify query_id and experiment_id are returned.
+	sr := doSearch(t, r, "q=running+shoes&experiment_id=ltr_v2&ads=false")
+	if sr.QueryID == "" || sr.ExperimentID != "ltr_v2" || len(sr.Results) < 2 {
+		t.Fatalf("expected query_id and experiment_id=ltr_v2, got query_id=%q exp=%q len=%d",
+			sr.QueryID, sr.ExperimentID, len(sr.Results))
+	}
+
+	// 2) Execute a zero-result query q=xyznonexistent99.
+	_ = doSearch(t, r, "q=xyznonexistent99&ads=false")
+
+	// 3) Post a click at position=2 and a purchase to POST /api/analytics/events, then replay the click.
+	clickPayload := `{"event_id":"evt-api-1","query_id":"` + sr.QueryID + `","session_id":"sess-telemetry-1","event_type":"click","product_id":"` + sr.Results[1].ID + `","position":2,"experiment_id":"ltr_v2"}`
+	doPost := func(path, token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("X-Admin-Token", token)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+
+	w1 := doPost("/api/analytics/events", "", clickPayload)
+	var ev1 models.AnalyticsEventResponse
+	if w1.Code != http.StatusOK || json.Unmarshal(w1.Body.Bytes(), &ev1) != nil || ev1.Duplicate || !ev1.Recorded {
+		t.Fatalf("first click event = %d %+v", w1.Code, ev1)
+	}
+	wDup := doPost("/api/analytics/events", "", clickPayload)
+	var evDup models.AnalyticsEventResponse
+	_ = json.Unmarshal(wDup.Body.Bytes(), &evDup)
+	if wDup.Code != http.StatusOK || !evDup.Duplicate || evDup.Recorded {
+		t.Fatalf("replayed click must report duplicate=true: %d %+v", wDup.Code, evDup)
+	}
+
+	purchPayload := `{"event_id":"evt-api-2","query_id":"` + sr.QueryID + `","session_id":"sess-telemetry-1","event_type":"purchase","product_id":"` + sr.Results[1].ID + `","position":2,"experiment_id":"ltr_v2","revenue_micros":189900000}`
+	if wp := doPost("/api/analytics/events", "", purchPayload); wp.Code != http.StatusOK {
+		t.Fatalf("purchase event = %d %s", wp.Code, wp.Body.String())
+	}
+
+	// 4) GET /api/analytics/summary reports MRR@10=0.5, xyznonexistent99 in top_zero_result_queries, and ltr_v2 breakdown.
+	wSum := httptest.NewRecorder()
+	r.ServeHTTP(wSum, httptest.NewRequest(http.MethodGet, "/api/analytics/summary?window_hours=168", nil))
+	if wSum.Code != http.StatusOK {
+		t.Fatalf("GET /api/analytics/summary = %d %s", wSum.Code, wSum.Body.String())
+	}
+	var sum models.AnalyticsSummaryResponse
+	if err := json.Unmarshal(wSum.Body.Bytes(), &sum); err != nil {
+		t.Fatalf("unmarshal AnalyticsSummaryResponse: %v", err)
+	}
+	if sum.MRRAt10 != 0.5 || sum.TotalConversions != 1 || len(sum.TopZeroResultQueries) == 0 || sum.TopZeroResultQueries[0].Query != "xyznonexistent99" {
+		t.Fatalf("unexpected analytics summary: %+v", sum)
+	}
+
+	// 5) POST /api/analytics/rollup requires X-Admin-Token and updates product signals.
+	if wf := doPost("/api/analytics/rollup", "", `{}`); wf.Code != http.StatusForbidden {
+		t.Fatalf("POST /api/analytics/rollup without token = %d, want 403", wf.Code)
+	}
+	wr := doPost("/api/analytics/rollup", "s3cret", `{"window_days":30}`)
+	var rollup models.AnalyticsRollupResponse
+	if wr.Code != http.StatusOK || json.Unmarshal(wr.Body.Bytes(), &rollup) != nil || rollup.ProductsUpdated == 0 {
+		t.Fatalf("POST /api/analytics/rollup = %d %+v (%s)", wr.Code, rollup, wr.Body.String())
+	}
+}
+

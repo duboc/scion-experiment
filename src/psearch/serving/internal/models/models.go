@@ -33,8 +33,9 @@ type SearchRequest struct {
 	ImageMimeType     string   `json:"image_mime_type,omitempty" form:"-"`                       // image/jpeg | image/png | image/webp
 	ImageWeight       *float64 `json:"image_weight,omitempty" form:"-"`                          // image share of the fused query vector (default 0.6)
 	Ads               *bool    `json:"ads,omitempty" form:"ads"`                                 // ADR-011 (#35): default true; false disables sponsored product injection
-	Page              int      `json:"page,omitempty" form:"page"`                               // ADR-011 (#35): 1-based page number (ads injected on page 1 only)
-	Offset            int      `json:"offset,omitempty" form:"offset"`                           // ADR-011 (#35): item offset (ads injected when offset == 0 only)
+	Page              int                 `json:"page,omitempty" form:"page"`               // ADR-011 (#35): 1-based page number (ads injected on page 1 only)
+	Offset            int                 `json:"offset,omitempty" form:"offset"`           // ADR-011 (#35): item offset (ads injected when offset == 0 only)
+	ExperimentID      string              `json:"experiment_id,omitempty" form:"experiment_id"` // ADR-015 (#43): optional A/B experiment variant tag
 }
 
 // SearchFilters are the catalog filters applied server-side (ADR-002, Issues #3/#4/#5).
@@ -105,6 +106,8 @@ type SearchResponse struct {
 	Personalized     bool           `json:"personalized,omitempty"`
 	SponsoredCount   int            `json:"sponsored_count"`   // ADR-011 (#35): number of sponsored items injected
 	VectorIndexUsed  bool           `json:"vector_index_used"` // ADR-012 (#39): true when ScaNN vector index served the vector leg
+	QueryID          string         `json:"query_id,omitempty"` // ADR-015 (#43): unique search impression ID for attribution
+	ExperimentID     string         `json:"experiment_id,omitempty"` // ADR-015 (#43): active A/B experiment tag
 }
 
 type FacetBucket struct {
@@ -290,5 +293,85 @@ type AdClickResponse struct {
 	RemainingMicros int64  `json:"remaining_micros"`
 	Status          string `json:"status"`
 	Reason          string `json:"reason,omitempty"`
+}
+
+// AnalyticsEventRequest is the payload for POST /api/analytics/events (ADR-015, Issue #43).
+type AnalyticsEventRequest struct {
+	EventID       string `json:"event_id"`
+	QueryID       string `json:"query_id"`
+	ImpressionID  string `json:"impression_id,omitempty"`
+	SessionID     string `json:"session_id,omitempty"`
+	EventType     string `json:"event_type"` // click | add_to_cart | purchase
+	ProductID     string `json:"product_id"`
+	Position      int    `json:"position"` // 1-based rank position clicked
+	ExperimentID  string `json:"experiment_id,omitempty"`
+	RevenueMicros int64  `json:"revenue_micros,omitempty"`
+	TenantID      string `json:"tenant_id,omitempty"`
+}
+
+// AnalyticsEventResponse is the result of POST /api/analytics/events (ADR-015, Issue #43).
+type AnalyticsEventResponse struct {
+	EventID       string `json:"event_id"`
+	QueryID       string `json:"query_id"`
+	TenantID      string `json:"tenant_id"`
+	EventType     string `json:"event_type"`
+	ProductID     string `json:"product_id"`
+	Position      int    `json:"position"`
+	ExperimentID  string `json:"experiment_id,omitempty"`
+	RevenueMicros int64  `json:"revenue_micros"`
+	Duplicate     bool   `json:"duplicate"`
+	Recorded      bool   `json:"recorded"`
+}
+
+// QueryMetric reports query volume and CTR for top queries / zero-result queries (ADR-015, Issue #43).
+type QueryMetric struct {
+	Query string  `json:"query"`
+	Count int64   `json:"count"`
+	CTR   float64 `json:"ctr,omitempty"`
+}
+
+// ExperimentSummary reports per-experiment A/B search metrics (ADR-015, Issue #43).
+type ExperimentSummary struct {
+	ExperimentID            string  `json:"experiment_id"`
+	Searches                int64   `json:"searches"`
+	TotalSearches           int64   `json:"total_searches"`
+	ZeroResultSearches      int64   `json:"zero_result_searches"`
+	ZeroResultRate          float64 `json:"zero_result_rate"`
+	Clicks                  int64   `json:"clicks"`
+	Conversions             int64   `json:"conversions"`
+	ClickThroughRate        float64 `json:"click_through_rate"`
+	CTR                     float64 `json:"ctr"`
+	ConversionRate          float64 `json:"conversion_rate"`
+	MRRAt10                 float64 `json:"mrr_at_10"`
+	AvgLatencyMs            float64 `json:"avg_latency_ms"`
+	AttributedRevenueMicros int64   `json:"attributed_revenue_micros"`
+}
+
+// AnalyticsSummaryResponse is returned by GET /api/analytics/summary (ADR-015, Issue #43).
+type AnalyticsSummaryResponse struct {
+	TenantID                string              `json:"tenant_id"`
+	WindowHours             int                 `json:"window_hours"`
+	TotalSearches           int64               `json:"total_searches"`
+	ZeroResultSearches      int64               `json:"zero_result_searches"`
+	ZeroResultRate          float64             `json:"zero_result_rate"`
+	AvgLatencyMs            float64             `json:"avg_latency_ms"`
+	TotalClicks             int64               `json:"total_clicks"`
+	TotalConversions        int64               `json:"total_conversions"`
+	ClickThroughRate        float64             `json:"click_through_rate"`
+	CTR                     float64             `json:"ctr"`
+	ConversionRate          float64             `json:"conversion_rate"`
+	MRRAt10                 float64             `json:"mrr_at_10"`
+	AttributedRevenueMicros int64               `json:"attributed_revenue_micros"`
+	TopQueries              []QueryMetric       `json:"top_queries"`
+	TopZeroResultQueries    []QueryMetric       `json:"top_zero_result_queries"`
+	Experiments             []ExperimentSummary `json:"experiments"`
+}
+
+// AnalyticsRollupResponse is returned by POST /api/analytics/rollup (ADR-015, Issue #43).
+type AnalyticsRollupResponse struct {
+	TenantID        string                  `json:"tenant_id"`
+	WindowDays      int                     `json:"window_days"`
+	ProductsUpdated int                     `json:"products_updated"`
+	UpdatedSignals  map[string]BoostSignals `json:"updated_signals,omitempty"`
 }
 

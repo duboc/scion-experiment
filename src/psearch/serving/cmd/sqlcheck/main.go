@@ -212,6 +212,13 @@ func main() {
 	} else {
 		log.Printf("OK   similar/substitutes rows=%d", n)
 	}
+	// Search telemetry & attribution tables (Issue #43, ADR-015).
+	if imps, convs, err := services.CheckSpannerAnalytics(ctx, svc.Client()); err != nil {
+		failed = true
+		log.Printf("FAIL search_impressions/search_conversions: %v", err)
+	} else {
+		log.Printf("OK   search_impressions=%d search_conversions=%d", imps, convs)
+	}
 	// Visual search (Issue #33): live image embedding + vector-only and fused SQL.
 	// SQLCHECK_IMAGE may point at a JPEG; otherwise a generated 64x64 JPEG is used
 	// (validates the image API and SQL shape, not relevance).

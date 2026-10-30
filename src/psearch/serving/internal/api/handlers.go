@@ -29,7 +29,8 @@ type Controller struct {
 	intent       *services.QueryUnderstandingService
 	spell        *services.SpellCheckService
 	session      *services.SessionService
-	images       imageEmbedder // ADR-010 (#33); nil when the embedding service is unavailable
+	analytics    *services.AnalyticsService // ADR-015 (#43): closed-loop search telemetry & attribution
+	images       imageEmbedder              // ADR-010 (#33); nil when the embedding service is unavailable
 }
 
 // imageEmbedder is satisfied by services.ImageEmbeddingCache (fakeable in tests).
@@ -108,6 +109,11 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		sessionStore = services.SpannerSessionStore{Client: client}
 	}
 	session := services.NewSessionService(sessionStore, spannerSvc, cfg.SessionBoostWeight)
+	var analyticsStore services.AnalyticsStore = services.NewMemoryAnalyticsStore()
+	if client := spannerSvc.Client(); client != nil {
+		analyticsStore = services.SpannerAnalyticsStore{Client: client}
+	}
+	analytics := services.NewAnalyticsService(analyticsStore, spannerSvc, session)
 	ltrModel := services.DefaultLTRModel()
 	if cfg.LTRModelJSON != "" {
 		if m, err := services.ParseLTRModel(cfg.LTRModelJSON); err != nil {
@@ -135,6 +141,7 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		intent:       intent,
 		spell:        spell,
 		session:      session,
+		analytics:    analytics,
 	}, nil
 }
 
@@ -186,6 +193,11 @@ func (c *Controller) Search(ctx *gin.Context) {
 				req.Alpha = &f
 			}
 		}
+		if v := ctx.Query("min_score"); v != "" {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				req.MinScore = &f
+			}
+		}
 		if v := ctx.Query("limit"); v != "" {
 			n, err := strconv.Atoi(v)
 			if err != nil {
@@ -213,6 +225,7 @@ func (c *Controller) Search(ctx *gin.Context) {
 		req.Sizes = append(append([]string{}, ctx.QueryArray("size")...), ctx.QueryArray("sizes")...)
 		req.PriceRanges = append(append([]string{}, ctx.QueryArray("price_range")...), ctx.QueryArray("price_ranges")...)
 		req.SessionID = ctx.Query("session_id")
+		req.ExperimentID = ctx.Query("experiment_id")
 		if v := ctx.Query("session_product_ids"); v != "" {
 			req.SessionProductIDs = strings.Split(v, ",")
 		}
@@ -322,6 +335,11 @@ func (c *Controller) Search(ctx *gin.Context) {
 	}
 	req.PriceTable, req.SortBy = strings.TrimSpace(req.PriceTable), strings.TrimSpace(req.SortBy)
 	if err := services.ValidatePricing(req.PriceTable, req.SortBy); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	req.ExperimentID = strings.TrimSpace(req.ExperimentID)
+	if err := services.ValidateExperimentID(req.ExperimentID); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -656,9 +674,38 @@ intentDone:
 	if tenant == "" {
 		tenant = "default"
 	}
+	latencyMs := float64(time.Since(start).Microseconds()) / 1000.0
+	queryID := services.NewQueryID()
+	if c.analytics != nil {
+		organicIDs := make([]string, 0, len(results))
+		for _, r := range results {
+			if !r.Sponsored {
+				organicIDs = append(organicIDs, r.ID)
+			}
+		}
+		impTotal := int64(organicTotal)
+		if !services.IsBrowseQuery(searchQuery) && !imageQuery && !autoCorrected && !relaxed &&
+			filters.Category == "" && len(filters.Categories) == 0 && filters.Brand == "" && len(filters.Brands) == 0 &&
+			services.LexicalHits(outcome.Results) == 0 {
+			impTotal = 0
+		}
+		c.analytics.EnqueueImpression(services.SearchImpression{
+			ImpressionID:  queryID,
+			TenantID:      tenant,
+			QueryRaw:      req.Query,
+			QueryNorm:     services.NormalizeQueryForAnalytics(req.Query),
+			ExperimentID:  req.ExperimentID,
+			RetrievalMode: outcome.RetrievalMode,
+			TotalFound:    impTotal,
+			LatencyMs:     latencyMs,
+			ResultIDs:     organicIDs,
+		})
+	}
 
 	ctx.JSON(http.StatusOK, models.SearchResponse{
 		Query:            req.Query,
+		QueryID:          queryID,
+		ExperimentID:     req.ExperimentID,
 		EffectiveAlpha:   alpha,
 		Results:          results,
 		TotalFound:       organicTotal,
@@ -674,7 +721,7 @@ intentDone:
 		FacetsLatencyMs:  facetsMs,
 		TenantID:         tenant,
 		Locale:           strings.TrimSpace(req.Locale),
-		LatencyMs:        float64(time.Since(start).Microseconds()) / 1000.0,
+		LatencyMs:        latencyMs,
 		BackendMode:      c.spannerSvc.BackendMode(),
 		EmbeddingVersion: c.config.ActiveVersion(),
 		CacheHit:         outcome.CacheHit,
@@ -1083,4 +1130,71 @@ func (c *Controller) SimilarProducts(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, resp)
+}
+
+// RecordAnalyticsEvent: POST /api/analytics/events (Issue #43, ADR-015).
+func (c *Controller) RecordAnalyticsEvent(ctx *gin.Context) {
+	var body models.AnalyticsEventRequest
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if body.TenantID == "" {
+		body.TenantID = tenantParam(ctx)
+	}
+	res, err := c.analytics.RecordEvent(ctx.Request.Context(), body)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, res)
+}
+
+// AnalyticsSummary: GET /api/analytics/summary?tenant_id=default&window_hours=168 (Issue #43, ADR-015).
+func (c *Controller) AnalyticsSummary(ctx *gin.Context) {
+	windowHours := 168
+	if raw := strings.TrimSpace(ctx.Query("window_hours")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 1 || v > 2160 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "window_hours must be between 1 and 2160"})
+			return
+		}
+		windowHours = v
+	}
+	sum, err := c.analytics.Summary(ctx.Request.Context(), tenantParam(ctx), windowHours)
+	if err != nil {
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "analytics summary unavailable"})
+		return
+	}
+	ctx.JSON(http.StatusOK, sum)
+}
+
+// RollupAnalytics: POST /api/analytics/rollup (Issue #43, ADR-015; admin only).
+func (c *Controller) RollupAnalytics(ctx *gin.Context) {
+	if !c.authorizeAdmin(ctx) {
+		return
+	}
+	windowDays := 30
+	var body struct {
+		TenantID   string `json:"tenant_id"`
+		WindowDays int    `json:"window_days"`
+	}
+	_ = ctx.ShouldBindJSON(&body)
+	if body.WindowDays > 0 {
+		windowDays = body.WindowDays
+	} else if raw := strings.TrimSpace(ctx.Query("window_days")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			windowDays = v
+		}
+	}
+	tenant := strings.TrimSpace(body.TenantID)
+	if tenant == "" {
+		tenant = tenantParam(ctx)
+	}
+	res, err := c.analytics.RollupProductSignals(ctx.Request.Context(), tenant, windowDays)
+	if err != nil {
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, res)
 }

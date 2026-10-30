@@ -14,4 +14,12 @@ func registerWave6Routes(router *gin.Engine, controller *Controller) {
 	// Issue #44 (ADR-016): item-to-item similar products, in-stock substitutes & co-visitation.
 	router.GET("/products/:id/similar", controller.SimilarProducts)
 	router.GET("/api/products/:id/similar", controller.SimilarProducts)
+
+	// Issue #43 (ADR-015): closed-loop search telemetry, click attribution, A/B KPIs & LTR rollup.
+	router.POST("/analytics/events", controller.RecordAnalyticsEvent)
+	router.POST("/api/analytics/events", controller.RecordAnalyticsEvent)
+	router.GET("/analytics/summary", controller.AnalyticsSummary)
+	router.GET("/api/analytics/summary", controller.AnalyticsSummary)
+	router.POST("/analytics/rollup", controller.RollupAnalytics)
+	router.POST("/api/analytics/rollup", controller.RollupAnalytics)
 }
