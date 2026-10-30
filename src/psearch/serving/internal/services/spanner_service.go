@@ -180,6 +180,44 @@ func NewMemorySpannerServiceForTest(cfg *config.Config, products []models.Search
 	}
 }
 
+// NewSpannerRunnerServiceForTest constructs a SpannerService with lexicalCountRunner and
+// hybridQueryRunner hooks that simulate RRF rank shifting whenever params["limit"] != wantWindow,
+// verifying that Stage-1 retrieval always uses the page-independent fixed window W (#40 fix-3).
+func NewSpannerRunnerServiceForTest(cfg *config.Config, products []models.SearchResult, lexicalCount, wantWindow int, errLog interface{ Fatalf(string, ...interface{}) }) *SpannerService {
+	return &SpannerService{
+		config:       cfg,
+		seedProducts: products,
+		backendMode:  "spanner",
+		lexicalCountRunner: func(_ context.Context, _ string, _ map[string]interface{}) (int, error) {
+			return lexicalCount, nil
+		},
+		hybridQueryRunner: func(_ context.Context, _ string, params map[string]interface{}, _, _ float64, _ vectorPlan, _ models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error) {
+			gotLimit, _ := params["limit"].(int64)
+			if int(gotLimit) != wantWindow && errLog != nil {
+				errLog.Fatalf("hybridQueryRunner called with @limit=%d, want fixed window W=%d", gotLimit, wantWindow)
+			}
+			lim := int(gotLimit)
+			if lim > len(products) {
+				lim = len(products)
+			}
+			out := make([]models.SearchResult, lim)
+			// If gotLimit ever varied across pages, shifting indices by gotLimit%17 would cause duplicate/missing IDs.
+			shift := lim % 17
+			for i := 0; i < lim; i++ {
+				srcIdx := (i + shift) % lim
+				cp := products[srcIdx]
+				txtScore := 0.0
+				if srcIdx < lexicalCount {
+					txtScore = 0.015
+				}
+				cp.Score = map[string]float64{"text": txtScore, "vector": 0.01, "final_score": txtScore + 0.01}
+				out[i] = cp
+			}
+			return out, nil, nil
+		},
+	}
+}
+
 func (s *SpannerService) BackendMode() string {
 	return s.backendMode
 }
@@ -325,34 +363,26 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 	// apply) instead of running hybrid retrieval.
 	if IsBrowseQuery(query) && len(filters.ImageVector) == 0 {
 		if s.client != nil || s.lexicalCountRunner != nil {
-			var res []models.SearchResult
-			var browseErr error
 			var totalCnt int
-			g, gctx := errgroup.WithContext(ctx)
+			if cnt, cerr := s.spannerBrowseCount(ctx, filters); cerr == nil {
+				totalCnt = cnt
+			}
+			w := fixedSearchWindow(totalCnt)
+			queryLimit := limit
+			if limit >= 100 {
+				queryLimit = w
+			}
 			if s.client != nil {
-				g.Go(func() error {
-					res, browseErr = s.spannerBrowse(gctx, limit, filters)
-					return nil
-				})
-			}
-			g.Go(func() error {
-				if cnt, cerr := s.spannerBrowseCount(gctx, filters); cerr == nil {
-					totalCnt = cnt
+				res, browseErr := s.spannerBrowse(ctx, queryLimit, filters)
+				if browseErr == nil {
+					if len(res) > w {
+						res = res[:w]
+					}
+					if totalCnt < len(res) {
+						totalCnt = len(res)
+					}
+					return SearchOutcome{Results: res, TotalFound: totalCnt, RetrievalMode: RetrievalBrowse}, nil
 				}
-				return nil
-			})
-			_ = g.Wait()
-			if s.client != nil && browseErr == nil {
-				w := fixedSearchWindow(totalCnt)
-				if len(res) > w {
-					res = res[:w]
-				}
-				if totalCnt < len(res) {
-					totalCnt = len(res)
-				}
-				return SearchOutcome{Results: res, TotalFound: totalCnt, RetrievalMode: RetrievalBrowse}, nil
-			}
-			if browseErr != nil {
 				log.Printf("WARN: Spanner catalog browse fallback triggered: %v", browseErr)
 			}
 		}
@@ -363,19 +393,14 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 	expansion := s.synonyms.Expand(ctx, nf.TenantID, nf.Locale, query)
 	ruleSet := s.rules.Match(ctx, nf.TenantID, query)
 	if s.client != nil && len(filters.ImageVector) > 0 && s.config.UseGeminiEmbeddings() {
-		plan := s.planImageQuery(ctx, query, filters)
-		plan.expansion = expansion
-		plan.rules = ruleSet
-		var res, sponsored []models.SearchResult
-		var vecIdxUsed bool
-		var searchErr error
+		var plan vectorPlan
 		var lexCnt int
 		g, gctx := errgroup.WithContext(ctx)
 		g.Go(func() error {
-			res, sponsored, vecIdxUsed, searchErr = s.spannerHybridSearchWithAds(gctx, query, limit, minScore, alpha, plan, filters)
+			plan = s.planImageQuery(gctx, query, filters)
 			return nil
 		})
-		if !plan.vectorOnly {
+		if !IsBrowseQuery(query) {
 			g.Go(func() error {
 				if cnt, cerr := s.spannerLexicalCount(gctx, query, expansion, filters); cerr == nil {
 					lexCnt = cnt
@@ -384,8 +409,15 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			})
 		}
 		_ = g.Wait()
+		plan.expansion = expansion
+		plan.rules = ruleSet
+		w := fixedSearchWindow(lexCnt)
+		queryLimit := limit
+		if limit >= 100 {
+			queryLimit = w
+		}
+		res, sponsored, vecIdxUsed, searchErr := s.spannerHybridSearchWithAds(ctx, query, queryLimit, minScore, alpha, plan, filters)
 		if searchErr == nil {
-			w := fixedSearchWindow(lexCnt)
 			if len(res) > w {
 				res = res[:w]
 			}
@@ -404,16 +436,11 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		return SearchOutcome{Results: []models.SearchResult{}, RetrievalMode: RetrievalMemory}, nil
 	}
 	if (s.client != nil || s.hybridQueryRunner != nil) && strings.TrimSpace(query) != "" {
-		plan := s.planVectorQuery(ctx, query)
-		plan.expansion = expansion
-		plan.rules = ruleSet
-		var res, sponsored []models.SearchResult
-		var vecIdxUsed bool
-		var err error
+		var plan vectorPlan
 		var lexCnt int
 		g, gctx := errgroup.WithContext(ctx)
 		g.Go(func() error {
-			res, sponsored, vecIdxUsed, err = s.spannerHybridSearchWithAds(gctx, query, limit, minScore, alpha, plan, filters)
+			plan = s.planVectorQuery(gctx, query)
 			return nil
 		})
 		if s.client != nil || s.lexicalCountRunner != nil {
@@ -425,7 +452,14 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			})
 		}
 		_ = g.Wait()
+		plan.expansion = expansion
+		plan.rules = ruleSet
 		w := fixedSearchWindow(lexCnt)
+		queryLimit := limit
+		if limit >= 100 {
+			queryLimit = w
+		}
+		res, sponsored, vecIdxUsed, err := s.spannerHybridSearchWithAds(ctx, query, queryLimit, minScore, alpha, plan, filters)
 		if len(res) > w {
 			res = res[:w]
 		}
@@ -1251,14 +1285,18 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 		}
 		return out[i].ID < out[j].ID // deterministic tie-break
 	})
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
 	w := fixedSearchWindow(lexicalCount)
+	effectiveLimit := limit
+	if limit >= 100 {
+		effectiveLimit = w
+	}
+	if effectiveLimit > 0 && len(out) > effectiveLimit {
+		out = out[:effectiveLimit]
+	}
 	if len(out) > w {
 		out = out[:w]
 	}
-	// ADR-012 (#40 fix-2): total_found = max(lexical_count, len(truncated)).
+	// ADR-012 (#40 fix-3): total_found = max(lexical_count, len(truncated)).
 	totalFound := len(out)
 	if lexicalCount > totalFound {
 		totalFound = lexicalCount

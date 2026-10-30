@@ -1091,10 +1091,12 @@ func TestPaginationFixedWindowInvariantsForLexical80And249(t *testing.T) {
 		name         string
 		lexicalCount int
 		wantTotal    int
+		wantWindow   int
 		wantPages    int
 	}{
-		{"protetor_lexical_80", 80, 100, 9},
-		{"po_lexical_249", 249, 249, 21},
+		{"protetor_lexical_80", 80, 100, 100, 9},
+		{"po_lexical_249", 249, 249, 249, 21},
+		{"broad_lexical_620", 620, 620, 500, 42},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &config.Config{
@@ -1110,9 +1112,9 @@ func TestPaginationFixedWindowInvariantsForLexical80And249(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewController: %v", err)
 			}
-			// Build 550 catalog items: first tc.lexicalCount items match the query lexically ("protetor"),
-			// while all 550 items are returned by the vector leg (simulating ANN filling L up to 500).
-			catalog := make([]models.SearchResult, 550)
+			// Build 650 catalog items: first tc.lexicalCount items match the query lexically ("protetor"),
+			// while all 650 items are returned by the vector leg (simulating ANN filling up to W).
+			catalog := make([]models.SearchResult, 650)
 			qty := 10
 			for i := range catalog {
 				title := "Item Generico Catalogo " + strconv.Itoa(i+1)
@@ -1131,7 +1133,9 @@ func TestPaginationFixedWindowInvariantsForLexical80And249(t *testing.T) {
 					TenantID:          "default",
 				}
 			}
-			ctrl.spannerSvc = services.NewMemorySpannerServiceForTest(cfg, catalog)
+			// Install Spanner runner hooks that deliberately scramble ordering if @limit ever
+			// varies across pages (reproducing the RRF rank-shift bug when @limit != W).
+			ctrl.spannerSvc = services.NewSpannerRunnerServiceForTest(cfg, catalog, tc.lexicalCount, tc.wantWindow, t)
 
 			r := gin.New()
 			r.GET("/api/search", ctrl.Search)
@@ -1161,8 +1165,8 @@ func TestPaginationFixedWindowInvariantsForLexical80And249(t *testing.T) {
 					t.Fatalf("page=%d (> wantPages=%d): expected empty results, got %d", page, tc.wantPages, len(resp.Results))
 				}
 			}
-			if totalCollected != tc.wantTotal {
-				t.Fatalf("total collected across pages = %d, want exact %d", totalCollected, tc.wantTotal)
+			if totalCollected != tc.wantWindow || len(seen) != tc.wantWindow {
+				t.Fatalf("unique collected across pages = %d (total positions=%d), want exact W=%d", len(seen), totalCollected, tc.wantWindow)
 			}
 
 			// Verify offsets up to 1000 (including 492, 504, 1000) report the exact same total_found.
@@ -1171,9 +1175,9 @@ func TestPaginationFixedWindowInvariantsForLexical80And249(t *testing.T) {
 				if resp.TotalFound != tc.wantTotal {
 					t.Fatalf("offset=%d: total_found=%d, want constant %d", off, resp.TotalFound, tc.wantTotal)
 				}
-				if off >= tc.wantTotal && (len(resp.Results) != 0 || resp.HasNext) {
+				if off >= tc.wantWindow && (len(resp.Results) != 0 || resp.HasNext) {
 					t.Fatalf("offset=%d (>= %d): expected empty results and has_next=false, got len=%d has_next=%v",
-						off, tc.wantTotal, len(resp.Results), resp.HasNext)
+						off, tc.wantWindow, len(resp.Results), resp.HasNext)
 				}
 			}
 		})

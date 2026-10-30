@@ -471,19 +471,12 @@ func (c *Controller) Search(ctx *gin.Context) {
 		parsed = &models.ParsedQuery{OriginalQuery: req.Query, CleanQuery: in.CleanQuery, ExtractedFilters: extracted, IntentSource: source}
 	}
 intentDone:
-	// Facets are aggregated over a wider candidate set (top facetCandidates) than
-	// the page returned to the client (Issue #5, ADR-003), and Stage-1 retrieves up
-	// to L = min(maxSearchWindow = 500, max(100, effectiveOffset + limit)) before
-	// truncating to the fixed per-query window W = min(max(lexical_count, 100), 500) (ADR-012, #40 fix-2).
+	// Facets are aggregated over top facetCandidates (100), and Stage-1 retrieves
+	// the page-independent fixed window W = min(max(lexical_count, 100), maxSearchWindow=500)
+	// on every page so RRF scores and candidate ordering never shift across pages (ADR-012, #40 fix-3).
 	const facetCandidates = 100
 	const maxSearchWindow = 500
 	candidateLimit := facetCandidates
-	if need := effectiveOffset + limit; need > candidateLimit {
-		candidateLimit = need
-	}
-	if candidateLimit > maxSearchWindow {
-		candidateLimit = maxSearchWindow
-	}
 	outcome, err := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), searchQuery, candidateLimit, minScore, alpha, filters)
 	// ADR-008 (Issue #21): zero-results recovery when the lexical leg found nothing.
 	var didYouMean string
@@ -622,27 +615,23 @@ intentDone:
 	// ADR-012 (Issue #40 fix-2): results is already truncated to the fixed per-query
 	// window W = min(max(lexical_count, 100), 500). Reachable window is min(total_found, 500),
 	// and has_next = effectiveOffset + limit < min(reachable, len(truncated)).
+	// ADR-012 (Issue #40 fix-3): results is the page-independent fixed window
+	// W = min(max(lexical_count, 100), 500). Reachable window is min(total_found, 500),
+	// and has_next = effectiveOffset + limit < min(reachable, len(results)).
 	reachableTotal := organicTotal
 	if reachableTotal > maxSearchWindow {
 		reachableTotal = maxSearchWindow
 	}
-	expectedWindow := candidateLimit
-	if reachableTotal < expectedWindow {
-		expectedWindow = reachableTotal
-	}
 	reachableBound := reachableTotal
-	if len(results) < expectedWindow {
+	if len(results) < reachableBound {
 		reachableBound = len(results)
 	}
-	if effectiveOffset >= reachableBound || effectiveOffset >= len(results) {
+	if effectiveOffset >= reachableBound {
 		results = []models.SearchResult{}
 	} else {
 		end := effectiveOffset + limit
 		if end > reachableBound {
 			end = reachableBound
-		}
-		if end > len(results) {
-			end = len(results)
 		}
 		results = results[effectiveOffset:end]
 	}
