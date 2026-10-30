@@ -99,6 +99,14 @@ func TestPricingSQL(t *testing.T) {
 	if !strings.Contains(facetPriceSQL, "product_prices") {
 		t.Error("price facet must use the effective price")
 	}
+	cappedLex := buildCappedLexicalCountSQL(true)
+	if !strings.Contains(cappedLex, "SELECT COUNT(*) FROM (SELECT 1") || !strings.Contains(cappedLex, "LIMIT 501)") {
+		t.Errorf("buildCappedLexicalCountSQL malformed: %s", cappedLex)
+	}
+	cappedBrowse := buildCappedBrowseCountSQL()
+	if !strings.Contains(cappedBrowse, "SELECT COUNT(*) FROM (SELECT 1") || !strings.Contains(cappedBrowse, "LIMIT 501)") {
+		t.Errorf("buildCappedBrowseCountSQL malformed: %s", cappedBrowse)
+	}
 }
 
 func TestMemorySortByPopularityAndRatingDesc(t *testing.T) {

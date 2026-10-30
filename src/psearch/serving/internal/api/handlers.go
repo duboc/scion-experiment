@@ -635,6 +635,7 @@ intentDone:
 		}
 		results = results[effectiveOffset:end]
 	}
+	c.spannerSvc.EnrichResultsWithAttributes(ctx.Request.Context(), results)
 	if !req.LTR {
 		attachPromises(results, true)
 	}

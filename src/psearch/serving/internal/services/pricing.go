@@ -12,10 +12,11 @@ import (
 // products (migration 019), so these correlated lookups are split-local.
 
 // effectivePriceSQL resolves the buyer's price for products alias `alias`.
+// Short-circuits the correlated product_prices lookup when @price_table = '' (#46 perf).
 func effectivePriceSQL(alias string) string {
-	return `COALESCE((SELECT pp.price FROM product_prices AS pp
+	return `IF(@price_table = '', ` + alias + `.price, COALESCE((SELECT pp.price FROM product_prices AS pp
 					WHERE pp.product_id = ` + alias + `.product_id AND pp.price_table_id = @price_table
-						AND pp.tenant_id = @tenant_id), ` + alias + `.price)`
+						AND pp.tenant_id = @tenant_id), ` + alias + `.price))`
 }
 
 // assortmentSQL hides products that have exclusive contract rows unless the buyer

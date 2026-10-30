@@ -182,13 +182,30 @@ func main() {
 			log.Printf("OK   catalog browse %+v rows=%d", f, n)
 		}
 	}
-	// Lexical & browse COUNT(*) queries (Issue #40, ADR-012).
-	for _, cq := range []string{"running shoes", "*"} {
-		if cnt, err := svc.CheckSpannerCount(ctx, cq, models.SearchFilters{}); err != nil {
+	// Lexical & browse COUNT(*) queries + capped COUNT(*) + W=100 vs W=249 timing diagnostics (Issue #40 perf, ADR-012).
+	for _, cq := range []string{"running shoes", "protetor", "po", "*"} {
+		t0 := time.Now()
+		capCnt, capErr := svc.CheckSpannerCappedCount(ctx, cq, models.SearchFilters{})
+		capMs := float64(time.Since(t0).Microseconds()) / 1000.0
+		t1 := time.Now()
+		cnt, err := svc.CheckSpannerCount(ctx, cq, models.SearchFilters{})
+		exactMs := float64(time.Since(t1).Microseconds()) / 1000.0
+		if capErr != nil || err != nil {
 			failed = true
-			log.Printf("FAIL count q=%q: %v", cq, err)
+			log.Printf("FAIL count q=%q: cappedErr=%v exactErr=%v", cq, capErr, err)
 		} else {
-			log.Printf("OK   count q=%q total_found=%d", cq, cnt)
+			log.Printf("OK   count q=%q capped=%d (%.1fms) exact=%d (%.1fms)", cq, capCnt, capMs, cnt, exactMs)
+		}
+	}
+	for _, wLim := range []int{100, 249} {
+		t0 := time.Now()
+		n, err := svc.CheckSpannerQueryWithLimit(ctx, "po", 0.5, models.SearchFilters{}, wLim)
+		ms := float64(time.Since(t0).Microseconds()) / 1000.0
+		if err != nil {
+			failed = true
+			log.Printf("FAIL perf q=\"po\" limit=%d: %v", wLim, err)
+		} else {
+			log.Printf("OK   perf q=\"po\" limit=%d rows=%d latency=%.1fms", wLim, n, ms)
 		}
 	}
 	// Variant facets (Issue #32).
