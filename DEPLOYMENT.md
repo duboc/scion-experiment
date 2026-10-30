@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00032-46c`** (100% traffic, follows latest): Issue #40, deployed from a clean `git archive` of `2b3d49b`. ScaNN ANN (#39) is still on the exact fallback. Rollback target: `psearch-serving-00031-n6v`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00033-4n8`** (100% traffic, follows latest): #39 hotfix, deployed from a clean `git archive` of `f32ecf3` (includes #40). **ScaNN ANN active** (`vector_index_used=true`); `embedding_v2` covers 100% of the catalog; index rebuilt on the full catalog. Rollback target: `psearch-serving-00032-46c`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -62,7 +62,7 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `020_query_intent_cache.sql` | DDL | #19 | `query_intent_cache` |
 | `021_user_session_events.sql` | DDL | #20 | `user_session_events` |
 | `023_ad_campaigns.sql` / `023b_seed_ad_campaigns.dml.sql` | DDL / DML | #35 | `ad_campaigns` + `ad_campaigns_by_tenant_product` (STORING) + `ad_clicks` (interleaved in `ad_campaigns`, ON DELETE CASCADE), applied as 3 separate statements; 5 seed campaigns (tenant `default`) |
-| `024_products_vector_index.sql` | DDL | #39 | `CREATE VECTOR INDEX products_embedding_v2_idx ON products(embedding_v2) STORING (is_visible, is_available, stock, tenant_id, locale, category, brand, price) WHERE embedding_v2 IS NOT NULL`, COSINE, `tree_depth=2`, `num_leaves=100`. Online LRO `_auto_op_8e2272d28739ab64` took about 2.5 min |
+| `024_products_vector_index.sql` | DDL | #39 | `CREATE VECTOR INDEX products_embedding_v2_idx ON products(embedding_v2) STORING (is_visible, is_available, stock, tenant_id, locale, category, brand, price) WHERE embedding_v2 IS NOT NULL`, COSINE, `tree_depth=2`, `num_leaves=100`. Online LRO `_auto_op_8e2272d28739ab64` took about 2.5 min. **Rebuilt** 2026-10-30 after the full backfill (DROP + same DDL, LRO `_auto_op_812837e126700655`, 3 min) |
 
 ## 4. Release procedure
 
@@ -109,7 +109,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `00029-7ss` | `4e8951b` | #34 | clickable facets (storefront only: facet clicks re-run the search, active-filter chips) |
 | **`00030-pqq`** | `5e6bf63` | #35 | sponsored products (ADR-011): `sponsored_matches` CTE, fixed ad slots, idempotent CPC click billing with real-time budget burn, campaign CRUD, Sponsored badge + campaign manager UI |
 | **`00031-n6v`** | `350f63b` | #39 | ScaNN ANN code path (ADR-012) + chunked concurrent backfill CLI. Index built, but the ANN query is rejected, so every request uses the exact fallback (`vector_index_used=false`) |
-| **`00032-46c`** | `2b3d49b` | #40 (+ #41 UI) | pagination (`page`/`offset`/`limit`, `has_next`, `total_pages`), `popularity`/`rating_desc` sorts, pager UI. ⚠️ `total_found` equals the candidate window, so it is wrong past page 8 (see #40 entry). **current** |
+| **`00032-46c`** | `2b3d49b` | #40 (+ #41 UI) | pagination (`page`/`offset`/`limit`, `has_next`, `total_pages`), `popularity`/`rating_desc` sorts, pager UI. ⚠️ `total_found` equals the candidate window, so it is wrong past page 8 (see #40 entry) |
+| **`00033-4n8`** | `f32ecf3` | #39 fix | ANN CTE limited to STORING-column predicates with over-fetch; `vector_index_used` reflects real query execution; single-content embedding calls. **ANN live.** **current** |
 
 ---
 
@@ -679,3 +680,34 @@ The count changes from page to page; `has_next=false` while 40 more pages are re
 **Rollback:** `gcloud run services update-traffic psearch-serving --project=<PROJECT_ID> --region=us-central1 --to-revisions=psearch-serving-00031-n6v=100` (no schema changes).
 
 **Status:** #40 commented, **not closed**; lead decides.
+
+## Issue #39 hotfix: ScaNN ANN LIVE, full backfill, index rebuilt (2026-10-30)
+
+Source: clean `git archive` of **`f32ecf3`** in `/tmp/deploy-39fix` (fix `64cee37` on top of #40 `2b3d49b`). **No new DDL file. Env unchanged.**
+
+| Step | Result |
+|---|---|
+| `cmd/sqlcheck` (archive, prod env) | ✅ 50 OK / 0 FAIL; **no** `ScaNN vector index unavailable` WARN (it appeared before the fix) |
+| Deploy → **`psearch-serving-00033-4n8`** | ✅ 100%, follows latest |
+| ANN on the existing (2.5k-vector) index | ✅ `/api/search` `vector_index_used=true` for `running shoes`, `protetor solar`, `wireless headphones`; `/api/info` `vector_index_used=true`; revision logs show no `InvalidArgument`/ScaNN WARN |
+| `backfill-embeddings -dry-run -limit=50` (**default flags**) | ✅ 50/50, 2 batches, 63 docs/s, `written=0` |
+| `backfill-embeddings` (full, default flags: 8 workers, embed-batch 32, write-chunk 200) | ✅ **embedded=18020 written=18020**, 564 batches, 91 chunks, about 2.3 min (129 docs/s), 0 errors. Coverage **20535 / 20535** (was 2515) |
+| Recall probe before the rebuild (6 product vectors, ANN `num_leaves_to_search=20` vs exact `COSINE_DISTANCE`, top 20) | mean **recall@20 = 0.975**, top-1 6/6 |
+| `DROP VECTOR INDEX products_embedding_v2_idx` → recreate with the same DDL as `024` (STORING unchanged) | ✅ drop 17:34:55–17:35:04Z; create LRO `_auto_op_812837e126700655` 17:35:05 → **17:38:07Z**, 100% |
+| During the rebuild | ✅ `/api/search` 200 `hybrid_v2`, 20 results, `vector_index_used=false`; `/api/info` also `false` (it now reflects real query execution) |
+| Recall probe after the rebuild | ✅ mean **recall@20 = 0.992** (5 of 6 probes at 1.00, one at 0.95), top-1 6/6 |
+| ANN after the rebuild | ✅ `vector_index_used=true` on all 3 queries (2 rounds) and in `/api/info`; warm latency 0.5–2.2 s |
+
+Relevance sanity check (`ads=false`, top 5):
+
+| Query | `alpha=0` (lexical) | `alpha=0.5` (hybrid, ANN) | `alpha=1` (ANN only) |
+|---|---|---|---|
+| running shoes | UltraBoost Pro, then lexical noise (only 1 lexical match) | UltraBoost Pro, **Tênis de Corrida Nimbus Cloud**, **Air Zoom Pegasus Trail Runner**, … | same footwear top 3 |
+| protetor solar | ADCOS / L'Oréal *PROTETOR SOLAR* … | Nivea, Sundown, L'Oréal, Actine *PROTETOR SOLAR* … | **PHOTOPROT FPS 100**, **FILT. SOLAR FPS 70**, NIVEA FPS 50 (sunscreens without the word "protetor") |
+| wireless headphones | QuietComfort Ultra, then noise | QuietComfort Ultra, **FONE DE OUVIDO**, **Fone de Ouvido Sem Fio WH-1000XM5**, … | same |
+
+Note: `alpha=0` responses also report `vector_index_used=true` (the vector leg still runs, with weight 0). This is cosmetic.
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00032-46c=100`. The rebuilt index and the backfilled embeddings are additive.
+
+**Status:** #39 **closed**.
