@@ -23,8 +23,9 @@ type SearchRequest struct {
 	PriceTable        string   `json:"price_table_id,omitempty" form:"price_table_id"`
 	Color             string   `json:"color,omitempty" form:"color"`
 	Colors            []string `json:"colors,omitempty" form:"colors"` // ADR-013 (#41): disjunctive multi-select SKU colors
-	Size              string   `json:"size,omitempty" form:"size"`
-	Sizes             []string `json:"sizes,omitempty" form:"sizes"` // ADR-013 (#41): disjunctive multi-select SKU sizes
+	Size              string              `json:"size,omitempty" form:"size"`
+	Sizes             []string            `json:"sizes,omitempty" form:"sizes"` // ADR-013 (#41): disjunctive multi-select SKU sizes
+	Attrs             map[string][]string `json:"attrs,omitempty" form:"-"`     // ADR-014 (#42): dynamic attribute filters (key -> disjunctive values)
 	SortBy            string   `json:"sort_by,omitempty" form:"sort_by"`
 	SessionID         string   `json:"session_id,omitempty" form:"session_id"`
 	SessionProductIDs []string `json:"session_product_ids,omitempty" form:"session_product_ids"` // default true (ADR-007); false disables
@@ -52,9 +53,10 @@ type SearchFilters struct {
 	PriceTable  string   // ADR-008 (#22): contract price table; "" = list price
 	Color       string   // ADR-009 (#32): in-stock child SKU color; "" = any
 	Colors      []string // ADR-013 (#41): disjunctive SKU colors (OR within dimension)
-	Size        string   // ADR-009 (#32): in-stock child SKU size; "" = any
-	Sizes       []string // ADR-013 (#41): disjunctive SKU sizes (OR within dimension)
-	PriceRanges []string // ADR-013 (#41): disjunctive price range buckets ("0-100", "100-500", "500-1500", "1500+")
+	Size        string              // ADR-009 (#32): in-stock child SKU size; "" = any
+	Sizes       []string            // ADR-013 (#41): disjunctive SKU sizes (OR within dimension)
+	PriceRanges []string            // ADR-013 (#41): disjunctive price range buckets ("0-100", "100-500", "500-1500", "1500+")
+	Attrs       map[string][]string // ADR-014 (#42): dynamic attribute filters (key -> disjunctive values)
 	SortBy      string   // ADR-008/012 (#22/#40): relevance | price_asc | price_desc | popularity | rating_desc
 	MinPrice    float64  // ADR-007/008: minimum price (0 = none)
 	MaxPrice    float64  // ADR-007/008: maximum price (0 = none)
@@ -111,13 +113,20 @@ type FacetBucket struct {
 	Selected bool   `json:"selected,omitempty"` // ADR-013 (#41): true when value is actively selected in the request
 }
 
+type DynamicFacet struct {
+	Name    string        `json:"name"`
+	Label   string        `json:"label"`
+	Buckets []FacetBucket `json:"buckets"`
+}
+
 type Facets struct {
-	Categories   []FacetBucket `json:"categories"`
-	Brands       []FacetBucket `json:"brands"`
-	PriceRanges  []FacetBucket `json:"price_ranges"`
-	Availability []FacetBucket `json:"availability"`
-	Colors       []FacetBucket `json:"colors,omitempty"` // in-stock variant colors (#32)
-	Sizes        []FacetBucket `json:"sizes,omitempty"`  // in-stock variant sizes (#32)
+	Categories   []FacetBucket  `json:"categories"`
+	Brands       []FacetBucket  `json:"brands"`
+	PriceRanges  []FacetBucket  `json:"price_ranges"`
+	Availability []FacetBucket  `json:"availability"`
+	Colors       []FacetBucket  `json:"colors,omitempty"`     // in-stock variant colors (#32)
+	Sizes        []FacetBucket  `json:"sizes,omitempty"`      // in-stock variant sizes (#32)
+	Attributes   []DynamicFacet `json:"attributes,omitempty"` // auto-discovered dynamic product attributes (#42, ADR-014)
 }
 
 type SearchResult struct {
@@ -140,8 +149,9 @@ type SearchResult struct {
 	TenantID          string             `json:"tenant_id,omitempty"`
 	Images            []Image            `json:"images"`
 	Sizes             []string           `json:"sizes"`
-	RetrievableFields string             `json:"retrievableFields"`
-	Attributes        []Attribute        `json:"attributes"`
+	RetrievableFields string                 `json:"retrievableFields"`
+	Attributes        []Attribute            `json:"attributes"`
+	DynamicAttributes map[string]interface{} `json:"dynamic_attributes,omitempty"` // ADR-014 (#42): schema-free product specs map
 	URI               string             `json:"uri"`
 	Score             map[string]float64 `json:"score"`
 	DeliveryPromise   *DeliveryPromise   `json:"deliveryPromise,omitempty"`

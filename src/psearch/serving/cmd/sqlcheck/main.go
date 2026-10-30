@@ -96,6 +96,7 @@ func main() {
 		{"shoes", 0.5, models.SearchFilters{SortBy: "rating_desc"}},                                       // #40 rating_desc sort
 		{"shoes", 0.5, models.SearchFilters{Brands: []string{"Nike", "Asics"}, Sizes: []string{"42"}}},    // #41 disjunctive multi-select
 		{"notebook", 0.5, models.SearchFilters{Categories: []string{"Computers", "Audio"}, PriceRanges: []string{"100-500", "500-1500"}}}, // #41 disjunctive categories + price_ranges
+		{"notebook", 0.5, models.SearchFilters{Attrs: map[string][]string{"ram": {"16GB", "32GB"}}}},      // #42 dynamic attribute EXISTS filter
 	}
 	failed := false
 	for _, c := range cases {
@@ -195,6 +196,13 @@ func main() {
 		log.Printf("FAIL variant facets: %v", err)
 	} else {
 		log.Printf("OK   variant facets colors=%v sizes=%d", f.Colors, len(f.Sizes))
+	}
+	// Dynamic product attributes & auto-discovered facets (Issue #42, ADR-014).
+	if n, err := svc.CheckSpannerAttributes(ctx); err != nil {
+		failed = true
+		log.Printf("FAIL product_attributes: %v", err)
+	} else {
+		log.Printf("OK   product_attributes dynamic facet groups=%d", n)
 	}
 	// Visual search (Issue #33): live image embedding + vector-only and fused SQL.
 	// SQLCHECK_IMAGE may point at a JPEG; otherwise a generated 64x64 JPEG is used

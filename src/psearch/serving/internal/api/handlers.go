@@ -354,6 +354,11 @@ func (c *Controller) Search(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	dynAttrs, err := services.ParseAndValidateDynamicAttrs(ctx.Request.URL.Query(), req.Attrs)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	filters := models.SearchFilters{
 		Color:       req.Color,
 		Colors:      colors,
@@ -361,6 +366,7 @@ func (c *Controller) Search(ctx *gin.Context) {
 		Sizes:       sizes,
 		PriceTable:  req.PriceTable,
 		PriceRanges: priceRanges,
+		Attrs:       dynAttrs,
 		SortBy:      req.SortBy,
 		MinPrice:    req.MinPrice,
 		MaxPrice:    req.MaxPrice,
@@ -982,4 +988,41 @@ func (c *Controller) ListSessionEvents(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"session_id": sid, "events": events, "count": len(events)})
+}
+
+// UpsertProductAttributes: PUT /api/products/:id/attributes (Issue #42, ADR-014; admin only).
+func (c *Controller) UpsertProductAttributes(ctx *gin.Context) {
+	if !c.authorizeAdmin(ctx) {
+		return
+	}
+	productID := strings.TrimSpace(ctx.Param("id"))
+	if productID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "product id is required"})
+		return
+	}
+	var raw map[string]interface{}
+	if err := ctx.ShouldBindJSON(&raw); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	tenant := tenantParam(ctx)
+	if t, ok := raw["tenant_id"].(string); ok && strings.TrimSpace(t) != "" {
+		tenant = strings.TrimSpace(t)
+		delete(raw, "tenant_id")
+	}
+	saved, err := c.spannerSvc.UpsertProductAttributes(ctx.Request.Context(), tenant, productID, raw)
+	if err != nil {
+		if errors.Is(err, services.ErrProductNotFound) {
+			ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{
+		"product_id": productID,
+		"tenant_id":  tenant,
+		"attributes": saved,
+		"count":      len(saved),
+	})
 }

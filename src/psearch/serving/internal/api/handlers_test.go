@@ -971,3 +971,58 @@ func TestPaginationLargeCatalogTotalFoundAndReachableWindow(t *testing.T) {
 	}
 }
 
+// Issue #42 (ADR-014): Dynamic product attributes filtering (attr.* / attrs),
+// auto-discovered facets.attributes, and PUT /api/products/:id/attributes.
+func TestDynamicAttributesSearchAndAdminUpsertAPI(t *testing.T) {
+	r := newTokenRouter("s3cret")
+
+	// 1) Searching q=notebook surfaces ram & storage in facets.attributes.
+	nb := doSearch(t, r, "q=notebook&ads=false")
+	if nb.Facets == nil || len(nb.Facets.Attributes) == 0 {
+		t.Fatalf("expected facets.attributes for q=notebook, got %+v", nb.Facets)
+	}
+	foundRAM := false
+	for _, df := range nb.Facets.Attributes {
+		if df.Name == "ram" && len(df.Buckets) > 0 {
+			foundRAM = true
+		}
+	}
+	if !foundRAM {
+		t.Fatalf("expected ram facet in facets.attributes for q=notebook: %+v", nb.Facets.Attributes)
+	}
+
+	// 2) Filtering by ?attr.ram=32GB returns only 32GB notebooks while preserving sibling 16GB count.
+	ram32 := doSearch(t, r, "q=notebook&attr.ram=32GB&ads=false")
+	if len(ram32.Results) != 2 {
+		t.Fatalf("expected 2 results for q=notebook&attr.ram=32GB, got %d", len(ram32.Results))
+	}
+
+	// 3) Invalid attribute key syntax returns HTTP 400.
+	wBad := httptest.NewRecorder()
+	r.ServeHTTP(wBad, httptest.NewRequest(http.MethodGet, "/api/search?q=notebook&attr.bad$key=16GB", nil))
+	if wBad.Code != http.StatusBadRequest {
+		t.Fatalf("invalid attr.* key status = %d, want 400", wBad.Code)
+	}
+
+	// 4) PUT /api/products/:id/attributes requires X-Admin-Token and updates product attributes.
+	wForbid := httptest.NewRecorder()
+	r.ServeHTTP(wForbid, httptest.NewRequest(http.MethodPut, "/api/products/prod-007/attributes", strings.NewReader(`{"ram":["64GB"]}`)))
+	if wForbid.Code != http.StatusForbidden {
+		t.Fatalf("PUT without token = %d, want 403", wForbid.Code)
+	}
+
+	reqPut := httptest.NewRequest(http.MethodPut, "/api/products/prod-007/attributes", strings.NewReader(`{"ram":["64GB"],"storage":"2TB"}`))
+	reqPut.Header.Set("Content-Type", "application/json")
+	reqPut.Header.Set("X-Admin-Token", "s3cret")
+	wPut := httptest.NewRecorder()
+	r.ServeHTTP(wPut, reqPut)
+	if wPut.Code != http.StatusOK {
+		t.Fatalf("PUT valid attributes = %d %s", wPut.Code, wPut.Body.String())
+	}
+
+	ram64 := doSearch(t, r, "q=notebook&attr.ram=64GB&ads=false")
+	if len(ram64.Results) != 1 || ram64.Results[0].ID != "prod-007" {
+		t.Fatalf("expected prod-007 after upserting ram=64GB, got %+v", ram64.Results)
+	}
+}
+

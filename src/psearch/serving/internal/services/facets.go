@@ -42,6 +42,7 @@ func (s *SpannerService) Facets(ctx context.Context, ids []string, priceTable, t
 	if s.client == nil {
 		mf := s.memoryFacets(ids, priceTable)
 		mf.Colors, mf.Sizes, _ = s.variantFacets(ctx, ids)
+		mf.Attributes, _ = s.discoverDynamicFacets(ctx, "", 0, 0.5, models.SearchFilters{PriceTable: priceTable, TenantID: tenant}, ids)
 		return mf, nil
 	}
 	g, gctx := errgroup.WithContext(ctx)
@@ -61,6 +62,12 @@ func (s *SpannerService) Facets(ctx context.Context, ids []string, priceTable, t
 	g.Go(func() (err error) {
 		f.Colors, f.Sizes, err = s.variantFacets(gctx, ids)
 		return
+	})
+	g.Go(func() error {
+		if attrs, aerr := s.discoverDynamicFacets(gctx, "", 0, 0.5, models.SearchFilters{PriceTable: priceTable, TenantID: tenant}, ids); aerr == nil {
+			f.Attributes = attrs
+		}
+		return nil
 	})
 	if err := g.Wait(); err != nil {
 		return nil, err
@@ -238,7 +245,8 @@ func hasActiveFacetFilters(f models.SearchFilters) bool {
 		f.Brand != "" || len(f.Brands) > 0 ||
 		f.Color != "" || len(f.Colors) > 0 ||
 		f.Size != "" || len(f.Sizes) > 0 ||
-		len(f.PriceRanges) > 0 || f.OnlyInStock
+		len(f.PriceRanges) > 0 || f.OnlyInStock ||
+		len(f.Attrs) > 0
 }
 
 func isDimensionActive(f models.SearchFilters, dim facetDimension) bool {
@@ -351,7 +359,13 @@ func markSelectedBuckets(b []models.FacetBucket, selected []string) []models.Fac
 func (s *SpannerService) DisjunctiveFacets(ctx context.Context, query string, minScore, alpha float64, filters models.SearchFilters, filteredIDs []string) (*models.Facets, error) {
 	nf := normalizeFilters(filters)
 	if !hasActiveFacetFilters(nf) {
-		return s.Facets(ctx, filteredIDs, nf.PriceTable, nf.TenantID)
+		f, err := s.Facets(ctx, filteredIDs, nf.PriceTable, nf.TenantID)
+		if err == nil && f != nil && len(filteredIDs) > 0 {
+			if attrs, aerr := s.discoverDynamicFacets(ctx, query, minScore, alpha, nf, filteredIDs); aerr == nil {
+				f.Attributes = attrs
+			}
+		}
+		return f, err
 	}
 
 	const facetCandidateCap = 100
@@ -466,5 +480,8 @@ func (s *SpannerService) DisjunctiveFacets(ctx context.Context, query string, mi
 	out.Availability = markSelectedBuckets(out.Availability, selectedForDimension(filters, dimAvailability))
 	out.Colors = markSelectedBuckets(out.Colors, selectedForDimension(filters, dimColor))
 	out.Sizes = markSelectedBuckets(out.Sizes, selectedForDimension(filters, dimSize))
+	if attrs, aerr := s.discoverDynamicFacets(ctx, query, minScore, alpha, nf, filteredIDs); aerr == nil {
+		out.Attributes = attrs
+	}
 	return out, nil
 }

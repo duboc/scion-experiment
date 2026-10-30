@@ -32,9 +32,12 @@ type SpannerService struct {
 	inventory    []InventoryRow  // memory-mode regional inventory (Issue #8), lazily built
 	invOnce      sync.Once
 	pricing      *memoryPricing              // memory-mode contract prices (Issue #22)
-	variants          map[string][]models.Variant // memory-mode SKU variants (Issue #32)
-	varOnce           sync.Once
-	priceOnce         sync.Once
+	variants           map[string][]models.Variant          // memory-mode SKU variants (Issue #32)
+	varOnce            sync.Once
+	attrs              map[string]map[string][]string       // memory-mode dynamic product attributes (Issue #42)
+	attrOnce           sync.Once
+	attrMu             sync.RWMutex
+	priceOnce          sync.Once
 	annCooldownUntil   atomic.Int64 // ADR-012 (#39): UnixNano timestamp until which ScaNN ANN is cooled down after index error
 	lastANNSucceeded   atomic.Bool  // ADR-012 (#39): true when the most recent ScaNN ANN query succeeded
 	hybridQueryRunner  func(ctx context.Context, sql string, params map[string]interface{}, minScore, alpha float64, plan vectorPlan, f models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error)
@@ -829,6 +832,37 @@ func matchesChannel(requested string, channels []string) bool {
 	return false
 }
 
+func injectDynamicAttrClauses(sql string, attrs map[string][]string, params map[string]interface{}) string {
+	if len(attrs) == 0 {
+		return sql
+	}
+	prodClause, attrParams := dynamicAttrFilterSQL("products", attrs)
+	pClause, _ := dynamicAttrFilterSQL("p", attrs)
+	for k, v := range attrParams {
+		params[k] = v
+	}
+	sql = strings.ReplaceAll(sql, catalogFilterSQL, catalogFilterSQL+prodClause)
+	pBase := catalogFilterForAlias("p")
+	sql = strings.ReplaceAll(sql, pBase, pBase+pClause)
+	return sql
+}
+
+func (s *SpannerService) enrichResultsWithAttributes(ctx context.Context, results []models.SearchResult) {
+	if len(results) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(results))
+	for _, r := range results {
+		ids = append(ids, r.ID)
+	}
+	attrMap := s.ProductAttributesByIDs(ctx, ids)
+	for i := range results {
+		if m, ok := attrMap[results[i].ID]; ok {
+			attachDynamicAttributes(&results[i], m)
+		}
+	}
+}
+
 func (s *SpannerService) spannerHybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64, plan vectorPlan, filters models.SearchFilters) ([]models.SearchResult, error) {
 	organic, _, _, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
 	return organic, err
@@ -900,17 +934,25 @@ func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query s
 	// database default. A statement hint is the least invasive fix (verified by
 	// deployer on psearch-db: sqlcheck 27/27).
 	sql := optimizerHint + buildHybridSQLANN(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, useANN, numLeaves)
+	sql = injectDynamicAttrClauses(sql, f.Attrs, params)
 	results, sponsored, err := s.executeHybridStatement(ctx, sql, params, minScore, alpha, plan, f)
 	if err != nil && useANN && isANNIndexError(err) {
 		log.Printf("WARN: ScaNN vector index unavailable (%v); cooling down ANN for %s and falling back to exact COSINE_DISTANCE", err, annCooldownDuration)
 		s.lastANNSucceeded.Store(false)
 		s.annCooldownUntil.Store(time.Now().Add(annCooldownDuration).UnixNano())
 		exactSQL := optimizerHint + buildHybridSQLANN(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, false, numLeaves)
+		exactSQL = injectDynamicAttrClauses(exactSQL, f.Attrs, params)
 		results, sponsored, err = s.executeHybridStatement(ctx, exactSQL, params, minScore, alpha, plan, f)
+		if err == nil && s.client != nil {
+			s.enrichResultsWithAttributes(ctx, results)
+		}
 		return results, sponsored, false, err
 	}
 	if useANN && err == nil {
 		s.lastANNSucceeded.Store(true)
+	}
+	if err == nil && s.client != nil {
+		s.enrichResultsWithAttributes(ctx, results)
 	}
 	return results, sponsored, useANN && err == nil, err
 }
@@ -1106,6 +1148,10 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 		if !variantOK {
 			continue
 		}
+		matchedAttrs, attrOK := s.memoryAttrMatch(items[i].prod.ID, filters.Attrs)
+		if !attrOK {
+			continue
+		}
 		if !s.memPricing().visible(filters.PriceTable, items[i].prod.ID) ||
 			(filters.MinPrice > 0 && eff < filters.MinPrice) || (filters.MaxPrice > 0 && eff > filters.MaxPrice) ||
 			(len(filters.PriceRanges) > 0 && !containsFold(filters.PriceRanges, PriceBucket(eff))) {
@@ -1138,6 +1184,7 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 		}
 		applyEffectivePrice(&res, s.memPricing().effective(filters.PriceTable, res.ID, res.PriceInfo.NumericPrice), filters.PriceTable)
 		attachVariants(&res, matchedVariants)
+		attachDynamicAttributes(&res, matchedAttrs)
 		mult := rules.Multiplier(brand, category)
 		res.Score = map[string]float64{
 			"hybrid":          items[i].rrfScore,
@@ -1346,12 +1393,14 @@ func (s *SpannerService) spannerBrowse(ctx context.Context, limit int, filters m
 		"color": f.Color, "colors": nonNilStrings(f.Colors), "size": f.Size, "sizes": nonNilStrings(f.Sizes),
 		"boost_weight": s.config.BoostWeight,
 	}
-	iter := s.client.Single().Query(ctx, spanner.Statement{SQL: browseSQL(), Params: params})
+	sql := injectDynamicAttrClauses(browseSQL(), f.Attrs, params)
+	iter := s.client.Single().Query(ctx, spanner.Statement{SQL: sql, Params: params})
 	defer iter.Stop()
 	results := []models.SearchResult{}
 	for {
 		row, err := iter.Next()
 		if err == iterator.Done {
+			s.enrichResultsWithAttributes(ctx, results)
 			return results, nil
 		}
 		if err != nil {
@@ -1467,7 +1516,7 @@ func (s *SpannerService) spannerLexicalCount(ctx context.Context, query string, 
 	params := s.filterCountParams(filters)
 	params["query_text"] = queryText
 	params["syn_text"] = synText
-	sql := buildLexicalCountSQL(s.config.TextFolding)
+	sql := injectDynamicAttrClauses(buildLexicalCountSQL(s.config.TextFolding), filters.Attrs, params)
 	if s.lexicalCountRunner != nil {
 		return s.lexicalCountRunner(ctx, sql, params)
 	}
@@ -1489,7 +1538,7 @@ func (s *SpannerService) spannerLexicalCount(ctx context.Context, query string, 
 
 func (s *SpannerService) spannerBrowseCount(ctx context.Context, filters models.SearchFilters) (int, error) {
 	params := s.filterCountParams(filters)
-	sql := buildBrowseCountSQL()
+	sql := injectDynamicAttrClauses(buildBrowseCountSQL(), filters.Attrs, params)
 	if s.lexicalCountRunner != nil {
 		return s.lexicalCountRunner(ctx, sql, params)
 	}

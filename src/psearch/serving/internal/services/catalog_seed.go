@@ -121,12 +121,13 @@ func DefaultSeedProducts() []models.SearchResult {
 		{"prod-015", "Mechanical Wireless Ergonomic Keyboard", "Hot-swappable tactile switches with multi-device Bluetooth and USB-C", "Keychron", "Accessories", 119.00, 64, "IN_STOCK", []string{"web", "mobile"}, "en-US"},
 	}
 
+	defaultAttrs := DefaultProductAttributes()
 	out := make([]models.SearchResult, 0, len(items))
 	for _, it := range items {
 		sig := seedSignals(it.id)
 		rating := math.Round((3.5+1.5*math.Min(1.0, math.Max(0.0, sig.PopularityScore*0.6+sig.ConversionRate*4.0)))*100) / 100
 		reviews := sig.Orders*10 + sig.Clicks
-		out = append(out, models.SearchResult{
+		sr := models.SearchResult{
 			ID:          it.id,
 			Name:        fmt.Sprintf("projects/riojucu-sandbox/locations/global/catalogs/default_catalog/branches/0/products/%s", it.id),
 			Title:       it.title,
@@ -152,7 +153,9 @@ func DefaultSeedProducts() []models.SearchResult {
 			Signals:     sig,
 			AvgRating:   rating,
 			ReviewCount: reviews,
-		})
+		}
+		attachDynamicAttributes(&sr, defaultAttrs[it.id])
+		out = append(out, sr)
 	}
 	return out
 }

@@ -7,6 +7,7 @@ import "github.com/gin-gonic/gin"
 // registration never touches routes.go, which frontend owns because it
 // contains defaultStorefrontHTML.
 func registerWave6Routes(router *gin.Engine, controller *Controller) {
-	_ = router
-	_ = controller
+	// Issue #42 (ADR-014): dynamic product attributes upsert (admin-guarded).
+	router.PUT("/products/:id/attributes", controller.UpsertProductAttributes)
+	router.PUT("/api/products/:id/attributes", controller.UpsertProductAttributes)
 }
