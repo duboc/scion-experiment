@@ -193,11 +193,39 @@ func TestBuildHybridSQLANN_UsesScaNNVectorIndexAndApproxCosineDistance(t *testin
 		"FROM products@{FORCE_INDEX=products_embedding_v2_idx}",
 		"WHERE embedding_v2 IS NOT NULL",
 		"ORDER BY distance ASC",
+		"LIMIT @ann_limit",
+		"JOIN products AS p ON p.product_id = a.product_id\n\t\t\t\t\tWHERE COALESCE(p.is_visible, TRUE)",
 	} {
 		if !strings.Contains(annSQL, want) {
 			t.Errorf("ANN SQL missing %q", want)
 		}
 	}
+	// Defect 1 regression test: extract the ann CTE before fts AS and assert it
+	// contains ONLY STORING-column predicates and ZERO non-STORING predicates
+	// (no channels IN UNNEST, product_prices, skus, or regional_inventory).
+	annIdx := strings.Index(annSQL, "ann AS (")
+	ftsIdx := strings.Index(annSQL, "fts AS (")
+	if annIdx < 0 || ftsIdx <= annIdx {
+		t.Fatalf("could not isolate ann CTE from hybrid SQL")
+	}
+	annCTE := annSQL[annIdx:ftsIdx]
+	for _, forbidden := range []string{
+		"channels",
+		"UNNEST(IFNULL(channels",
+		"product_prices",
+		"is_exclusive",
+		"FROM skus",
+		"regional_inventory",
+		"@zip5",
+		"@price_table",
+		"@color",
+		"@size",
+	} {
+		if strings.Contains(annCTE, forbidden) {
+			t.Errorf("ann CTE must not contain non-STORING predicate %q; got:\n%s", forbidden, annCTE)
+		}
+	}
+
 	// Exact mode (useANN=false) or v1 column must keep exact COSINE_DISTANCE.
 	exactSQL := buildHybridSQLANN(vectorColumnV2, false, false, true, false, 20)
 	if strings.Contains(exactSQL, "APPROX_COSINE_DISTANCE") || !strings.Contains(exactSQL, "COSINE_DISTANCE(embedding_v2, @query_embedding)") {
@@ -234,8 +262,8 @@ func TestSpannerHybridSearch_ScaNNANNFallbackAndCooldown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected fallback to succeed, got err: %v", err)
 	}
-	if out.VectorIndexUsed || len(out.Results) != 1 || !svc.IsANNCooledDown() {
-		t.Fatalf("after ANN fallback: VectorIndexUsed=%v len=%d cooledDown=%v", out.VectorIndexUsed, len(out.Results), svc.IsANNCooledDown())
+	if out.VectorIndexUsed || svc.VectorIndexUsed() || len(out.Results) != 1 || !svc.IsANNCooledDown() {
+		t.Fatalf("after ANN fallback: VectorIndexUsed=%v svc.VectorIndexUsed=%v len=%d cooledDown=%v", out.VectorIndexUsed, svc.VectorIndexUsed(), len(out.Results), svc.IsANNCooledDown())
 	}
 	if len(sqlCalls) != 2 || !strings.Contains(sqlCalls[0], "APPROX_COSINE_DISTANCE") || !strings.Contains(sqlCalls[1], "ORDER BY COSINE_DISTANCE") {
 		t.Fatalf("expected 1st call ANN and 2nd call exact fallback, got %d calls", len(sqlCalls))
@@ -244,7 +272,7 @@ func TestSpannerHybridSearch_ScaNNANNFallbackAndCooldown(t *testing.T) {
 	// 2) During cooldown, subsequent queries go straight to exact COSINE_DISTANCE (1 call).
 	sqlCalls = nil
 	out2, err := svc.HybridSearchDetailed(ctx, "running shoes", 10, 0, 0.5, models.SearchFilters{})
-	if err != nil || out2.VectorIndexUsed || len(sqlCalls) != 1 || strings.Contains(sqlCalls[0], "APPROX_COSINE_DISTANCE") {
+	if err != nil || out2.VectorIndexUsed || svc.VectorIndexUsed() || len(sqlCalls) != 1 || strings.Contains(sqlCalls[0], "APPROX_COSINE_DISTANCE") {
 		t.Fatalf("during cooldown expected single exact SQL call, got calls=%d vecUsed=%v err=%v", len(sqlCalls), out2.VectorIndexUsed, err)
 	}
 
@@ -253,14 +281,21 @@ func TestSpannerHybridSearch_ScaNNANNFallbackAndCooldown(t *testing.T) {
 	failANN.Store(false)
 	sqlCalls = nil
 	out3, err := svc.HybridSearchDetailed(ctx, "running shoes", 10, 0, 0.5, models.SearchFilters{})
-	if err != nil || !out3.VectorIndexUsed || len(sqlCalls) != 1 || !strings.Contains(sqlCalls[0], "APPROX_COSINE_DISTANCE") {
-		t.Fatalf("expected ANN success with VectorIndexUsed=true, got vecUsed=%v calls=%d err=%v", out3.VectorIndexUsed, len(sqlCalls), err)
+	if err != nil || !out3.VectorIndexUsed || !svc.VectorIndexUsed() || len(sqlCalls) != 1 || !strings.Contains(sqlCalls[0], "APPROX_COSINE_DISTANCE") {
+		t.Fatalf("expected ANN success with VectorIndexUsed=true, got vecUsed=%v svcVecUsed=%v calls=%d err=%v", out3.VectorIndexUsed, svc.VectorIndexUsed(), len(sqlCalls), err)
 	}
 }
 
-func TestEmbedDocumentsBatch_RetriesOn429And503(t *testing.T) {
+func TestEmbedDocumentsBatch_RetriesOn429And503AndSingleContentConstraint(t *testing.T) {
 	var attempts atomic.Int32
 	svc := newEmbeddingServiceWith(testConfig("v2"), func(_ context.Context, _ string, contents []*genai.Content, cfg *genai.EmbedContentConfig) (*genai.EmbedContentResponse, error) {
+		// Defect 2 regression guard: gemini-embedding-2 rejects len(contents) > 1.
+		if len(contents) != 1 {
+			return nil, errors.New("InvalidArgument: embedContent API for this model only supports one content at a time")
+		}
+		if cfg.TaskType != "RETRIEVAL_DOCUMENT" {
+			return nil, fmt.Errorf("unexpected TaskType %q", cfg.TaskType)
+		}
 		n := attempts.Add(1)
 		if n == 1 {
 			return nil, errors.New("429 RESOURCE_EXHAUSTED: quota exceeded")
@@ -268,25 +303,22 @@ func TestEmbedDocumentsBatch_RetriesOn429And503(t *testing.T) {
 		if n == 2 {
 			return nil, errors.New("503 UNAVAILABLE: backend overloaded")
 		}
-		if cfg.TaskType != "RETRIEVAL_DOCUMENT" {
-			return nil, fmt.Errorf("unexpected TaskType %q", cfg.TaskType)
-		}
-		embs := make([]*genai.ContentEmbedding, len(contents))
-		for i := range contents {
-			v := make([]float32, 1024)
-			v[0] = float32(i + 1)
-			embs[i] = &genai.ContentEmbedding{Values: v}
-		}
-		return &genai.EmbedContentResponse{Embeddings: embs}, nil
+		v := make([]float32, 1024)
+		v[0] = 1.0
+		return &genai.EmbedContentResponse{Embeddings: []*genai.ContentEmbedding{{Values: v}}}, nil
 	})
 	svc.retryBaseDelay = time.Millisecond
 
-	vecs, err := svc.EmbedDocumentsBatch(context.Background(), []string{"doc-1", "doc-2", "doc-3"})
+	docs := make([]string, 32)
+	for i := range docs {
+		docs[i] = fmt.Sprintf("doc-%d", i+1)
+	}
+	vecs, err := svc.EmbedDocumentsBatch(context.Background(), docs)
 	if err != nil {
 		t.Fatalf("EmbedDocumentsBatch unexpected error: %v", err)
 	}
-	if attempts.Load() != 3 || len(vecs) != 3 || vecs[2][0] != 3 {
-		t.Fatalf("attempts=%d len(vecs)=%d vecs[2][0]=%v", attempts.Load(), len(vecs), vecs[2][0])
+	if len(vecs) != 32 || attempts.Load() < 34 {
+		t.Fatalf("len(vecs)=%d attempts=%d, want 32 vecs and >=34 RPC attempts", len(vecs), attempts.Load())
 	}
 }
 

@@ -129,15 +129,12 @@ func isRetryableEmbedError(err error) bool {
 	return false
 }
 
-// EmbedDocumentsBatch generates RETRIEVAL_DOCUMENT embeddings for a batch of texts in a
-// single Gen AI SDK RPC with exponential-backoff retry on 429/503 (ADR-012, Issue #39).
+// EmbedDocumentsBatch generates RETRIEVAL_DOCUMENT embeddings for a batch of texts using
+// bounded concurrent single-content Gen AI SDK RPCs (gemini-embedding-2 embedContent only
+// accepts one content per RPC) with exponential-backoff retry on 429/503 (ADR-012, Issue #39).
 func (s *EmbeddingService) EmbedDocumentsBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return [][]float32{}, nil
-	}
-	contents := make([]*genai.Content, 0, len(texts))
-	for _, t := range texts {
-		contents = append(contents, genai.Text(t)...)
 	}
 	cfg := &genai.EmbedContentConfig{
 		TaskType:             "RETRIEVAL_DOCUMENT",
@@ -151,39 +148,82 @@ func (s *EmbeddingService) EmbedDocumentsBatch(ctx context.Context, texts []stri
 	if maxRetries <= 0 {
 		maxRetries = 4
 	}
-	var res *genai.EmbedContentResponse
-	var err error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		res, err = s.embed(ctx, s.model, contents, cfg)
-		if err == nil {
-			break
+
+	embedOne := func(callCtx context.Context, text string, idx int) ([]float32, error) {
+		contents := genai.Text(text)
+		var res *genai.EmbedContentResponse
+		var err error
+		for attempt := 0; attempt <= maxRetries; attempt++ {
+			res, err = s.embed(callCtx, s.model, contents, cfg)
+			if err == nil {
+				break
+			}
+			if attempt == maxRetries || !isRetryableEmbedError(err) {
+				return nil, fmt.Errorf("embed batch item %d (%s @ %s): %w", idx, s.model, s.location, err)
+			}
+			delay := baseDelay * (1 << attempt)
+			select {
+			case <-callCtx.Done():
+				return nil, callCtx.Err()
+			case <-time.After(delay):
+			}
 		}
-		if attempt == maxRetries || !isRetryableEmbedError(err) {
-			return nil, fmt.Errorf("embed batch (%s @ %s, n=%d): %w", s.model, s.location, len(texts), err)
+		if res == nil || len(res.Embeddings) == 0 || res.Embeddings[0] == nil || len(res.Embeddings[0].Values) == 0 {
+			return nil, fmt.Errorf("embed batch item %d (%s): empty embedding in response", idx, s.model)
 		}
-		delay := baseDelay * (1 << attempt)
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(delay):
+		vals := res.Embeddings[0].Values
+		if int32(len(vals)) != s.dimension {
+			return nil, fmt.Errorf("embed batch item %d (%s): got %d dims, want %d", idx, s.model, len(vals), s.dimension)
 		}
+		return vals, nil
 	}
-	if res == nil || len(res.Embeddings) != len(texts) {
-		got := 0
-		if res != nil {
-			got = len(res.Embeddings)
-		}
-		return nil, fmt.Errorf("embed batch (%s): got %d embeddings, want %d", s.model, got, len(texts))
-	}
+
 	out := make([][]float32, len(texts))
-	for i, emb := range res.Embeddings {
-		if emb == nil || len(emb.Values) == 0 {
-			return nil, fmt.Errorf("embed batch (%s): empty embedding at index %d", s.model, i)
+	if len(texts) == 1 {
+		v, err := embedOne(ctx, texts[0], 0)
+		if err != nil {
+			return nil, err
 		}
-		if int32(len(emb.Values)) != s.dimension {
-			return nil, fmt.Errorf("embed batch (%s): index %d got %d dims, want %d", s.model, i, len(emb.Values), s.dimension)
-		}
-		out[i] = emb.Values
+		out[0] = v
+		return out, nil
+	}
+
+	batchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	const maxConcurrentPerBatch = 8
+	sem := make(chan struct{}, maxConcurrentPerBatch)
+	var wg sync.WaitGroup
+	var firstErr error
+	var errOnce sync.Once
+
+	for i, text := range texts {
+		wg.Add(1)
+		go func(idx int, t string) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-batchCtx.Done():
+				return
+			}
+			vec, err := embedOne(batchCtx, t, idx)
+			if err != nil {
+				errOnce.Do(func() {
+					firstErr = err
+					cancel()
+				})
+				return
+			}
+			out[idx] = vec
+		}(i, text)
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 	return out, nil
 }

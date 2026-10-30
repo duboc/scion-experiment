@@ -35,6 +35,7 @@ type SpannerService struct {
 	varOnce           sync.Once
 	priceOnce         sync.Once
 	annCooldownUntil  atomic.Int64 // ADR-012 (#39): UnixNano timestamp until which ScaNN ANN is cooled down after index error
+	lastANNSucceeded  atomic.Bool  // ADR-012 (#39): true when the most recent ScaNN ANN query succeeded
 	hybridQueryRunner func(ctx context.Context, sql string, params map[string]interface{}, minScore, alpha float64, plan vectorPlan, f models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error)
 }
 
@@ -48,6 +49,11 @@ func (s *SpannerService) IsANNCooledDown() bool {
 // VectorIndexActive reports whether ScaNN ANN is enabled and not in a cooldown window (ADR-012, #39).
 func (s *SpannerService) VectorIndexActive() bool {
 	return s != nil && s.config != nil && s.config.EffectiveUseVectorIndex() && !s.IsANNCooledDown()
+}
+
+// VectorIndexUsed reports whether ScaNN ANN is active AND has succeeded on Spanner (ADR-012, #39).
+func (s *SpannerService) VectorIndexUsed() bool {
+	return s.VectorIndexActive() && s.lastANNSucceeded.Load()
 }
 
 func (s *SpannerService) shouldUseANN(plan vectorPlan) bool {
@@ -434,6 +440,35 @@ var catalogFilterSQL = `COALESCE(is_visible, TRUE)
 					AND ` + variantFilterSQL + `
 					AND ` + deliveryFilterSQL
 
+// annStoringFilterSQL contains ONLY scalar predicates on columns stored in
+// products_embedding_v2_idx (STORING: is_visible, is_available, stock, tenant_id,
+// locale, category, brand, price). Cloud Spanner rejects APPROX_COSINE_DISTANCE
+// with @{FORCE_INDEX=products_embedding_v2_idx} if non-STORING columns or complex
+// subqueries (channels UNNEST, product_prices, skus, regional_inventory) appear
+// before ORDER BY distance ASC (Issue #39 prod rollout finding).
+const annStoringFilterSQL = `COALESCE(is_visible, TRUE)
+					AND (NOT @only_available OR (IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0))
+					AND IFNULL(products.tenant_id, 'default') = @tenant_id
+					AND (@locale = '' OR IFNULL(locale, '') = @locale)
+					AND (@category = '' OR LOWER(IFNULL(category, '')) = @category)
+					AND (@brand = '' OR LOWER(IFNULL(brand, '')) = @brand)
+					AND (@min_price <= 0 OR IFNULL(price, 0) >= @min_price)`
+
+func catalogFilterForAlias(alias string) string {
+	return `COALESCE(` + alias + `.is_visible, TRUE)
+					AND (@channel = '' OR @channel IN UNNEST(IFNULL(` + alias + `.channels, ['web', 'mobile', 'store'])))
+					AND (NOT @only_available OR (IFNULL(` + alias + `.is_available, TRUE) AND IFNULL(` + alias + `.stock, 1) > 0))
+					AND IFNULL(` + alias + `.tenant_id, 'default') = @tenant_id
+					AND (@locale = '' OR IFNULL(` + alias + `.locale, '') = @locale)
+					AND (@category = '' OR LOWER(IFNULL(` + alias + `.category, '')) = @category)
+					AND (@brand = '' OR LOWER(IFNULL(` + alias + `.brand, '')) = @brand)
+					AND (@min_price <= 0 OR IFNULL(` + effectivePriceSQL(alias) + `, 0) >= @min_price)
+					AND (@max_price <= 0 OR IFNULL(` + effectivePriceSQL(alias) + `, 0) <= @max_price)
+					AND ` + strings.ReplaceAll(assortmentSQL, "products.", alias+".") + `
+					AND ` + strings.ReplaceAll(variantFilterSQL, "products.", alias+".") + `
+					AND ` + strings.ReplaceAll(deliveryFilterSQL, "products.", alias+".")
+}
+
 // optimizerHint pins the hybrid query to the latest Spanner query optimizer.
 const optimizerHint = "@{OPTIMIZER_VERSION=latest_version} "
 
@@ -499,15 +534,15 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 	if useANN && column == vectorColumnV2 && !lexicalOnly {
 		ann = `
 		ann AS (
-			SELECT offset + 1 AS rank, product_id, title, product_data, is_available, stock
+			SELECT offset + 1 AS rank, product_id, '' AS title, CAST(NULL AS JSON) AS product_data, is_available, stock
 			FROM UNNEST(ARRAY(
-				SELECT AS STRUCT product_id, title, product_data, is_available, stock,
+				SELECT AS STRUCT product_id, is_available, stock,
 					APPROX_COSINE_DISTANCE(` + column + `, @query_embedding, options => JSON '{"num_leaves_to_search": ` + strconv.Itoa(numLeaves) + `}') AS distance
 				FROM products@{FORCE_INDEX=products_embedding_v2_idx}
 				WHERE ` + column + ` IS NOT NULL
-					AND ` + catalogFilterSQL + `
+					AND ` + annStoringFilterSQL + `
 				ORDER BY distance ASC
-				LIMIT @limit
+				LIMIT @ann_limit
 			)) WITH OFFSET AS offset
 		),`
 	}
@@ -578,6 +613,16 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 			) AS sm
 			JOIN products AS p ON p.product_id = sm.product_id
 		)`
+	outerSelectCols := `a.*`
+	outerWhere := ""
+	if useANN && column == vectorColumnV2 && !lexicalOnly {
+		// Because the ANN CTE only projects STORING columns (product_id, is_available, stock)
+		// and over-fetches (@ann_limit), the outer join on products AS p supplies p.title
+		// and p.product_data and enforces the full catalogFilterSQL.
+		outerSelectCols = `a.rrf_score, a.vector_score, a.text_score, a.product_id,
+						p.title AS title, p.product_data AS product_data, p.is_available AS is_available, p.stock AS stock`
+		outerWhere = "\n\t\t\t\t\tWHERE " + catalogFilterForAlias("p")
+	}
 	// The aggregate query is wrapped so the unavailable-last ORDER BY works on
 	// plain columns (ordering by ANY_VALUE(...) directly nests aggregates, which
 	// Spanner rejects: "Aggregations of aggregations are not allowed").
@@ -592,7 +637,7 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 				FROM (
 					/* ADR-004: final = rrf_score + boost_signal_score + merchandising_rule_delta,
 					   rule_delta = (rule_mult - 1) * rrf_score; pins first, buries last (within availability) */
-					SELECT a.*,
+					SELECT ` + outerSelectCols + `,
 						@boost_weight * ` + boostSignalSQL + ` AS boost_score,
 						IFNULL((SELECT EXP(SUM(LN(r.multiplier))) FROM UNNEST(@rule_boosts) AS r
 							WHERE (r.brand = '' OR LOWER(IFNULL(p.brand, '')) = r.brand)
@@ -617,7 +662,7 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 					)
 					GROUP BY product_id
 					) AS a
-					JOIN products AS p ON p.product_id = a.product_id
+					JOIN products AS p ON p.product_id = a.product_id` + outerWhere + `
 				)
 				ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */,
 					pin_rank, buried,
@@ -725,6 +770,13 @@ func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query s
 	if len(plan.expansion.Terms) > 0 {
 		synText, synWeight = plan.expansion.SpannerQuery(), plan.expansion.Weight
 	}
+	annLimit := limit * 3
+	if annLimit < 60 {
+		annLimit = 60
+	}
+	if annLimit > 500 {
+		annLimit = 500
+	}
 	params := map[string]interface{}{
 		"query_text":     queryText,
 		"syn_text":       synText,
@@ -747,6 +799,7 @@ func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query s
 		"max_sla":        f.MaxSLAHours,
 		"alpha":          alpha,
 		"limit":          int64(limit),
+		"ann_limit":      int64(annLimit),
 		"channel":        f.Channel,
 		"only_available": f.OnlyInStock,
 		"ad_k":           int64(s.config.EffectiveAdMax()),
@@ -766,10 +819,14 @@ func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query s
 	results, sponsored, err := s.executeHybridStatement(ctx, sql, params, minScore, alpha, plan, f)
 	if err != nil && useANN && isANNIndexError(err) {
 		log.Printf("WARN: ScaNN vector index unavailable (%v); cooling down ANN for %s and falling back to exact COSINE_DISTANCE", err, annCooldownDuration)
+		s.lastANNSucceeded.Store(false)
 		s.annCooldownUntil.Store(time.Now().Add(annCooldownDuration).UnixNano())
 		exactSQL := optimizerHint + buildHybridSQLANN(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, false, numLeaves)
 		results, sponsored, err = s.executeHybridStatement(ctx, exactSQL, params, minScore, alpha, plan, f)
 		return results, sponsored, false, err
+	}
+	if useANN && err == nil {
+		s.lastANNSucceeded.Store(true)
 	}
 	return results, sponsored, useANN && err == nil, err
 }
