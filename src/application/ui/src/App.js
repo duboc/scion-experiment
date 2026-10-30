@@ -33,6 +33,8 @@ import {
     Select,
     MenuItem,
     Alert,
+    Drawer,
+    Divider,
     ThemeProvider,
     createTheme,
 } from '@mui/material';
@@ -54,6 +56,32 @@ import { recordAdClick } from './services/adService';
 import axios from 'axios';
 import config from './config';
 const API_URL = config.apiUrl;
+
+const recordSearchAnalyticsEvent = (eventPayload) => {
+    try {
+        const base = (API_URL || '').replace(/\/+$/, '');
+        const eventId = `evt-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+        const body = {
+            event_id: eventId,
+            query_id: eventPayload.query_id || '',
+            session_id: eventPayload.session_id || getSessionId(),
+            event_type: eventPayload.event_type || 'click',
+            product_id: eventPayload.product_id || '',
+            position: typeof eventPayload.position === 'number' ? eventPayload.position : 1,
+            experiment_id: eventPayload.experiment_id || '',
+            revenue_micros: typeof eventPayload.revenue_micros === 'number' ? eventPayload.revenue_micros : 0,
+            tenant_id: eventPayload.tenant_id || 'default',
+        };
+        fetch(`${base}/api/analytics/events`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            keepalive: true,
+        }).catch(() => {});
+    } catch (e) {
+        // fire-and-forget beacon
+    }
+};
 
 const COLOR_SWATCH_MAP = {
     preto: '#1e293b',
@@ -131,6 +159,13 @@ function ProductSearch({
     const [facetsLatencyMs, setFacetsLatencyMs] = useState(null);
     const [sponsoredCount, setSponsoredCount] = useState(0);
     const [vectorIndexUsed, setVectorIndexUsed] = useState(null);
+    const [experimentId, setExperimentId] = useState('');
+    const [effectiveExperimentId, setEffectiveExperimentId] = useState('');
+    const [queryId, setQueryId] = useState('');
+    const [analyticsDrawerOpen, setAnalyticsDrawerOpen] = useState(false);
+    const [analyticsSummary, setAnalyticsSummary] = useState(null);
+    const [analyticsLoading, setAnalyticsLoading] = useState(false);
+    const [analyticsError, setAnalyticsError] = useState(null);
     // State for the filters component - now a dynamic object
     const [selectedFilters, setSelectedFilters] = useState({});
     // Store filter configurations
@@ -797,6 +832,9 @@ function ProductSearch({
             const sortByToUse = (searchParams && searchParams.sortBy !== undefined)
                 ? searchParams.sortBy
                 : sortBy;
+            const experimentIdToUse = (searchParams && searchParams.experimentId !== undefined)
+                ? searchParams.experimentId
+                : experimentId;
             const colorsToUse = (searchParams && searchParams.color !== undefined)
                 ? (searchParams.color ? [searchParams.color] : [])
                 : selectedColors;
@@ -906,6 +944,9 @@ function ProductSearch({
             if (sortByToUse) {
                 payload.sort_by = sortByToUse;
             }
+            if (experimentIdToUse) {
+                payload.experiment_id = experimentIdToUse;
+            }
 
             if (imageToUse) {
                 // Visual search (#33, ADR-010): inline photo; omit alpha so the
@@ -1013,6 +1054,8 @@ function ProductSearch({
                 } else {
                     setVectorIndexUsed(null);
                 }
+                setQueryId(response.data.query_id || response.data.impression_id || '');
+                setEffectiveExperimentId(response.data.experiment_id || experimentIdToUse || '');
             }
 
             // Simple processing - just map products without modifying anything
@@ -1071,6 +1114,8 @@ function ProductSearch({
             setPersonalized(false);
             setSponsoredCount(0);
             setVectorIndexUsed(null);
+            setQueryId('');
+            setEffectiveExperimentId('');
             setTotalFound(0);
             setServerTotalPages(0);
             setServerHasNext(false);
@@ -1083,7 +1128,7 @@ function ProductSearch({
         } finally {
             setLoading(false);
         }
-    }, [activeSearchQuery, alpha, channel, onlyInStock, selectedCategories, selectedBrands, selectedColors, selectedSizes, selectedPriceRanges, selectedAttrs, selectedAvailability, tenantId, locale, cep, maxSla24h, ltr, priceTableId, sortBy, productsPerPage]);
+    }, [activeSearchQuery, alpha, channel, onlyInStock, selectedCategories, selectedBrands, selectedColors, selectedSizes, selectedPriceRanges, selectedAttrs, selectedAvailability, tenantId, locale, cep, maxSla24h, ltr, priceTableId, sortBy, experimentId, productsPerPage]);
 
     // Handler for filter changes from the Filters component - now works with dynamic filter IDs
     const handleFilterChange = useCallback((filterId, value, isChecked) => {
@@ -1375,6 +1420,9 @@ function ProductSearch({
         if (options.size !== undefined) {
             setSize(options.size);
         }
+        if (options.experimentId !== undefined) {
+            setExperimentId(options.experimentId);
+        }
         setCurrentPage(1);
         setParsedQuery(null);
         setActiveExtractedFilters(null);
@@ -1395,6 +1443,7 @@ function ProductSearch({
                 parseIntent: options.parseIntent !== undefined ? options.parseIntent : parseIntentRef.current,
                 priceTableId: options.priceTableId !== undefined ? options.priceTableId : priceTableId,
                 sortBy: options.sortBy !== undefined ? options.sortBy : sortBy,
+                experimentId: options.experimentId !== undefined ? options.experimentId : experimentId,
                 color: options.color !== undefined ? options.color : color,
                 size: options.size !== undefined ? options.size : size,
             });
@@ -1403,7 +1452,7 @@ function ProductSearch({
         setActiveSearchQuery(nextQuery);
         // Reset AI filter suggestions when a new search is performed
         setShowAIFilterSuggestions(true);
-    }, [setTenantId, setLocale, fetchProducts, activeSearchQuery, priceTableId, sortBy, productsPerPage, color, size]);
+    }, [setTenantId, setLocale, fetchProducts, activeSearchQuery, priceTableId, sortBy, experimentId, productsPerPage, color, size]);
 
     const handleRemoveExtractedFilter = useCallback((filterKey) => {
         const currentFilters = activeExtractedFiltersRef.current || {};
@@ -1486,10 +1535,13 @@ function ProductSearch({
 
     const [substitutesByProduct, setSubstitutesByProduct] = useState({});
 
-    // Stable handler for product clicks (fires ad click beacon as fire-and-forget when sponsored)
-    const handleProductClick = useCallback((productOrId) => {
+    // Stable handler for product clicks (fires ad click beacon + ADR-015 analytics click beacon)
+    const handleProductClick = useCallback((productOrId, position = 1) => {
         const product = typeof productOrId === 'object' && productOrId !== null ? productOrId : null;
         const productId = product ? product.id : productOrId;
+        const rankPosition = typeof position === 'number' && position > 0 ? position : 1;
+        const activeExp = effectiveExperimentId || experimentId || '';
+        const sid = sessionIdRef.current || getSessionId();
         if (product && product.id) {
             try {
                 const raw = localStorage.getItem('searchResults');
@@ -1505,6 +1557,13 @@ function ProductSearch({
                     ? [normalized, ...list.filter(p => p && p.id !== product.id)]
                     : [normalized];
                 localStorage.setItem('searchResults', JSON.stringify(nextList));
+                localStorage.setItem('lastSearchAttribution', JSON.stringify({
+                    query_id: queryId || '',
+                    position: rankPosition,
+                    experiment_id: activeExp,
+                    session_id: sid,
+                    tenant_id: tenantId || 'default',
+                }));
             } catch (e) {
                 // ignore storage errors
             }
@@ -1512,10 +1571,67 @@ function ProductSearch({
         if (product && product.sponsored && product.ad_campaign_id && product.ad_click_id) {
             recordAdClick(product.ad_campaign_id, product.ad_click_id);
         }
+        recordSearchAnalyticsEvent({
+            query_id: queryId || '',
+            session_id: sid,
+            event_type: 'click',
+            product_id: productId,
+            position: rankPosition,
+            experiment_id: activeExp,
+            tenant_id: tenantId || 'default',
+        });
         recordSessionEvent(productId, 'click', tenantId);
         setSessionRefreshKey(prev => prev + 1);
         navigate(`/product/${productId}`);
-    }, [navigate, tenantId]);
+    }, [navigate, tenantId, queryId, effectiveExperimentId, experimentId]);
+
+    const handleAddToCart = useCallback((product, position = 1, e) => {
+        if (e && e.stopPropagation) {
+            e.stopPropagation();
+        }
+        if (!product || !product.id) return;
+        const rankPosition = typeof position === 'number' && position > 0 ? position : 1;
+        const activeExp = effectiveExperimentId || experimentId || '';
+        const sid = sessionIdRef.current || getSessionId();
+        const priceNum = parseFloat(product.priceInfo?.price);
+        const revenueMicros = !isNaN(priceNum) && priceNum > 0 ? Math.round(priceNum * 1000000) : 0;
+        recordSearchAnalyticsEvent({
+            query_id: queryId || '',
+            session_id: sid,
+            event_type: 'add_to_cart',
+            product_id: product.id,
+            position: rankPosition,
+            experiment_id: activeExp,
+            revenue_micros: revenueMicros,
+            tenant_id: tenantId || 'default',
+        });
+        recordSessionEvent(product.id, 'add_to_cart', tenantId);
+        setSessionRefreshKey(prev => prev + 1);
+    }, [tenantId, queryId, effectiveExperimentId, experimentId]);
+
+    const fetchAnalyticsSummary = useCallback(async () => {
+        setAnalyticsLoading(true);
+        setAnalyticsError(null);
+        try {
+            const base = (API_URL || '').replace(/\/+$/, '');
+            const res = await axios.get(`${base}/api/analytics/summary`, {
+                params: {
+                    tenant_id: tenantId || 'default',
+                    window_hours: 168,
+                },
+            });
+            setAnalyticsSummary(res.data || null);
+        } catch (err) {
+            setAnalyticsError(err.response?.data?.error || err.message || 'Failed to load analytics summary');
+        } finally {
+            setAnalyticsLoading(false);
+        }
+    }, [tenantId]);
+
+    const handleOpenAnalyticsDrawer = useCallback(() => {
+        setAnalyticsDrawerOpen(true);
+        fetchAnalyticsSummary();
+    }, [fetchAnalyticsSummary]);
 
     const handleLoadSubstitutes = useCallback(async (productId, e) => {
         if (e && e.stopPropagation) {
@@ -1593,7 +1709,7 @@ function ProductSearch({
                     marginRight: '-8px'
                 }}
             >
-                {products.map((product) => {
+                {products.map((product, index) => {
                     // Extract just the minimal image data needed for this specific product
                     // This is done inline instead of processing all products at once
                     const imageUrl = product.images &&
@@ -1604,6 +1720,7 @@ function ProductSearch({
                         null;
                     const isSponsored = Boolean(product.sponsored);
                     const cardKey = product.ad_click_id ? `${product.id}-${product.ad_click_id}` : product.id;
+                    const rankPosition = effectiveOffset + index + 1;
 
                     return (
                         <Grid 
@@ -1618,6 +1735,7 @@ function ProductSearch({
                             <Card
                                 data-testid={isSponsored ? 'sponsored-card' : 'product-card'}
                                 data-sponsored={isSponsored ? 'true' : 'false'}
+                                data-position={rankPosition}
                                 sx={{
                                     minHeight: '300px',
                                     display: 'flex',
@@ -1633,7 +1751,7 @@ function ProductSearch({
                                         boxShadow: 6,
                                     }
                                 }}
-                                onClick={() => onProductClick(product)}
+                                onClick={() => onProductClick(product, rankPosition)}
                             >
                                 {/* Each product processes its own image data */}
                                 <ProductImage
@@ -1965,7 +2083,7 @@ function ProductSearch({
                                                                             <Box
                                                                                 key={sub.id}
                                                                                 data-testid="substitute-item"
-                                                                                onClick={() => onProductClick(sub)}
+                                                                                onClick={() => onProductClick(sub, rankPosition)}
                                                                                 sx={{
                                                                                     display: 'flex',
                                                                                     justifyContent: 'space-between',
@@ -1997,6 +2115,19 @@ function ProductSearch({
                                                             )}
                                                         </Box>
                                                     )}
+                                                    <Box sx={{ mt: 1 }} onClick={(e) => e.stopPropagation()}>
+                                                        <Button
+                                                            size="small"
+                                                            variant="outlined"
+                                                            color="primary"
+                                                            fullWidth
+                                                            data-testid="add-to-cart-btn"
+                                                            onClick={(e) => handleAddToCart(product, rankPosition, e)}
+                                                            sx={{ textTransform: 'none', fontSize: '0.72rem', fontWeight: 600, py: 0.25 }}
+                                                        >
+                                                            + Add to Cart
+                                                        </Button>
+                                                    </Box>
                                                 </>
                                             );
                                         })()}
@@ -2141,6 +2272,12 @@ function ProductSearch({
                         setColor={setColor}
                         size={size}
                         setSize={setSize}
+                        experimentId={experimentId}
+                        setExperimentId={(val) => {
+                            setCurrentPage(1);
+                            setExperimentId(val);
+                        }}
+                        onOpenAnalytics={handleOpenAnalyticsDrawer}
                     />
 
                     {/* Display search result count and search metadata */}
@@ -2338,6 +2475,8 @@ function ProductSearch({
                                 {parsedQuery && parsedQuery.intent_source && parsedQuery.intent_source !== 'none' && ` • intent: ${parsedQuery.intent_source}`}
                                 {effectivePriceTableId && ` • price_table: ${effectivePriceTableId}`}
                                 {effectiveSortBy && ` • sort: ${effectiveSortBy}`}
+                                {effectiveExperimentId && ` • experiment: ${effectiveExperimentId}`}
+                                {queryId && ` • query_id: ${queryId.slice(0, 8)}`}
                                 {personalized && ` • Personalizado`}
                                 {sponsoredCount > 0 && ` • sponsored: ${sponsoredCount}`}
                             </Typography>
@@ -2348,6 +2487,23 @@ function ProductSearch({
                                         color={vectorIndexUsed ? 'success' : 'default'}
                                         variant="outlined"
                                         label={vectorIndexUsed ? 'ANN: ScaNN' : 'ANN: exact'}
+                                    />
+                                )}
+                                {effectiveExperimentId && (
+                                    <Chip
+                                        size="small"
+                                        color="secondary"
+                                        variant="outlined"
+                                        data-testid="experiment-badge"
+                                        label={`experiment: ${effectiveExperimentId}`}
+                                    />
+                                )}
+                                {queryId && (
+                                    <Chip
+                                        size="small"
+                                        variant="outlined"
+                                        data-testid="query-id-badge"
+                                        label={`query_id: ${queryId.slice(0, 8)}`}
                                     />
                                 )}
                                 {sponsoredCount > 0 && (
@@ -2554,6 +2710,189 @@ function ProductSearch({
                     </Box>
                 </Grid>
             </Grid>
+
+            {/* Search Analytics Drawer (#43, ADR-015) */}
+            <Drawer
+                anchor="right"
+                open={analyticsDrawerOpen}
+                onClose={() => setAnalyticsDrawerOpen(false)}
+            >
+                <Box
+                    data-testid="search-analytics-drawer"
+                    sx={{ width: { xs: 320, sm: 460 }, p: 3 }}
+                >
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Box>
+                            <Typography variant="overline" color="primary" sx={{ fontWeight: 700, display: 'block', lineHeight: 1.2 }}>
+                                Search Telemetry &amp; Attribution (ADR-015)
+                            </Typography>
+                            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                                Search Analytics ({tenantId || 'default'})
+                            </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button size="small" variant="outlined" onClick={fetchAnalyticsSummary}>
+                                Refresh
+                            </Button>
+                            <Button size="small" onClick={() => setAnalyticsDrawerOpen(false)}>
+                                Close
+                            </Button>
+                        </Box>
+                    </Box>
+
+                    <Divider sx={{ mb: 2 }} />
+
+                    {analyticsLoading ? (
+                        <Typography variant="body2" color="text.secondary">
+                            Loading search analytics summary...
+                        </Typography>
+                    ) : analyticsError ? (
+                        <Alert severity="error" sx={{ mb: 2 }}>
+                            {analyticsError}
+                        </Alert>
+                    ) : !analyticsSummary ? (
+                        <Typography variant="body2" color="text.secondary">
+                            No analytics summary available yet.
+                        </Typography>
+                    ) : (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+                            <Grid container spacing={1.5}>
+                                <Grid item xs={6}>
+                                    <Card variant="outlined" sx={{ p: 1.5 }}>
+                                        <Typography variant="caption" color="text.secondary">
+                                            CTR (Click-Through Rate)
+                                        </Typography>
+                                        <Typography variant="h6" color="primary" sx={{ fontWeight: 700 }} data-testid="analytics-ctr">
+                                            {`${((Number(analyticsSummary.click_through_rate) || 0) * 100).toFixed(1)}%`}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {`${analyticsSummary.total_clicks || 0} clicks / ${analyticsSummary.total_searches || 0} searches`}
+                                        </Typography>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <Card variant="outlined" sx={{ p: 1.5 }}>
+                                        <Typography variant="caption" color="text.secondary">
+                                            MRR@10
+                                        </Typography>
+                                        <Typography variant="h6" color="primary" sx={{ fontWeight: 700 }} data-testid="analytics-mrr10">
+                                            {Number(analyticsSummary.mrr_at_10 || 0).toFixed(3)}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            Mean Reciprocal Rank
+                                        </Typography>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <Card variant="outlined" sx={{ p: 1.5 }}>
+                                        <Typography variant="caption" color="text.secondary">
+                                            Zero-Result Rate
+                                        </Typography>
+                                        <Typography variant="h6" sx={{ fontWeight: 700 }} data-testid="analytics-zero-result-rate">
+                                            {`${((Number(analyticsSummary.zero_result_rate) || 0) * 100).toFixed(1)}%`}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {`${analyticsSummary.zero_result_searches || 0} zero-result queries`}
+                                        </Typography>
+                                    </Card>
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <Card variant="outlined" sx={{ p: 1.5 }}>
+                                        <Typography variant="caption" color="text.secondary">
+                                            Conversion Rate
+                                        </Typography>
+                                        <Typography variant="h6" sx={{ fontWeight: 700 }} data-testid="analytics-conversion-rate">
+                                            {`${((Number(analyticsSummary.conversion_rate) || 0) * 100).toFixed(1)}%`}
+                                        </Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {`${analyticsSummary.total_conversions || 0} conversions`}
+                                        </Typography>
+                                    </Card>
+                                </Grid>
+                            </Grid>
+
+                            <Box data-testid="top-zero-result-queries-section">
+                                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
+                                    Top Zero-Result Queries
+                                </Typography>
+                                {Array.isArray(analyticsSummary.top_zero_result_queries) && analyticsSummary.top_zero_result_queries.length > 0 ? (
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                                        {analyticsSummary.top_zero_result_queries.map((item, idx) => (
+                                            <Box
+                                                key={`${item.query}-${idx}`}
+                                                data-testid="zero-result-query-item"
+                                                sx={{
+                                                    display: 'flex',
+                                                    justifyContent: 'space-between',
+                                                    alignItems: 'center',
+                                                    p: 1,
+                                                    borderRadius: 1,
+                                                    backgroundColor: '#f8fafc',
+                                                    border: '1px solid #e2e8f0',
+                                                }}
+                                            >
+                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                    &quot;{item.query}&quot;
+                                                </Typography>
+                                                <Chip size="small" label={`${item.count || 0} searches`} />
+                                            </Box>
+                                        ))}
+                                    </Box>
+                                ) : (
+                                    <Typography variant="body2" color="text.secondary">
+                                        No zero-result queries recorded in this window.
+                                    </Typography>
+                                )}
+                            </Box>
+
+                            <Box data-testid="ab-experiment-comparison-section">
+                                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
+                                    A/B Experiment Comparison (control vs ltr_v2)
+                                </Typography>
+                                {Array.isArray(analyticsSummary.experiments) && analyticsSummary.experiments.length > 0 ? (
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                        {analyticsSummary.experiments.map((exp, idx) => (
+                                            <Card
+                                                key={`${exp.experiment_id || 'default'}-${idx}`}
+                                                variant="outlined"
+                                                data-testid="experiment-breakdown-row"
+                                                sx={{ p: 1.25 }}
+                                            >
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                                                    <Chip
+                                                        size="small"
+                                                        color={exp.experiment_id === 'ltr_v2' ? 'primary' : 'default'}
+                                                        label={exp.experiment_id || 'default'}
+                                                        sx={{ fontWeight: 700 }}
+                                                    />
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {`${exp.searches || 0} searches · ${exp.clicks || 0} clicks · ${exp.conversions || 0} conv`}
+                                                    </Typography>
+                                                </Box>
+                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                                                    <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                                                        {`CTR: ${((Number(exp.ctr) || 0) * 100).toFixed(1)}%`}
+                                                    </Typography>
+                                                    <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                                                        {`MRR@10: ${Number(exp.mrr_at_10 || 0).toFixed(3)}`}
+                                                    </Typography>
+                                                    <Typography variant="caption" color="text.secondary">
+                                                        {`Rev: $${((Number(exp.revenue_micros) || 0) / 1000000).toFixed(2)}`}
+                                                    </Typography>
+                                                </Box>
+                                            </Card>
+                                        ))}
+                                    </Box>
+                                ) : (
+                                    <Typography variant="body2" color="text.secondary">
+                                        No experiment cohorts recorded yet. Select an Experiment (control or ltr_v2) and run searches to compare.
+                                    </Typography>
+                                )}
+                            </Box>
+                        </Box>
+                    )}
+                </Box>
+            </Drawer>
         </Container>
     );
 }

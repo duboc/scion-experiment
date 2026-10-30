@@ -135,6 +135,8 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <span class="badge" id="sort-badge" style="display:none;"></span>
       <span class="badge" id="personalized-badge" style="display:none;background:#3b0764;border-color:#a855f7;color:#e9d5ff;"></span>
       <span class="badge" id="sponsored-badge" style="display:none;background:#78350f;border:1px solid #f59e0b;color:#fef3c7;"></span>
+      <span class="badge" id="experiment-badge" style="display:none;background:#1e3a8a;border:1px solid #60a5fa;color:#dbeafe;"></span>
+      <span class="badge" id="query-id-badge" style="display:none;background:#1e293b;border:1px solid #64748b;color:#cbd5e1;"></span>
     </div>
   </header>
   <main>
@@ -215,8 +217,59 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <label class="checkbox-wrap">
         <input type="checkbox" id="parse_intent" checked onchange="currentPage=1;runSearch({ keepFacets: true })" /> Smart query
       </label>
+      <select id="experiment_id" data-testid="experiment-select" title="A/B Experiment Cohort" onchange="currentPage=1;runSearch({ keepFacets: true })">
+        <option value="">Experiment: Default</option>
+        <option value="control">control</option>
+        <option value="ltr_v2">ltr_v2</option>
+        <option value="ltr_boost">ltr_boost</option>
+      </select>
       <button onclick="runSearch()">Search</button>
       <button id="show-all-btn" onclick="showAllCatalog()" title="Show every product across locales">Show All Catalog</button>
+      <button type="button" id="open-analytics-btn" data-testid="open-analytics-drawer-btn" onclick="toggleAnalyticsDrawer()" style="background:#1e293b;color:#38bdf8;border:1px solid #38bdf8;">Search Analytics</button>
+    </div>
+    <div id="analytics-drawer" data-testid="search-analytics-drawer" style="display:none;margin-top:20px;padding:18px;background:var(--card);border:1px solid #38bdf8;border-radius:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:12px;flex-wrap:wrap;">
+        <div>
+          <span style="font-size:11px;color:var(--accent);text-transform:uppercase;font-weight:700;">Search Telemetry &amp; Attribution (ADR-015)</span>
+          <h3 style="margin:4px 0 0 0;font-size:16px;">Search Analytics Summary</h3>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" class="page-btn" onclick="loadAnalyticsSummary()">Refresh</button>
+          <button type="button" class="page-btn" onclick="toggleAnalyticsDrawer(false)">Close &times;</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px;">
+        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+          <div style="font-size:11px;color:var(--muted);">CTR (Click-Through Rate)</div>
+          <div id="analytics-ctr" data-testid="analytics-ctr" style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">0.0%</div>
+          <div id="analytics-searches-sub" style="font-size:11px;color:var(--muted);margin-top:2px;">0 clicks / 0 searches</div>
+        </div>
+        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+          <div style="font-size:11px;color:var(--muted);">MRR@10</div>
+          <div id="analytics-mrr10" data-testid="analytics-mrr10" style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">0.000</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">Mean Reciprocal Rank</div>
+        </div>
+        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+          <div style="font-size:11px;color:var(--muted);">Zero-Result Rate</div>
+          <div id="analytics-zero-rate" data-testid="analytics-zero-result-rate" style="font-size:20px;font-weight:700;color:#f87171;margin-top:4px;">0.0%</div>
+          <div id="analytics-zero-sub" style="font-size:11px;color:var(--muted);margin-top:2px;">0 zero-result queries</div>
+        </div>
+        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+          <div style="font-size:11px;color:var(--muted);">Conversion Rate</div>
+          <div id="analytics-conv-rate" data-testid="analytics-conversion-rate" style="font-size:20px;font-weight:700;color:#22c55e;margin-top:4px;">0.0%</div>
+          <div id="analytics-conv-sub" style="font-size:11px;color:var(--muted);margin-top:2px;">0 conversions</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
+        <div data-testid="top-zero-result-queries-section" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+          <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px;">Top Zero-Result Queries</div>
+          <div id="analytics-zero-queries" style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px;">No zero-result queries recorded.</div>
+        </div>
+        <div data-testid="ab-experiment-comparison-section" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+          <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px;">A/B Experiment Comparison (control vs ltr_v2)</div>
+          <div id="analytics-experiments" style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px;">No experiment cohorts recorded yet.</div>
+        </div>
+      </div>
     </div>
     <div style="display:flex;gap:24px;margin-top:20px;align-items:flex-start;">
       <aside id="facet-sidebar" style="width:230px;flex-shrink:0;background:var(--card);padding:16px;border-radius:12px;border:1px solid #334155;">
@@ -332,7 +385,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const body = { query: q, image_base64: queryImage, image_mime_type: 'image/jpeg', limit: parseInt(p.get('limit') || '20', 10) };
       if (p.get('page')) body.page = parseInt(p.get('page'), 10);
       if (p.get('offset')) body.offset = parseInt(p.get('offset'), 10);
-      ['channel', 'tenant_id', 'locale', 'cep', 'price_table_id', 'sort_by', 'color', 'size', 'session_id', 'category', 'brand'].forEach(function(k) {
+      ['channel', 'tenant_id', 'locale', 'cep', 'price_table_id', 'sort_by', 'experiment_id', 'color', 'size', 'session_id', 'category', 'brand'].forEach(function(k) {
         if (p.get(k)) body[k] = p.get(k);
       });
       ['categories', 'brands', 'colors', 'sizes', 'price_ranges'].forEach(function(k) {
@@ -782,6 +835,8 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       if (sideClear) sideClear.style.display = chips.length ? 'inline-block' : 'none';
       box.style.display = chips.length ? 'flex' : 'none';
     }
+    let lastQueryId = '';
+    let lastExperimentId = '';
     async function runSearch(opts) {
       opts = opts || {};
       const q = document.getElementById('q').value;
@@ -803,6 +858,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       const parseIntent = document.getElementById('parse_intent') ? document.getElementById('parse_intent').checked : true;
       const priceTableId = document.getElementById('price_table_id') ? document.getElementById('price_table_id').value : '';
       const sortBy = document.getElementById('sort_by') ? document.getElementById('sort_by').value : '';
+      const experimentId = document.getElementById('experiment_id') ? document.getElementById('experiment_id').value : '';
       const pageSizeEl = document.getElementById('page_size');
       const pageSize = pageSizeEl ? (parseInt(pageSizeEl.value, 10) || 24) : 24;
       const color = document.getElementById('color') ? document.getElementById('color').value : '';
@@ -825,6 +881,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       }
       if (sortBy) {
         url += '&sort_by=' + encodeURIComponent(sortBy);
+      }
+      if (experimentId) {
+        url += '&experiment_id=' + encodeURIComponent(experimentId);
       }
       const activeColors = getFacetArray('color');
       if (activeColors.length > 0) {
@@ -903,6 +962,8 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         if (banner) banner.style.display = 'none';
         return;
       }
+      lastQueryId = data.query_id || data.impression_id || '';
+      lastExperimentId = data.experiment_id || experimentId || '';
       document.getElementById('backend-badge').textContent = 'Backend: ' + (data.backend_mode || 'spanner');
       if (document.getElementById('retrieval-badge')) {
         document.getElementById('retrieval-badge').textContent = 'Mode: ' + (data.retrieval_mode || 'hybrid') +
@@ -980,6 +1041,22 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           document.getElementById('sponsored-badge').style.display = 'none';
         }
       }
+      if (document.getElementById('experiment-badge')) {
+        if (lastExperimentId) {
+          document.getElementById('experiment-badge').textContent = 'Exp: ' + lastExperimentId;
+          document.getElementById('experiment-badge').style.display = 'inline-block';
+        } else {
+          document.getElementById('experiment-badge').style.display = 'none';
+        }
+      }
+      if (document.getElementById('query-id-badge')) {
+        if (lastQueryId) {
+          document.getElementById('query-id-badge').textContent = 'qid: ' + lastQueryId.substring(0, 8);
+          document.getElementById('query-id-badge').style.display = 'inline-block';
+        } else {
+          document.getElementById('query-id-badge').style.display = 'none';
+        }
+      }
       const facetLat = data.facets_latency_ms !== undefined ? data.facets_latency_ms : (data.facets && data.facets.latency_ms);
       if (facetLat !== undefined && facetLat !== null) {
         document.getElementById('facets-latency').textContent = Number(facetLat).toFixed(1) + 'ms';
@@ -988,7 +1065,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       }
       const pgInfo = renderPagination(data, pageSize);
       document.getElementById('meta').textContent =
-        'Showing ' + pgInfo.start + '-' + pgInfo.end + ' of ' + pgInfo.total + ' results · Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.vector_index_used !== undefined ? ', vector_index_used=' + data.vector_index_used : '') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none' ? ', intent=' + data.parsed_query.intent_source : '') + (data.price_table_id ? ', table=' + data.price_table_id : '') + (data.sort_by ? ', sort=' + data.sort_by : '') + (data.personalized ? ', personalized=true' : '') + (data.sponsored_count ? ', sponsored_count=' + data.sponsored_count : '') + ')';
+        'Showing ' + pgInfo.start + '-' + pgInfo.end + ' of ' + pgInfo.total + ' results · Found ' + data.total_found + ' products in ' + (data.latency_ms || 0).toFixed(2) + ' ms (effective_alpha=' + (data.effective_alpha !== undefined ? data.effective_alpha : alpha) + ', retrieval_mode=' + (data.retrieval_mode || 'n/a') + (data.vector_index_used !== undefined ? ', vector_index_used=' + data.vector_index_used : '') + (data.tenant_id ? ', tenant=' + data.tenant_id : '') + (data.locale ? ', locale=' + data.locale : '') + (facetLat !== undefined && facetLat !== null ? ', facets=' + Number(facetLat).toFixed(1) + 'ms' : '') + (data.ltr ? ', ltr=' + (data.ltr_model || 'active') + ' (' + (data.ltr_latency_us || 0) + 'µs)' : '') + (data.parsed_query && data.parsed_query.intent_source && data.parsed_query.intent_source !== 'none' ? ', intent=' + data.parsed_query.intent_source : '') + (data.price_table_id ? ', table=' + data.price_table_id : '') + (data.sort_by ? ', sort=' + data.sort_by : '') + (lastExperimentId ? ', experiment=' + lastExperimentId : '') + (lastQueryId ? ', query_id=' + lastQueryId : '') + (data.personalized ? ', personalized=true' : '') + (data.sponsored_count ? ', sponsored_count=' + data.sponsored_count : '') + ')';
       
       const expEl = document.getElementById('expanded-terms');
       if (expEl) {
@@ -1136,14 +1213,21 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
               '<button type="button" class="similar-btn" data-testid="open-similar-btn" style="background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Similar / Co-Viewed</button>' +
               (!isStockIn ? '<button type="button" class="substitutes-btn" data-testid="see-substitutes-btn" style="background:#451a03;border:1px solid #f59e0b;color:#fde68a;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">See In-Stock Alternatives</button>' : '') +
             '</div>' +
-            '<button type="button" class="record-click-btn" style="background:#1e293b;border:1px solid #64748b;color:#f8fafc;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">+ Clique</button>' +
+            '<div style="display:flex;gap:6px;align-items:center;">' +
+              '<button type="button" class="add-to-cart-btn" data-testid="add-to-cart-btn" style="background:#064e3b;border:1px solid #10b981;color:#d1fae5;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">+ Cart</button>' +
+              '<button type="button" class="record-click-btn" style="background:#1e293b;border:1px solid #64748b;color:#f8fafc;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">+ Clique</button>' +
+            '</div>' +
           '</div>' +
           '<div class="substitutes-panel" data-testid="substitutes-panel" style="display:none;margin-top:8px;padding:8px;background:#0f172a;border:1px solid #f59e0b;border-radius:6px;"></div>' +
         '</div>';
       }).join('');
+      const baseOffset = typeof data.offset === 'number' && data.offset >= 0 ? data.offset : (currentPage - 1) * pageSize;
       (data.results || []).forEach((p, i) => {
         const card = container.children[i];
         if (!card) return;
+        const rankPos = baseOffset + i + 1;
+        const priceVal = parseFloat((p.priceInfo && p.priceInfo.price) || '0') || 0;
+        card.setAttribute('data-position', String(rankPos));
         if (p.sponsored && p.ad_campaign_id && p.ad_click_id) {
           card.style.cursor = 'pointer';
           card.onclick = function() {
@@ -1306,6 +1390,30 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
             loadInStockSubstitutes(p.id, subPanel, subBtn);
           };
         }
+        const cartBtn = card.querySelector('.add-to-cart-btn');
+        if (cartBtn) {
+          cartBtn.onclick = async function(e) {
+            e.stopPropagation();
+            cartBtn.disabled = true;
+            cartBtn.textContent = 'Added!';
+            recordAnalyticsEvent('add_to_cart', p.id, rankPos, priceVal);
+            try {
+              const curSid = (document.getElementById('session_id') && document.getElementById('session_id').value.trim()) || 'sess-default';
+              const curTenant = (document.getElementById('tenant_id') && document.getElementById('tenant_id').value.trim()) || 'default';
+              await fetch('/api/session/events', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: curSid, product_id: p.id, event_type: 'add_to_cart', tenant_id: curTenant })
+              });
+            } catch (err) {
+              // ignore
+            }
+            setTimeout(function() {
+              cartBtn.disabled = false;
+              cartBtn.textContent = '+ Cart';
+            }, 900);
+          };
+        }
         const recordBtn = card.querySelector('.record-click-btn');
         if (recordBtn) {
           recordBtn.textContent = '+ Clique';
@@ -1314,6 +1422,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
             if (p.sponsored && p.ad_campaign_id && p.ad_click_id) {
               recordAdClick(p.ad_campaign_id, p.ad_click_id);
             }
+            recordAnalyticsEvent('click', p.id, rankPos, priceVal);
             recordBtn.disabled = true;
             recordBtn.textContent = 'Gravando...';
             try {
@@ -1333,6 +1442,112 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           };
         }
       });
+    }
+    function recordAnalyticsEvent(eventType, productId, position, priceVal) {
+      if (!productId) return;
+      const curSid = (document.getElementById('session_id') && document.getElementById('session_id').value.trim()) || 'sess-default';
+      const curTenant = (document.getElementById('tenant_id') && document.getElementById('tenant_id').value.trim()) || 'default';
+      const expSelect = document.getElementById('experiment_id');
+      const expId = lastExperimentId || (expSelect ? expSelect.value : '');
+      const revMicros = (eventType === 'add_to_cart' || eventType === 'purchase') && priceVal > 0 ? Math.round(priceVal * 1000000) : 0;
+      const payload = {
+        event_id: 'evt-' + Date.now() + '-' + Math.random().toString(16).substring(2, 10),
+        query_id: lastQueryId || '',
+        session_id: curSid,
+        event_type: eventType || 'click',
+        product_id: productId,
+        position: typeof position === 'number' && position > 0 ? position : 1,
+        experiment_id: expId,
+        revenue_micros: revMicros,
+        tenant_id: curTenant
+      };
+      fetch('/api/analytics/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: true
+      }).catch(function() {});
+    }
+    function toggleAnalyticsDrawer(forceState) {
+      const drawer = document.getElementById('analytics-drawer');
+      if (!drawer) return;
+      const willOpen = typeof forceState === 'boolean' ? forceState : (drawer.style.display === 'none' || !drawer.style.display);
+      drawer.style.display = willOpen ? 'block' : 'none';
+      if (willOpen) {
+        loadAnalyticsSummary();
+      }
+    }
+    async function loadAnalyticsSummary() {
+      const curTenant = (document.getElementById('tenant_id') && document.getElementById('tenant_id').value.trim()) || 'default';
+      try {
+        const res = await fetch('/api/analytics/summary?tenant_id=' + encodeURIComponent(curTenant) + '&window_hours=168');
+        if (!res.ok) return;
+        const data = await res.json();
+        const ctrEl = document.getElementById('analytics-ctr');
+        if (ctrEl) ctrEl.textContent = (((Number(data.click_through_rate) || 0) * 100).toFixed(1)) + '%';
+        const subEl = document.getElementById('analytics-searches-sub');
+        if (subEl) subEl.textContent = (data.total_clicks || 0) + ' clicks / ' + (data.total_searches || 0) + ' searches';
+        const mrrEl = document.getElementById('analytics-mrr10');
+        if (mrrEl) mrrEl.textContent = Number(data.mrr_at_10 || 0).toFixed(3);
+        const zeroRateEl = document.getElementById('analytics-zero-rate');
+        if (zeroRateEl) zeroRateEl.textContent = (((Number(data.zero_result_rate) || 0) * 100).toFixed(1)) + '%';
+        const zeroSubEl = document.getElementById('analytics-zero-sub');
+        if (zeroSubEl) zeroSubEl.textContent = (data.zero_result_searches || 0) + ' zero-result queries';
+        const convRateEl = document.getElementById('analytics-conv-rate');
+        if (convRateEl) convRateEl.textContent = (((Number(data.conversion_rate) || 0) * 100).toFixed(1)) + '%';
+        const convSubEl = document.getElementById('analytics-conv-sub');
+        if (convSubEl) convSubEl.textContent = (data.total_conversions || 0) + ' conversions';
+
+        const zqEl = document.getElementById('analytics-zero-queries');
+        if (zqEl) {
+          zqEl.textContent = '';
+          const zList = Array.isArray(data.top_zero_result_queries) ? data.top_zero_result_queries : [];
+          if (zList.length === 0) {
+            zqEl.textContent = 'No zero-result queries recorded.';
+          } else {
+            zList.forEach(function(item) {
+              const row = document.createElement('div');
+              row.setAttribute('data-testid', 'zero-result-query-item');
+              row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:4px 6px;background:#1e293b;border-radius:4px;';
+              const qSpan = document.createElement('span');
+              qSpan.style.cssText = 'color:#f8fafc;font-weight:600;';
+              qSpan.textContent = '"' + (item.query || '') + '"';
+              const cSpan = document.createElement('span');
+              cSpan.className = 'facet-count';
+              cSpan.textContent = String(item.count || 0);
+              row.appendChild(qSpan);
+              row.appendChild(cSpan);
+              zqEl.appendChild(row);
+            });
+          }
+        }
+
+        const expEl = document.getElementById('analytics-experiments');
+        if (expEl) {
+          expEl.textContent = '';
+          const expList = Array.isArray(data.experiments) ? data.experiments : [];
+          if (expList.length === 0) {
+            expEl.textContent = 'No experiment cohorts recorded yet.';
+          } else {
+            expList.forEach(function(exp) {
+              const row = document.createElement('div');
+              row.setAttribute('data-testid', 'experiment-breakdown-row');
+              row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#1e293b;border:1px solid #334155;border-radius:6px;flex-wrap:wrap;gap:6px;';
+              const nameSpan = document.createElement('span');
+              nameSpan.className = 'badge';
+              nameSpan.textContent = exp.experiment_id || 'default';
+              const metricsSpan = document.createElement('span');
+              metricsSpan.style.cssText = 'color:#e2e8f0;font-size:11px;';
+              metricsSpan.textContent = 'searches=' + (exp.searches || 0) + ' · clicks=' + (exp.clicks || 0) + ' · CTR=' + (((Number(exp.ctr) || 0) * 100).toFixed(1)) + '% · MRR@10=' + Number(exp.mrr_at_10 || 0).toFixed(3);
+              row.appendChild(nameSpan);
+              row.appendChild(metricsSpan);
+              expEl.appendChild(row);
+            });
+          }
+        }
+      } catch (err) {
+        // ignore summary fetch error
+      }
     }
     function buildSimilarUrl(productId, mode, limit) {
       const tenantId = (document.getElementById('tenant_id') && document.getElementById('tenant_id').value) || 'default';

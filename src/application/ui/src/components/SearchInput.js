@@ -88,6 +88,9 @@ const SearchInput = memo(({
     setColor: controlledSetColor,
     size: controlledSize,
     setSize: controlledSetSize,
+    experimentId: controlledExperimentId,
+    setExperimentId: controlledSetExperimentId,
+    onOpenAnalytics,
 }) => {
     const [inputValue, setInputValue] = useState(controlledQuery || '');
 
@@ -110,6 +113,7 @@ const SearchInput = memo(({
     const [internalPageSize, setInternalPageSize] = useState(24);
     const [internalColor, setInternalColor] = useState('');
     const [internalSize, setInternalSize] = useState('');
+    const [internalExperimentId, setInternalExperimentId] = useState('');
     const [cepError, setCepError] = useState('');
     const [imageDataUrl, setImageDataUrl] = useState(null);
     const [imageError, setImageError] = useState('');
@@ -147,6 +151,8 @@ const SearchInput = memo(({
     const setColor = controlledSetColor || setInternalColor;
     const size = controlledSize !== undefined ? controlledSize : internalSize;
     const setSize = controlledSetSize || setInternalSize;
+    const experimentId = controlledExperimentId !== undefined ? controlledExperimentId : internalExperimentId;
+    const setExperimentId = controlledSetExperimentId || setInternalExperimentId;
 
     // Local slider value for responsive dragging
     const [localAlpha, setLocalAlpha] = useState(alpha);
@@ -221,6 +227,7 @@ const SearchInput = memo(({
             pageSize,
             color,
             size,
+            experimentId,
             image: imageDataUrl,
         });
     };
@@ -262,13 +269,14 @@ const SearchInput = memo(({
             pageSize,
             color,
             size,
+            experimentId,
             image: imageDataUrl,
         });
     };
 
     const searchOptions = (image) => ({
         alpha: localAlpha, channel, onlyInStock, tenantId, locale, cep, maxSla24h,
-        ltr, parseIntent, priceTableId, sortBy, pageSize, color, size, image,
+        ltr, parseIntent, priceTableId, sortBy, pageSize, color, size, experimentId, image,
     });
 
     const handleImagePicked = async (event) => {
@@ -651,9 +659,41 @@ const SearchInput = memo(({
                     }
                     label="Smart query"
                 />
+
+                {/* A/B Experiment Variant Selector (#43, ADR-015) */}
+                <FormControl size="small" sx={{ minWidth: 165 }}>
+                    <InputLabel id="experiment-select-label">Experiment</InputLabel>
+                    <Select
+                        labelId="experiment-select-label"
+                        id="experiment-id-select"
+                        data-testid="experiment-select"
+                        value={experimentId || ''}
+                        label="Experiment"
+                        onChange={(e) => setExperimentId(e.target.value)}
+                    >
+                        <MenuItem value="">None (Default)</MenuItem>
+                        <MenuItem value="control">control (Hybrid RRF)</MenuItem>
+                        <MenuItem value="ltr_v2">ltr_v2 (Two-Stage LTR)</MenuItem>
+                        <MenuItem value="ltr_boost">ltr_boost (LTR + Boost)</MenuItem>
+                    </Select>
+                </FormControl>
+
+                {onOpenAnalytics && (
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        color="info"
+                        data-testid="open-analytics-drawer-btn"
+                        onClick={onOpenAnalytics}
+                        sx={{ textTransform: 'none', fontWeight: 600 }}
+                    >
+                        Search Analytics
+                    </Button>
+                )}
             </Box>
         </Paper>
     );
 });
 
 export default SearchInput;
+

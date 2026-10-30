@@ -200,3 +200,36 @@ func TestStorefrontSimilarAndSubstitutes(t *testing.T) {
 		}
 	}
 }
+
+// #43 (ADR-015): click/cart beacons with query_id/position/experiment_id,
+// Experiment selector, and Search Analytics drawer.
+func TestStorefrontAnalyticsAndAttribution(t *testing.T) {
+	for _, frag := range []string{
+		`id="experiment_id"`,
+		`data-testid="experiment-select"`,
+		`<option value="control">control</option>`,
+		`<option value="ltr_v2">ltr_v2</option>`,
+		`id="open-analytics-btn"`,
+		`id="analytics-drawer"`,
+		`data-testid="search-analytics-drawer"`,
+		`data-testid="analytics-ctr"`,
+		`data-testid="analytics-mrr10"`,
+		`data-testid="top-zero-result-queries-section"`,
+		`data-testid="ab-experiment-comparison-section"`,
+		`data-testid="add-to-cart-btn"`,
+		"function recordAnalyticsEvent(",
+		"function toggleAnalyticsDrawer(",
+		"function loadAnalyticsSummary()",
+		"'/api/analytics/events'",
+		"'/api/analytics/summary?tenant_id='",
+		"'&experiment_id=' + encodeURIComponent(experimentId)",
+		"query_id: lastQueryId || ''",
+		"position: typeof position === 'number' && position > 0 ? position : 1",
+		"experiment_id: expId",
+	} {
+		if !strings.Contains(defaultStorefrontHTML, frag) {
+			t.Errorf("storefront missing %q", frag)
+		}
+	}
+}
+

@@ -196,6 +196,31 @@ function ProductDetails() {
 
     const handlePurchase = async () => {
         if (!productId) return;
+        try {
+            const base = (API_URL || '').replace(/\/+$/, '');
+            const attrRaw = localStorage.getItem('lastSearchAttribution');
+            const attr = attrRaw ? JSON.parse(attrRaw) : {};
+            const priceNum = parseFloat(product?.priceInfo?.price);
+            const revenueMicros = !isNaN(priceNum) && priceNum > 0 ? Math.round(priceNum * 1000000) : 0;
+            fetch(`${base}/api/analytics/events`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    event_id: `evt-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
+                    query_id: attr.query_id || '',
+                    session_id: attr.session_id || 'sess-default',
+                    event_type: 'purchase',
+                    product_id: productId,
+                    position: typeof attr.position === 'number' ? attr.position : 1,
+                    experiment_id: attr.experiment_id || '',
+                    revenue_micros: revenueMicros,
+                    tenant_id: attr.tenant_id || localStorage.getItem('tenantId') || 'default',
+                }),
+                keepalive: true,
+            }).catch(() => {});
+        } catch (e) {
+            // ignore attribution errors
+        }
         const res = await recordSessionEvent(productId, 'purchase');
         if (res) {
             setNotification({
