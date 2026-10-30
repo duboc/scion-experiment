@@ -187,9 +187,12 @@ func (c *Controller) Search(ctx *gin.Context) {
 			}
 		}
 		if v := ctx.Query("limit"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil {
-				req.Limit = &n
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 100"})
+				return
 			}
+			req.Limit = &n
 		}
 		req.Category = ctx.Query("category")
 		req.Brand = ctx.Query("brand")
@@ -228,10 +231,20 @@ func (c *Controller) Search(ctx *gin.Context) {
 			b := v != "false" && v != "0" && v != "no" && v != "off"
 			req.Ads = &b
 		}
-		if v, err := strconv.Atoi(ctx.Query("page")); err == nil && v > 0 {
+		if rawPage := strings.TrimSpace(ctx.Query("page")); rawPage != "" {
+			v, err := strconv.Atoi(rawPage)
+			if err != nil || v < 1 {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "page must be >= 1"})
+				return
+			}
 			req.Page = v
 		}
-		if v, err := strconv.Atoi(ctx.Query("offset")); err == nil && v >= 0 {
+		if rawOffset := strings.TrimSpace(ctx.Query("offset")); rawOffset != "" {
+			v, err := strconv.Atoi(rawOffset)
+			if err != nil || v < 0 || v > 1000 {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "offset must be between 0 and 1000"})
+				return
+			}
 			req.Offset = v
 		}
 	} else {
@@ -248,8 +261,32 @@ func (c *Controller) Search(ctx *gin.Context) {
 	}
 
 	limit := c.config.DefaultLimit
-	if req.Limit != nil && *req.Limit > 0 {
+	if req.Limit != nil {
+		if *req.Limit < 1 || *req.Limit > 100 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 100"})
+			return
+		}
 		limit = *req.Limit
+	}
+	if req.Offset < 0 || req.Offset > 1000 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "offset must be between 0 and 1000"})
+		return
+	}
+	effectiveOffset := 0
+	if req.Offset > 0 {
+		effectiveOffset = req.Offset
+	} else if req.Page > 1 {
+		effectiveOffset = (req.Page - 1) * limit
+	}
+	if effectiveOffset < 0 || effectiveOffset > 1000 {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "offset must be between 0 and 1000"})
+		return
+	}
+	effectivePage := req.Page
+	if req.Offset > 0 {
+		effectivePage = (effectiveOffset / limit) + 1
+	} else if effectivePage < 1 {
+		effectivePage = 1
 	}
 	minScore := c.config.MinScoreValue
 	if req.MinScore != nil {
@@ -376,11 +413,16 @@ func (c *Controller) Search(ctx *gin.Context) {
 	}
 intentDone:
 	// Facets are aggregated over a wider candidate set (top facetCandidates) than
-	// the page returned to the client (Issue #5, ADR-003).
+	// the page returned to the client (Issue #5, ADR-003), and Stage-1 retrieves up
+	// to max(100, effectiveOffset + limit) capped at maxSearchWindow = 500 (ADR-012, #40).
 	const facetCandidates = 100
-	candidateLimit := limit
-	if candidateLimit < facetCandidates {
-		candidateLimit = facetCandidates
+	const maxSearchWindow = 500
+	candidateLimit := facetCandidates
+	if need := effectiveOffset + limit; need > candidateLimit {
+		candidateLimit = need
+	}
+	if candidateLimit > maxSearchWindow {
+		candidateLimit = maxSearchWindow
 	}
 	outcome, err := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), searchQuery, candidateLimit, minScore, alpha, filters)
 	// ADR-008 (Issue #21): zero-results recovery when the lexical leg found nothing.
@@ -426,54 +468,70 @@ intentDone:
 	} else if services.IsBrowseQuery(searchQuery) {
 		alpha, imageWeight = 1, 1 // image-only: vector leg alone
 	}
+	organicTotal := outcome.TotalFound
+	if organicTotal < len(results) {
+		organicTotal = len(results)
+	}
 	ids := make([]string, 0, len(results))
 	for _, r := range results {
 		ids = append(ids, r.ID)
 	}
+	facetIDs := ids
+	if len(facetIDs) > facetCandidates {
+		facetIDs = facetIDs[:facetCandidates]
+	}
 	facetStart := time.Now()
-	facets, ferr := c.spannerSvc.Facets(ctx.Request.Context(), ids, filters.PriceTable, filters.TenantID)
+	facets, ferr := c.spannerSvc.Facets(ctx.Request.Context(), facetIDs, filters.PriceTable, filters.TenantID)
 	facetsMs := float64(time.Since(facetStart).Microseconds()) / 1000.0
 	if ferr != nil {
 		log.Printf("WARN: facets unavailable: %v", ferr)
 		facets, facetsMs = nil, 0
 	}
-	candidates := len(results)
-	// Delivery promises are attached to the whole candidate set when LTR needs the
-	// sla_hours feature; otherwise only to the returned page.
-	if !req.LTR && len(results) > limit {
-		results = results[:limit]
-	}
-	if zip5 != "" && (len(results) > 0 || len(outcome.Sponsored) > 0) {
-		pageIDs := make([]string, 0, len(results)+len(outcome.Sponsored))
-		for _, r := range results {
+	candidates := len(facetIDs)
+
+	attachPromises := func(target []models.SearchResult, includeSponsored bool) {
+		if zip5 == "" || (len(target) == 0 && (!includeSponsored || len(outcome.Sponsored) == 0)) {
+			return
+		}
+		pageIDs := make([]string, 0, len(target)+len(outcome.Sponsored))
+		for _, r := range target {
 			pageIDs = append(pageIDs, r.ID)
 		}
-		for _, r := range outcome.Sponsored {
-			pageIDs = append(pageIDs, r.ID)
+		if includeSponsored {
+			for _, r := range outcome.Sponsored {
+				pageIDs = append(pageIDs, r.ID)
+			}
 		}
 		if promises, err := c.spannerSvc.DeliveryPromises(ctx.Request.Context(), pageIDs, zip5, req.MaxSLAHours); err != nil {
 			log.Printf("WARN: delivery promises unavailable: %v", err)
 		} else {
-			for i := range results {
-				if p, ok := promises[results[i].ID]; ok {
+			for i := range target {
+				if p, ok := promises[target[i].ID]; ok {
 					cp := *p
 					cp.CEP = req.CEP
-					results[i].DeliveryPromise = &cp
+					target[i].DeliveryPromise = &cp
 				}
 			}
-			for i := range outcome.Sponsored {
-				if p, ok := promises[outcome.Sponsored[i].ID]; ok {
-					cp := *p
-					cp.CEP = req.CEP
-					outcome.Sponsored[i].DeliveryPromise = &cp
+			if includeSponsored {
+				for i := range outcome.Sponsored {
+					if p, ok := promises[outcome.Sponsored[i].ID]; ok {
+						cp := *p
+						cp.CEP = req.CEP
+						outcome.Sponsored[i].DeliveryPromise = &cp
+					}
 				}
 			}
 		}
 	}
+	// Delivery promises are attached to the whole candidate set when LTR needs the
+	// sla_hours feature; otherwise only to the returned page after slicing.
+	if req.LTR {
+		attachPromises(results, true)
+	}
 	var ltrRes services.LTRResult
-	priceSorted := req.SortBy == "price_asc" || req.SortBy == "price_desc"
-	if req.LTR && len(results) > 0 && !priceSorted { // an explicit price sort wins over LTR
-		// ADR-006 stage 2: in-memory re-ranking of the stage-1 top-100 candidates.
+	explicitNonRelSort := req.SortBy == "price_asc" || req.SortBy == "price_desc" || req.SortBy == "popularity" || req.SortBy == "rating_desc"
+	if req.LTR && len(results) > 0 && !explicitNonRelSort { // an explicit sort wins over LTR
+		// ADR-006 stage 2: in-memory re-ranking of the stage-1 candidate window.
 		signals, err := c.spannerSvc.CandidateSignals(ctx.Request.Context(), ids)
 		if err != nil {
 			log.Printf("WARN: ltr signals unavailable (re-ranking on relevance features only): %v", err)
@@ -501,16 +559,31 @@ intentDone:
 		}
 		personalized = c.session.Personalize(ctx.Request.Context(), filters.TenantID, events, results, outcome.Pins, outcome.Buries, req.SortBy, ltrRes.ModelVersion != "")
 	}
-	if len(results) > limit {
-		results = results[:limit]
+	// ADR-012 (Issue #40): slice [effectiveOffset : min(len(results), effectiveOffset+limit)]
+	// AFTER Stage-2 LTR and Session Personalization so cross-page ordering is deterministic.
+	if effectiveOffset >= len(results) {
+		results = []models.SearchResult{}
+	} else {
+		end := effectiveOffset + limit
+		if end > len(results) {
+			end = len(results)
+		}
+		results = results[effectiveOffset:end]
 	}
-	organicTotal := len(results)
+	if !req.LTR {
+		attachPromises(results, true)
+	}
+	totalPages := 0
+	if organicTotal > 0 && limit > 0 {
+		totalPages = (organicTotal + limit - 1) / limit
+	}
+	hasNext := effectiveOffset+limit < organicTotal
 	// ADR-011 (Issue #35): Sponsored product injection as the very last step of
 	// Controller.Search, after LTR, session re-rank, and pagination.
 	// Ads are kept out of facets, total_found, LTR features, and the session centroid.
-	// Zero organic results => zero ads; page 1 only; non-browse queries only; ads=false disables.
+	// Zero organic results => zero ads; page 1 (effectiveOffset == 0) only; non-browse queries only; ads=false disables.
 	adsEnabled := req.Ads == nil || *req.Ads
-	isFirstPage := req.Page <= 1 && req.Offset <= 0
+	isFirstPage := effectiveOffset == 0
 	hasQuery := !services.IsBrowseQuery(searchQuery) || imageQuery
 	sponsoredCount := 0
 	if adsEnabled && isFirstPage && hasQuery && len(results) > 0 && len(outcome.Sponsored) > 0 {
@@ -531,6 +604,11 @@ intentDone:
 		EffectiveAlpha:   alpha,
 		Results:          results,
 		TotalFound:       organicTotal,
+		Page:             effectivePage,
+		PageSize:         limit,
+		Offset:           effectiveOffset,
+		TotalPages:       totalPages,
+		HasNext:          hasNext,
 		SponsoredCount:   sponsoredCount,
 		VectorIndexUsed:  outcome.VectorIndexUsed,
 		Candidates:       candidates,

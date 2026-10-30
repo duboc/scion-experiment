@@ -123,6 +123,9 @@ func DefaultSeedProducts() []models.SearchResult {
 
 	out := make([]models.SearchResult, 0, len(items))
 	for _, it := range items {
+		sig := seedSignals(it.id)
+		rating := math.Round((3.5+1.5*math.Min(1.0, math.Max(0.0, sig.PopularityScore*0.6+sig.ConversionRate*4.0)))*100) / 100
+		reviews := sig.Orders*10 + sig.Clicks
 		out = append(out, models.SearchResult{
 			ID:          it.id,
 			Name:        fmt.Sprintf("projects/riojucu-sandbox/locations/global/catalogs/default_catalog/branches/0/products/%s", it.id),
@@ -145,8 +148,10 @@ func DefaultSeedProducts() []models.SearchResult {
 			Images: []models.Image{
 				{Height: "400", Width: "400", URI: fmt.Sprintf("https://picsum.photos/seed/%s/400/400", it.id)},
 			},
-			Score:   map[string]float64{},
-			Signals: seedSignals(it.id),
+			Score:       map[string]float64{},
+			Signals:     sig,
+			AvgRating:   rating,
+			ReviewCount: reviews,
 		})
 	}
 	return out

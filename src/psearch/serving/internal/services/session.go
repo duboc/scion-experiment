@@ -184,7 +184,6 @@ func (s *SessionService) Personalize(ctx context.Context, tenant string, events 
 		results[i].Score["session_boost"] = b
 		results[i].Score["personalized_score"] = base(results[i]) + b
 	}
-	priceSort := sortBy == "price_asc" || sortBy == "price_desc"
 	sort.SliceStable(results, func(i, j int) bool {
 		a, b := results[i], results[j]
 		ua, ub := isUnavailable(a.Availability, a.AvailableQuantity), isUnavailable(b.Availability, b.AvailableQuantity)
@@ -197,8 +196,8 @@ func (s *SessionService) Personalize(ctx context.Context, tenant string, events 
 		if ba, bb := containsID(buries, a.ID), containsID(buries, b.ID); ba != bb {
 			return !ba
 		}
-		if priceSort && a.PriceInfo.NumericPrice != b.PriceInfo.NumericPrice {
-			return (a.PriceInfo.NumericPrice < b.PriceInfo.NumericPrice) == (sortBy == "price_asc")
+		if decided, less := compareExplicitSort(a, b, sortBy); decided {
+			return less
 		}
 		return a.Score["personalized_score"] > b.Score["personalized_score"]
 	})

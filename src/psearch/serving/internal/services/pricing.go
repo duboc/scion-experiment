@@ -34,10 +34,69 @@ func ValidatePricing(priceTable, sortBy string) error {
 		return fmt.Errorf("invalid price_table_id %q (lowercase letters, digits, '-', max 64)", priceTable)
 	}
 	switch sortBy {
-	case "", "relevance", "price_asc", "price_desc":
+	case "", "relevance", "price_asc", "price_desc", "popularity", "rating_desc":
 		return nil
 	}
-	return fmt.Errorf("invalid sort_by %q (relevance | price_asc | price_desc)", sortBy)
+	return fmt.Errorf("invalid sort_by %q (relevance | price_asc | price_desc | popularity | rating_desc)", sortBy)
+}
+
+// popularitySortSQL computes a composite popularity sort key over products alias `alias`
+// (orders primary, popularity_score secondary, clicks tertiary; ADR-012 #40).
+func popularitySortSQL(alias string) string {
+	return `(CAST(IFNULL(` + alias + `.orders, 0) AS FLOAT64) * 1000000.0 + IFNULL(` + alias + `.popularity_score, 0.0) * 1000.0 + CAST(IFNULL(` + alias + `.clicks, 0) AS FLOAT64))`
+}
+
+// ratingSortSQL computes a composite rating sort key over products alias `alias`
+// (avg_rating primary, review_count secondary; ADR-012 #40).
+func ratingSortSQL(alias string) string {
+	return `(COALESCE(SAFE_CAST(JSON_VALUE(` + alias + `.product_data, '$.avg_rating') AS FLOAT64), SAFE_CAST(JSON_VALUE(` + alias + `.product_data, '$.rating') AS FLOAT64), 3.5 + 1.5 * LEAST(GREATEST(IFNULL(` + alias + `.popularity_score, 0.0) * 0.6 + IFNULL(` + alias + `.conversion_rate, 0.0) * 4.0, 0.0), 1.0)) * 1000000.0 + COALESCE(SAFE_CAST(JSON_VALUE(` + alias + `.product_data, '$.review_count') AS FLOAT64), CAST(IFNULL(` + alias + `.orders, 0) * 10 + IFNULL(` + alias + `.clicks, 0) AS FLOAT64)))`
+}
+
+// ProductPopularityScore returns the composite popularity sort key in memory mode (ADR-012, #40).
+func ProductPopularityScore(r models.SearchResult) float64 {
+	if r.Signals == nil {
+		return 0
+	}
+	return float64(r.Signals.Orders)*1000000.0 + r.Signals.PopularityScore*1000.0 + float64(r.Signals.Clicks)
+}
+
+// ProductRating returns (avg_rating, review_count) for a product in memory mode (ADR-012, #40).
+func ProductRating(r models.SearchResult) (float64, int64) {
+	rating := r.AvgRating
+	reviews := r.ReviewCount
+	if rating <= 0 && r.Signals != nil {
+		rating = round2(3.5 + 1.5*clamp(r.Signals.PopularityScore*0.6+r.Signals.ConversionRate*4.0, 0, 1))
+	}
+	if reviews <= 0 && r.Signals != nil {
+		reviews = r.Signals.Orders*10 + r.Signals.Clicks
+	}
+	return rating, reviews
+}
+
+// compareExplicitSort compares two products under an explicit non-relevance sort_by
+// (`price_asc`, `price_desc`, `popularity`, `rating_desc`). Returns (true, aBeforeB)
+// when the sort key differs, or (false, false) on a tie so the caller can tie-break by relevance.
+func compareExplicitSort(a, b models.SearchResult, sortBy string) (bool, bool) {
+	switch sortBy {
+	case "price_asc", "price_desc":
+		if pa, pb := a.PriceInfo.NumericPrice, b.PriceInfo.NumericPrice; pa != pb {
+			return true, (pa < pb) == (sortBy == "price_asc")
+		}
+	case "popularity":
+		if pa, pb := ProductPopularityScore(a), ProductPopularityScore(b); pa != pb {
+			return true, pa > pb
+		}
+	case "rating_desc":
+		ra, ca := ProductRating(a)
+		rb, cb := ProductRating(b)
+		if ra != rb {
+			return true, ra > rb
+		}
+		if ca != cb {
+			return true, ca > cb
+		}
+	}
+	return false, false
 }
 
 // PriceRow mirrors product_prices.

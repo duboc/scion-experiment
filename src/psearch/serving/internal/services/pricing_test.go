@@ -9,12 +9,12 @@ import (
 )
 
 func TestValidatePricing(t *testing.T) {
-	for _, ok := range [][2]string{{"", ""}, {"b2b-corporate", "price_asc"}, {"vip-club", "relevance"}} {
+	for _, ok := range [][2]string{{"", ""}, {"b2b-corporate", "price_asc"}, {"vip-club", "relevance"}, {"", "popularity"}, {"", "rating_desc"}} {
 		if err := ValidatePricing(ok[0], ok[1]); err != nil {
 			t.Errorf("ValidatePricing(%v) = %v", ok, err)
 		}
 	}
-	for _, bad := range [][2]string{{"B2B Corp", ""}, {"x'; DROP", ""}, {"", "cheapest"}} {
+	for _, bad := range [][2]string{{"B2B Corp", ""}, {"x'; DROP", ""}, {"", "cheapest"}, {"", "rating_asc"}} {
 		if err := ValidatePricing(bad[0], bad[1]); err == nil {
 			t.Errorf("ValidatePricing(%v) should fail", bad)
 		}
@@ -80,7 +80,15 @@ func TestMemoryContractPricing(t *testing.T) {
 
 func TestPricingSQL(t *testing.T) {
 	sql := buildHybridSQLWith(vectorColumnV2, false, true)
-	for _, frag := range []string{"FROM product_prices AS pp", "@price_table", "is_exclusive", "effective_price", "IF(@sort_by = 'price_asc', effective_price, NULL) ASC"} {
+	for _, frag := range []string{
+		"FROM product_prices AS pp",
+		"@price_table",
+		"is_exclusive",
+		"effective_price",
+		"IF(@sort_by = 'price_asc', effective_price, NULL) ASC",
+		"IF(@sort_by = 'popularity', popularity_sort, NULL) DESC",
+		"IF(@sort_by = 'rating_desc', rating_sort, NULL) DESC",
+	} {
 		if !strings.Contains(sql, frag) {
 			t.Errorf("SQL missing %q", frag)
 		}
@@ -90,5 +98,54 @@ func TestPricingSQL(t *testing.T) {
 	}
 	if !strings.Contains(facetPriceSQL, "product_prices") {
 		t.Error("price facet must use the effective price")
+	}
+}
+
+func TestMemorySortByPopularityAndRatingDesc(t *testing.T) {
+	ctx := context.Background()
+	svc := &SpannerService{config: testConfig("v1"), seedProducts: DefaultSeedProducts()}
+
+	pop, err := svc.HybridSearchDetailed(ctx, "shoes", 15, 0, 0.5, models.SearchFilters{SortBy: "popularity"})
+	if err != nil || len(pop.Results) == 0 {
+		t.Fatalf("popularity search failed: %v", err)
+	}
+	seenOOS := false
+	prevPop := 1e18
+	for _, r := range pop.Results {
+		oos := isUnavailable(r.Availability, r.AvailableQuantity)
+		if oos {
+			seenOOS = true
+			continue
+		}
+		if seenOOS {
+			t.Fatalf("in-stock item %s appeared after OOS item in popularity sort", r.ID)
+		}
+		score := ProductPopularityScore(r)
+		if score > prevPop {
+			t.Fatalf("popularity order violated at %s: %v > %v", r.ID, score, prevPop)
+		}
+		prevPop = score
+	}
+
+	rat, err := svc.HybridSearchDetailed(ctx, "shoes", 15, 0, 0.5, models.SearchFilters{SortBy: "rating_desc"})
+	if err != nil || len(rat.Results) == 0 {
+		t.Fatalf("rating_desc search failed: %v", err)
+	}
+	seenOOS = false
+	prevRating := 10.0
+	for _, r := range rat.Results {
+		oos := isUnavailable(r.Availability, r.AvailableQuantity)
+		if oos {
+			seenOOS = true
+			continue
+		}
+		if seenOOS {
+			t.Fatalf("in-stock item %s appeared after OOS item in rating_desc sort", r.ID)
+		}
+		rv, _ := ProductRating(r)
+		if rv > prevRating {
+			t.Fatalf("rating_desc order violated at %s: %v > %v", r.ID, rv, prevRating)
+		}
+		prevRating = rv
 	}
 }

@@ -60,6 +60,11 @@ type SearchResponse struct {
 	EffectiveAlpha   float64        `json:"effective_alpha"`
 	Results          []SearchResult `json:"results"`
 	TotalFound       int            `json:"total_found"`
+	Page             int            `json:"page"`        // ADR-012 (#40): 1-based current page
+	PageSize         int            `json:"page_size"`   // ADR-012 (#40): effective page size (limit)
+	Offset           int            `json:"offset"`      // ADR-012 (#40): 0-based item offset
+	TotalPages       int            `json:"total_pages"` // ADR-012 (#40): ceiling(total_found / page_size)
+	HasNext          bool           `json:"has_next"`    // ADR-012 (#40): true when offset + page_size < total_found
 	Facets           *Facets        `json:"facets,omitempty"`
 	LatencyMs        float64        `json:"latency_ms"`
 	BackendMode      string         `json:"backend_mode"`
@@ -118,6 +123,8 @@ type SearchResult struct {
 	AvailableTime     *string            `json:"availableTime,omitempty"`
 	Channels          []string           `json:"channels,omitempty"`
 	Signals           *BoostSignals      `json:"boost_signals,omitempty"`
+	AvgRating         float64            `json:"avg_rating,omitempty"`   // ADR-012 (#40): average customer rating [0, 5]
+	ReviewCount       int64              `json:"review_count,omitempty"` // ADR-012 (#40): customer review count tie-breaker
 	Locale            string             `json:"locale,omitempty"`
 	TenantID          string             `json:"tenant_id,omitempty"`
 	Images            []Image            `json:"images"`

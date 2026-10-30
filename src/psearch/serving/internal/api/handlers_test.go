@@ -277,12 +277,12 @@ func TestEmbeddingVersionEndpoint(t *testing.T) {
 	}
 }
 
-// Issue #5: facets are returned, computed over the candidate set, while results are truncated to limit.
+// Issue #5 / #40: facets are returned, computed over the candidate set, while results are truncated to limit and total_found reflects the pre-slice organic count.
 func TestSearchReturnsFacetsAndTruncates(t *testing.T) {
 	r := newTestRouter()
-	resp := doSearch(t, r, "q=shoes&limit=3")
-	if len(resp.Results) != 3 || resp.TotalFound != 3 {
-		t.Fatalf("results = %d (total_found %d), want 3", len(resp.Results), resp.TotalFound)
+	resp := doSearch(t, r, "q=shoes&limit=3&ads=false")
+	if len(resp.Results) != 3 || resp.TotalFound <= 3 || resp.PageSize != 3 {
+		t.Fatalf("results = %d (total_found %d, page_size %d), want len=3 and total_found>3", len(resp.Results), resp.TotalFound, resp.PageSize)
 	}
 	if resp.Facets == nil || len(resp.Facets.Categories) == 0 || len(resp.Facets.Brands) == 0 || len(resp.Facets.PriceRanges) == 0 || len(resp.Facets.Availability) == 0 {
 		t.Fatalf("expected 4 non-empty facet groups, got %+v", resp.Facets)
@@ -801,6 +801,61 @@ func TestSearchAndInfoExposeVectorIndexUsed(t *testing.T) {
 	r.ServeHTTP(wInfo, httptest.NewRequest(http.MethodGet, "/api/info", nil))
 	if wInfo.Code != http.StatusOK || !strings.Contains(wInfo.Body.String(), `"vector_index_used":`) || !strings.Contains(wInfo.Body.String(), `"products_embedding_v2_idx"`) {
 		t.Fatalf("/api/info missing vector_index_used metadata: %s", wInfo.Body.String())
+	}
+}
+
+// Issue #40 (ADR-012): True pagination (page/offset), pre-slice total_found, and extended sort_by modes.
+func TestSearchPaginationTotalFoundAndExtendedSortModes(t *testing.T) {
+	r := newTestRouter()
+	p1 := doSearch(t, r, "q=shoes&limit=4&page=1&ads=false")
+	p2 := doSearch(t, r, "q=shoes&limit=4&page=2&ads=false")
+	if len(p1.Results) != 4 || len(p2.Results) != 4 {
+		t.Fatalf("expected 4 results on page 1 and page 2, got %d and %d", len(p1.Results), len(p2.Results))
+	}
+	if p1.TotalFound != p2.TotalFound || p1.TotalFound < 8 {
+		t.Fatalf("total_found mismatch or too small: p1=%d p2=%d", p1.TotalFound, p2.TotalFound)
+	}
+	if p1.Page != 1 || p1.Offset != 0 || !p1.HasNext || p2.Page != 2 || p2.Offset != 4 {
+		t.Fatalf("bad pagination metadata: p1=%+v p2=%+v", p1, p2)
+	}
+	// Page 1 and Page 2 organic IDs must be completely disjoint.
+	seen := map[string]bool{}
+	for _, item := range p1.Results {
+		seen[item.ID] = true
+	}
+	for _, item := range p2.Results {
+		if seen[item.ID] {
+			t.Fatalf("duplicate product_id %s across page 1 and page 2", item.ID)
+		}
+	}
+	// Explicit offset=4 must match page=2 with limit=4.
+	off4 := doSearch(t, r, "q=shoes&limit=4&offset=4&ads=false")
+	if ids(off4.Results) != ids(p2.Results) {
+		t.Fatalf("offset=4 (%s) != page=2 (%s)", ids(off4.Results), ids(p2.Results))
+	}
+
+	// Extended sort_by modes: popularity and rating_desc return HTTP 200.
+	for _, sortMode := range []string{"popularity", "rating_desc"} {
+		sr := doSearch(t, r, "q=shoes&limit=10&ads=false&sort_by="+sortMode)
+		if sr.SortBy != sortMode || len(sr.Results) == 0 {
+			t.Fatalf("sort_by=%s failed: sort_by=%q len=%d", sortMode, sr.SortBy, len(sr.Results))
+		}
+	}
+
+	// Invalid pagination bounds or sort_by must return HTTP 400.
+	for _, bad := range []string{
+		"q=shoes&offset=-1",
+		"q=shoes&offset=1001",
+		"q=shoes&page=0",
+		"q=shoes&limit=0",
+		"q=shoes&limit=101",
+		"q=shoes&sort_by=invalid_mode",
+	} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/search?"+bad, nil))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("GET /api/search?%s = %d, want 400", bad, w.Code)
+		}
 	}
 }
 

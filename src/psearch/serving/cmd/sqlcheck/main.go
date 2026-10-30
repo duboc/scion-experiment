@@ -92,6 +92,8 @@ func main() {
 		{"macbook", 0.5, models.SearchFilters{PriceTable: "b2b-gold", MaxPrice: 1200}},                    // #22 prod-007 1147.18
 		{"running shoes", 0.5, models.SearchFilters{Color: "azul", Size: "42"}},                           // #32 variant EXISTS filters + ARRAY aggregation
 		{"laptop", 0.5, models.SearchFilters{Color: "prata"}},                                             // #32
+		{"shoes", 0.5, models.SearchFilters{SortBy: "popularity"}},                                        // #40 popularity sort
+		{"shoes", 0.5, models.SearchFilters{SortBy: "rating_desc"}},                                       // #40 rating_desc sort
 	}
 	failed := false
 	for _, c := range cases {
@@ -168,7 +170,7 @@ func main() {
 		log.Printf("OK   product vectors: %d", len(v))
 	}
 	// Catalog browse (Issue #30): empty / "*" query lists the catalog with filters.
-	for _, f := range []models.SearchFilters{{}, {Locale: "pt-BR"}, {PriceTable: "b2b-gold", SortBy: "price_asc"}, {Color: "preto", Size: "40"}} {
+	for _, f := range []models.SearchFilters{{}, {Locale: "pt-BR"}, {PriceTable: "b2b-gold", SortBy: "price_asc"}, {SortBy: "popularity"}, {SortBy: "rating_desc"}, {Color: "preto", Size: "40"}} {
 		if n, err := svc.CheckSpannerBrowse(ctx, f); err != nil {
 			failed = true
 			log.Printf("FAIL catalog browse %+v: %v", f, err)

@@ -258,6 +258,7 @@ const (
 // SearchOutcome carries results plus the retrieval path that produced them.
 type SearchOutcome struct {
 	Results         []models.SearchResult
+	TotalFound      int                   // ADR-012 (#40): pre-slice organic match count
 	Sponsored       []models.SearchResult // ADR-011 (#35): candidate sponsored matches before slot placement
 	RetrievalMode   string
 	VectorIndexUsed bool     // ADR-012 (#39): true when ScaNN vector index served the vector leg
@@ -291,11 +292,12 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		if s.client != nil {
 			res, err := s.spannerBrowse(ctx, limit, filters)
 			if err == nil {
-				return SearchOutcome{Results: res, RetrievalMode: RetrievalBrowse}, nil
+				return SearchOutcome{Results: res, TotalFound: len(res), RetrievalMode: RetrievalBrowse}, nil
 			}
 			log.Printf("WARN: Spanner catalog browse fallback triggered: %v", err)
 		}
-		return SearchOutcome{Results: s.memoryHybridSearchExpanded("", limit, minScore, alpha, filters, Expansion{}, RuleSet{}), RetrievalMode: RetrievalMemory}, nil
+		res, total := s.memoryHybridSearchExpandedWithTotal("", limit, minScore, alpha, filters, Expansion{}, RuleSet{})
+		return SearchOutcome{Results: res, TotalFound: total, RetrievalMode: RetrievalMemory}, nil
 	}
 	nf := normalizeFilters(filters)
 	expansion := s.synonyms.Expand(ctx, nf.TenantID, nf.Locale, query)
@@ -306,7 +308,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		plan.rules = ruleSet
 		res, sponsored, vecIdxUsed, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
 		if err == nil {
-			return SearchOutcome{Results: res, Sponsored: sponsored, RetrievalMode: RetrievalMultimodal, VectorIndexUsed: vecIdxUsed, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+			return SearchOutcome{Results: res, TotalFound: len(res), Sponsored: sponsored, RetrievalMode: RetrievalMultimodal, VectorIndexUsed: vecIdxUsed, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 		}
 		log.Printf("WARN: Spanner multimodal search fallback triggered: %v", err)
 	}
@@ -328,7 +330,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			// Degraded v2: return Spanner's lexical results as-is (even if empty).
 			// Falling back to the in-memory engine here would mask the outage with
 			// deterministic 768-d vector scores.
-			return SearchOutcome{Results: res, Sponsored: sponsored, RetrievalMode: RetrievalLexicalOnly, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+			return SearchOutcome{Results: res, TotalFound: len(res), Sponsored: sponsored, RetrievalMode: RetrievalLexicalOnly, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 		default:
 			// A successful Spanner query is authoritative even when it returns no rows
 			// (e.g. tenant/category filters exclude everything). Falling back to the
@@ -337,13 +339,13 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			if plan.column == vectorColumnV2 {
 				mode = RetrievalHybridV2
 			}
-			return SearchOutcome{Results: res, Sponsored: sponsored, RetrievalMode: mode, VectorIndexUsed: vecIdxUsed, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+			return SearchOutcome{Results: res, TotalFound: len(res), Sponsored: sponsored, RetrievalMode: mode, VectorIndexUsed: vecIdxUsed, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 		}
 	}
 
-	org := s.memoryHybridSearchExpanded(query, limit, minScore, alpha, filters, expansion, ruleSet)
+	org, total := s.memoryHybridSearchExpandedWithTotal(query, limit, minScore, alpha, filters, expansion, ruleSet)
 	sponsored := s.memorySponsoredMatches(ctx, query, alpha, filters)
-	return SearchOutcome{Results: org, Sponsored: sponsored, RetrievalMode: RetrievalMemory, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+	return SearchOutcome{Results: org, TotalFound: total, Sponsored: sponsored, RetrievalMode: RetrievalMemory, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 }
 
 // vectorPlan describes how the vector leg of the hybrid query is executed.
@@ -586,7 +588,7 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 			SELECT * FROM (
 				SELECT rrf_score, vector_score, text_score, product_id, title, product_data, is_available, stock, boost_score, rule_mult, effective_price, variants,
 					FALSE AS is_sponsored, '' AS campaign_id, 0 AS cpc_micros,
-					pin_rank, buried, 0 AS ad_rank
+					pin_rank, buried, 0 AS ad_rank, popularity_sort, rating_sort
 				FROM (
 					/* ADR-004: final = rrf_score + boost_signal_score + merchandising_rule_delta,
 					   rule_delta = (rule_mult - 1) * rrf_score; pins first, buries last (within availability) */
@@ -598,6 +600,8 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 						IFNULL((SELECT MIN(o) FROM UNNEST(@pin_ids) AS pid WITH OFFSET AS o WHERE pid = a.product_id), 1000) AS pin_rank,
 						IF(a.product_id IN UNNEST(@bury_ids), 1, 0) AS buried,
 						` + effectivePriceSQL("p") + ` AS effective_price,
+						` + popularitySortSQL("p") + ` AS popularity_sort,
+						` + ratingSortSQL("p") + ` AS rating_sort,
 						` + variantsArraySQL("a") + ` AS variants
 					FROM (
 					SELECT
@@ -618,6 +622,7 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 				ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */,
 					pin_rank, buried,
 					IF(@sort_by = 'price_asc', effective_price, NULL) ASC, IF(@sort_by = 'price_desc', effective_price, NULL) DESC,
+					IF(@sort_by = 'popularity', popularity_sort, NULL) DESC, IF(@sort_by = 'rating_desc', rating_sort, NULL) DESC,
 					rrf_score * rule_mult + boost_score DESC /* final_score */,
 					vector_score DESC, text_score DESC, product_id
 				LIMIT @limit
@@ -626,13 +631,14 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 			SELECT relevance AS rrf_score, relevance AS vector_score, relevance AS text_score, product_id, title, product_data, is_available, stock,
 				0.0 AS boost_score, 1.0 AS rule_mult, effective_price, variants,
 				TRUE AS is_sponsored, campaign_id, cpc_micros,
-				1000 AS pin_rank, 0 AS buried, ad_rank
+				1000 AS pin_rank, 0 AS buried, ad_rank, 0.0 AS popularity_sort, 0.0 AS rating_sort
 			FROM sponsored_matches
 		)
 		ORDER BY is_sponsored, ad_rank,
 			IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */,
 			pin_rank, buried,
 			IF(@sort_by = 'price_asc', effective_price, NULL) ASC, IF(@sort_by = 'price_desc', effective_price, NULL) DESC,
+			IF(@sort_by = 'popularity', popularity_sort, NULL) DESC, IF(@sort_by = 'rating_desc', rating_sort, NULL) DESC,
 			rrf_score * rule_mult + boost_score DESC /* final_score */,
 			vector_score DESC, text_score DESC, product_id
 	`
@@ -864,6 +870,11 @@ func (s *SpannerService) memoryHybridSearch(query string, limit int, minScore fl
 }
 
 func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, minScore float64, alpha float64, filters models.SearchFilters, expansion Expansion, rules RuleSet) []models.SearchResult {
+	out, _ := s.memoryHybridSearchExpandedWithTotal(query, limit, minScore, alpha, filters, expansion, rules)
+	return out
+}
+
+func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit int, minScore float64, alpha float64, filters models.SearchFilters, expansion Expansion, rules RuleSet) ([]models.SearchResult, int) {
 	filters = normalizeFilters(filters)
 	qLower := FoldAccents(strings.ToLower(strings.TrimSpace(query)))
 	qTokens := strings.Fields(qLower)
@@ -1009,10 +1020,8 @@ func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, min
 		if bi, bj := containsID(rules.Buries, out[i].ID), containsID(rules.Buries, out[j].ID); bi != bj {
 			return !bi // buried products last (within availability group)
 		}
-		if filters.SortBy == "price_asc" || filters.SortBy == "price_desc" {
-			if pi, pj := out[i].PriceInfo.NumericPrice, out[j].PriceInfo.NumericPrice; pi != pj {
-				return (pi < pj) == (filters.SortBy == "price_asc")
-			}
+		if decided, less := compareExplicitSort(out[i], out[j], filters.SortBy); decided {
+			return less
 		}
 		if out[i].Score["final_score"] != out[j].Score["final_score"] {
 			return out[i].Score["final_score"] > out[j].Score["final_score"]
@@ -1025,10 +1034,11 @@ func (s *SpannerService) memoryHybridSearchExpanded(query string, limit int, min
 		}
 		return out[i].ID < out[j].ID // deterministic tie-break
 	})
+	totalFound := len(out)
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
-	return out
+	return out, totalFound
 }
 
 // normalizeFilters lowercases/trims filter values and applies ADR-002 defaults.
@@ -1101,7 +1111,7 @@ func IsBrowseQuery(q string) bool {
 }
 
 // browseSQL lists catalog products with all catalog filters applied, available
-// products first, then by business-signal boost (or effective price for price sorts).
+// products first, then by business-signal boost (or effective price / popularity / rating sorts).
 func browseSQL() string {
 	boost := regexp.MustCompile(`\bp\.`).ReplaceAllString(boostSignalSQL, "products.")
 	return optimizerHint + `SELECT product_id, title, product_data, is_available, stock,
@@ -1112,6 +1122,8 @@ func browseSQL() string {
 		WHERE ` + catalogFilterSQL + `
 		ORDER BY IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1),
 			IF(@sort_by = 'price_asc', effective_price, NULL) ASC, IF(@sort_by = 'price_desc', effective_price, NULL) DESC,
+			IF(@sort_by = 'popularity', ` + popularitySortSQL("products") + `, NULL) DESC,
+			IF(@sort_by = 'rating_desc', ` + ratingSortSQL("products") + `, NULL) DESC,
 			boost_score DESC, product_id
 		LIMIT @limit`
 }
