@@ -1243,13 +1243,18 @@ func TestSearchAnalyticsEventsSummaryAndRollupAPI(t *testing.T) {
 		t.Fatalf("unexpected analytics summary: %+v", sum)
 	}
 
-	// 5) POST /api/analytics/rollup requires X-Admin-Token and updates product signals.
+	// 5) POST /api/analytics/rollup requires X-Admin-Token, supports dry_run, and updates product signals with prior blending (#47).
 	if wf := doPost("/api/analytics/rollup", "", `{}`); wf.Code != http.StatusForbidden {
 		t.Fatalf("POST /api/analytics/rollup without token = %d, want 403", wf.Code)
 	}
-	wr := doPost("/api/analytics/rollup", "s3cret", `{"window_days":30}`)
+	wDry := doPost("/api/analytics/rollup?dry_run=true", "s3cret", `{"window_days":30,"prior_weight":100}`)
+	var dryRollup models.AnalyticsRollupResponse
+	if wDry.Code != http.StatusOK || json.Unmarshal(wDry.Body.Bytes(), &dryRollup) != nil || !dryRollup.DryRun || len(dryRollup.Diffs) == 0 {
+		t.Fatalf("POST /api/analytics/rollup?dry_run=true = %d %+v (%s)", wDry.Code, dryRollup, wDry.Body.String())
+	}
+	wr := doPost("/api/analytics/rollup", "s3cret", `{"window_days":30,"prior_weight":100}`)
 	var rollup models.AnalyticsRollupResponse
-	if wr.Code != http.StatusOK || json.Unmarshal(wr.Body.Bytes(), &rollup) != nil || rollup.ProductsUpdated == 0 {
+	if wr.Code != http.StatusOK || json.Unmarshal(wr.Body.Bytes(), &rollup) != nil || rollup.DryRun || rollup.ProductsUpdated == 0 {
 		t.Fatalf("POST /api/analytics/rollup = %d %+v (%s)", wr.Code, rollup, wr.Body.String())
 	}
 }

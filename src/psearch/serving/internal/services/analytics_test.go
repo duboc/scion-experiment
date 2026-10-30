@@ -101,14 +101,74 @@ func TestAnalyticsIdempotentEventsSummaryMRRZeroResultAndRollup(t *testing.T) {
 		t.Fatalf("missing or inaccurate ltr_v2 experiment breakdown: %+v", sum.Experiments)
 	}
 
-	// 4) RollupProductSignals updates product engagement signals with Laplace smoothing and zero NaNs.
+	// 4) RollupProductSignals updates product engagement signals with Bayesian prior blending and zero NaNs.
 	rollup, err := analytics.RollupProductSignals(ctx, "default", 30)
-	if err != nil || rollup.ProductsUpdated < 3 {
+	if err != nil || rollup.ProductsUpdated != 3 {
 		t.Fatalf("RollupProductSignals failed: %+v, err=%v", rollup, err)
 	}
 	for pid, sig := range rollup.UpdatedSignals {
 		if math.IsNaN(sig.CTR) || math.IsNaN(sig.ConversionRate) || sig.CTR <= 0 || sig.CTR > 1 {
-			t.Fatalf("invalid Laplace-smoothed signal for %s: %+v", pid, sig)
+			t.Fatalf("invalid blended signal for %s: %+v", pid, sig)
 		}
+	}
+}
+
+// Issue #47: Analytics rollup blends with current prior `(events + k*prior)/(impressions + k)`,
+// leaves products without impressions untouched, bounds low-traffic drift, and supports dry_run.
+func TestAnalyticsRollup_BayesianPriorBlendingDryRunAndZeroImpressionSkip(t *testing.T) {
+	ctx := context.Background()
+	spannerSvc := &SpannerService{config: testConfig("v1"), seedProducts: DefaultSeedProducts()}
+	sessionSvc := NewSessionService(NewMemorySessionStore(), spannerSvc, DefaultSessionBoostW)
+	analytics := NewAnalyticsService(NewMemoryAnalyticsStore(), spannerSvc, sessionSvc)
+
+	origProd001 := *spannerSvc.seedProducts[0].Signals // prod-001 (prior CTR = 0.186)
+	origProd010 := *spannerSvc.seedProducts[9].Signals // prod-010 (will have 0 impressions)
+
+	// Record 3 impressions for prod-001 with 0 clicks (low traffic).
+	for i := 1; i <= 3; i++ {
+		analytics.EnqueueImpression(SearchImpression{
+			ImpressionID: "imp-low-" + string(rune('0'+i)),
+			TenantID:     "default",
+			QueryRaw:     "shoes",
+			TotalFound:   1,
+			ResultIDs:    []string{"prod-001"},
+		})
+	}
+
+	// 1) Dry-run returns proposed diff for prod-001 only (prod-010 untouched) and writes NOTHING to seedProducts.
+	dry, err := analytics.RollupProductSignalsWithOptions(ctx, RollupOptions{
+		TenantID:    "default",
+		WindowDays:  30,
+		PriorWeight: 100,
+		DryRun:      true,
+	})
+	if err != nil || !dry.DryRun || dry.ProductsUpdated != 1 || len(dry.Diffs) != 1 || dry.Diffs[0].ProductID != "prod-001" {
+		t.Fatalf("dry-run rollup unexpected: %+v, err=%v", dry, err)
+	}
+	if spannerSvc.seedProducts[0].Signals.CTR != origProd001.CTR {
+		t.Fatalf("dry-run mutated prod-001 CTR from %v to %v", origProd001.CTR, spannerSvc.seedProducts[0].Signals.CTR)
+	}
+
+	// 2) Live rollup updates prod-001 with bounded drift (< 0.01 from prior 0.186 on 3 unclicked impressions)
+	// and never touches prod-010 (0 impressions).
+	live, err := analytics.RollupProductSignalsWithOptions(ctx, RollupOptions{
+		TenantID:    "default",
+		WindowDays:  30,
+		PriorWeight: 100,
+		DryRun:      false,
+	})
+	if err != nil || live.DryRun || live.ProductsUpdated != 1 {
+		t.Fatalf("live rollup unexpected: %+v, err=%v", live, err)
+	}
+	if _, touched := live.UpdatedSignals["prod-010"]; touched {
+		t.Fatal("prod-010 had 0 impressions and must not be in UpdatedSignals")
+	}
+	if *spannerSvc.seedProducts[9].Signals != origProd010 {
+		t.Fatalf("prod-010 without impressions was modified: got %+v, want %+v", *spannerSvc.seedProducts[9].Signals, origProd010)
+	}
+	newProd001CTR := spannerSvc.seedProducts[0].Signals.CTR
+	drift := math.Abs(newProd001CTR - origProd001.CTR)
+	if drift > 0.01 {
+		t.Fatalf("prod-001 CTR drifted too far on 3 impressions: prior=%v new=%v drift=%v", origProd001.CTR, newProd001CTR, drift)
 	}
 }

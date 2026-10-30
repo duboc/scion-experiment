@@ -63,7 +63,7 @@ STORING (product_id, position, revenue_micros);
    - Idempotent on `(tenant_id, event_id)` (`AlreadyExists` returns `200 OK` with `duplicate: true`).
    - Also forwards `click`/`purchase` to `SessionService` (`ADR-007`) when `session_id` is supplied so callers only need a single event beacon if desired.
 2. **Online Product Signal Rollup (`POST /api/analytics/rollup`, guarded by `c.authorizeAdmin(ctx)`):**
-   - Aggregates recent `search_impressions` (per-product impression exposures from `result_ids`) and `search_conversions` (`click`, `purchase`) over a configurable window (default `30d`), and updates `products.(clicks, orders, ctr, conversion_rate)` with Laplace-smoothed rates `(clicks + 1) / (impressions + 20)` so Stage-1 boosts (`ADR-004`) and Stage-2 `LTRModel` (`ADR-006`) immediately reflect real shopper behavior without cold-start division-by-zero spikes.
+   - Aggregates recent `search_impressions` (per-product impression exposures from `result_ids`) and `search_conversions` (`click`, `purchase`) over a configurable window (default `30d`), and updates `products.(clicks, orders, ctr, conversion_rate)` for products with `impressions > 0` using **Bayesian prior blending** `(events + k * prior) / (impressions + k)` (default `k = 100`, configurable via `prior_weight`/`k`) so low-traffic rollups never flatten existing product priors. Products with zero new impressions are left untouched, and `dry_run=true` returns the proposed per-product diffs without mutating storage (#47).
 3. **Diagnostics & A/B Summary (`GET /api/analytics/summary?tenant_id=default&window_hours=168`):**
    - Returns:
      - `total_searches`, `zero_result_searches`, `zero_result_rate`, `avg_latency_ms`

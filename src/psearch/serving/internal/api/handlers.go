@@ -1159,29 +1159,52 @@ func (c *Controller) AnalyticsSummary(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, sum)
 }
 
-// RollupAnalytics: POST /api/analytics/rollup (Issue #43, ADR-015; admin only).
+// RollupAnalytics: POST /api/analytics/rollup (Issue #43/#47, ADR-015; admin only).
 func (c *Controller) RollupAnalytics(ctx *gin.Context) {
 	if !c.authorizeAdmin(ctx) {
 		return
 	}
-	windowDays := 30
+	opts := services.RollupOptions{
+		TenantID:    tenantParam(ctx),
+		WindowDays:  30,
+		PriorWeight: services.DefaultRollupPriorK,
+		DryRun:      ctx.Query("dry_run") == "true" || ctx.Query("dry_run") == "1",
+	}
 	var body struct {
-		TenantID   string `json:"tenant_id"`
-		WindowDays int    `json:"window_days"`
+		TenantID    string   `json:"tenant_id"`
+		WindowDays  int      `json:"window_days"`
+		PriorWeight *float64 `json:"prior_weight"`
+		K           *float64 `json:"k"`
+		DryRun      *bool    `json:"dry_run"`
 	}
 	_ = ctx.ShouldBindJSON(&body)
 	if body.WindowDays > 0 {
-		windowDays = body.WindowDays
+		opts.WindowDays = body.WindowDays
 	} else if raw := strings.TrimSpace(ctx.Query("window_days")); raw != "" {
 		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
-			windowDays = v
+			opts.WindowDays = v
 		}
 	}
-	tenant := strings.TrimSpace(body.TenantID)
-	if tenant == "" {
-		tenant = tenantParam(ctx)
+	if body.PriorWeight != nil && *body.PriorWeight > 0 {
+		opts.PriorWeight = *body.PriorWeight
+	} else if body.K != nil && *body.K > 0 {
+		opts.PriorWeight = *body.K
+	} else if raw := strings.TrimSpace(ctx.Query("prior_weight")); raw != "" {
+		if v, err := strconv.ParseFloat(raw, 64); err == nil && v > 0 {
+			opts.PriorWeight = v
+		}
+	} else if raw := strings.TrimSpace(ctx.Query("k")); raw != "" {
+		if v, err := strconv.ParseFloat(raw, 64); err == nil && v > 0 {
+			opts.PriorWeight = v
+		}
 	}
-	res, err := c.analytics.RollupProductSignals(ctx.Request.Context(), tenant, windowDays)
+	if body.DryRun != nil {
+		opts.DryRun = *body.DryRun
+	}
+	if t := strings.TrimSpace(body.TenantID); t != "" {
+		opts.TenantID = t
+	}
+	res, err := c.analytics.RollupProductSignalsWithOptions(ctx.Request.Context(), opts)
 	if err != nil {
 		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return

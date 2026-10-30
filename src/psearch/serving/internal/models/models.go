@@ -367,11 +367,30 @@ type AnalyticsSummaryResponse struct {
 	Experiments             []ExperimentSummary `json:"experiments"`
 }
 
-// AnalyticsRollupResponse is returned by POST /api/analytics/rollup (ADR-015, Issue #43).
+// SignalRollupDiff reports the before/after signal values for one product during rollup (Issue #47, ADR-015).
+type SignalRollupDiff struct {
+	ProductID           string  `json:"product_id"`
+	Impressions         int64   `json:"impressions"`
+	AttributedClicks    int64   `json:"attributed_clicks"`
+	AttributedPurchases int64   `json:"attributed_purchases"`
+	PriorClicks         int64   `json:"prior_clicks"`
+	NewClicks           int64   `json:"new_clicks"`
+	PriorOrders         int64   `json:"prior_orders"`
+	NewOrders           int64   `json:"new_orders"`
+	PriorCTR            float64 `json:"prior_ctr"`
+	NewCTR              float64 `json:"new_ctr"`
+	PriorConversionRate float64 `json:"prior_conversion_rate"`
+	NewConversionRate   float64 `json:"new_conversion_rate"`
+}
+
+// AnalyticsRollupResponse is returned by POST /api/analytics/rollup (ADR-015, Issues #43/#47).
 type AnalyticsRollupResponse struct {
 	TenantID        string                  `json:"tenant_id"`
 	WindowDays      int                     `json:"window_days"`
+	PriorWeight     float64                 `json:"prior_weight"`
+	DryRun          bool                    `json:"dry_run"`
 	ProductsUpdated int                     `json:"products_updated"`
 	UpdatedSignals  map[string]BoostSignals `json:"updated_signals,omitempty"`
+	Diffs           []SignalRollupDiff      `json:"diffs,omitempty"`
 }
 
