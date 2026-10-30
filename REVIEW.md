@@ -416,6 +416,20 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
     - **(b) Strong lexical OOS match reachability (`q=urban+sneaker` -> `prod-004`):** `TestOOSProductReachableInUnfilteredHybridSearchAfterVectorFill` verifies that when 140 `IN_STOCK` footwear items fill the vector leg, `prod-004` (`OUT_OF_STOCK`, sole lexical match for `urban sneaker`) enters the 100-item candidate window `W` and ranks after every in-stock item.
     - **(c) #40 pagination invariants & no residual page-1 trim heuristic:** `b28f6b4` removes the rejected page-1 OOS trim heuristic from `handlers.go` (`git diff 90e289a..b28f6b4` has zero changes in `handlers.go`); constant `total_found`, disjoint pages whose union equals `W` unique IDs, and OOS-last ordering across all 5 `sort_by` modes hold. `cmd/sqlcheck` includes the `urban sneaker` case. Issues: none.
 
+## #46 Search Latency Optimization (`3e424dd`, ADR-012)
+- **Date:** 2026-10-30
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), isolated `/tmp/review-46` archive (removed)
+- **Status:** CHANGES-REQUESTED
+- **Checks:**
+    - `go vet ./...` and `go test -race -count=1 ./...` in `src/psearch/serving`: PASS.
+    - **(1) Capped `LIMIT 501` count & concurrent exact count:** `buildCappedLexicalCountSQL` and `buildCappedBrowseCountSQL` use identical predicates (`SEARCH` + `@syn_text` + `catalogFilterSQL` + `injectDynamicAttrClauses`); hybrid search runs `spannerLexicalCount` concurrently only when `cappedErr != nil || cappedCnt >= 501`.
+    - **(2) DEFECT 1 — `countCacheKey` omits `f.Sizes`, `f.Zip5`, and `expansion.SpannerQuery()` (`spanner_service.go:1788-1794`):** `countCacheKey` formats `f.Size` (which `normalizeLowerSlice` sets to `""` whenever 2+ sizes are selected) and omits `f.Sizes`, `f.Zip5` (CEP delivery filter), `expansion.SpannerQuery()` (synonym expansion), and `s.config.TextFolding`. Consequently, `?q=shoes&sizes=40,42` or `?q=shoes&cep=01310-100` collides in `countCache` with unfiltered `?q=shoes` and returns stale unfiltered counts/windows! Fix: include `f.Sizes`, `f.Zip5`, `expansion.SpannerQuery()`, and `s.config.TextFolding` in `countCacheKey`, and add a unit test verifying distinct cache keys across all filter dimensions (`sizes`, `zip5`, `attrs`, `price_ranges`, `tenant_id`, synonyms).
+    - **(3) Conditional `annLimit` (`spanner_service.go:1037-1047`):** PASS (`hasNonStoringFilter` checks `Channel`, `PriceTable`, `MaxPrice`, `PriceRanges`, `Color`/`Colors`, `Size`/`Sizes`, `Zip5`, `Attrs`, `len(Categories) > 1`, `len(Brands) > 1`).
+    - **(4) `IF(@price_table = '', ...)` & `IF(@sort_by = ..., ...)` SQL short-circuits:** PASS (semantically identical).
+    - **(5) DEFECT 2 — Sponsored items miss attribute enrichment when `W >= 100` (`handlers.go:638` & `spanner_service.go:1104-1113`):** `spannerHybridSearchWithAds` only enriches `results` when `len(results) <= 48` (never true on Spanner since `W >= 100`, and never enriches `sponsored`), and `Controller.Search` calls `c.spannerSvc.EnrichResultsWithAttributes(ctx.Request.Context(), results)` at `handlers.go:638` *before* `services.InjectSponsored` at `handlers.go:658`. Any sponsored item injected from `outcome.Sponsored` that was not already in the page-1 organic slice never receives `DynamicAttributes`! Fix: call `c.spannerSvc.EnrichResultsWithAttributes(ctx.Request.Context(), results)` *after* `services.InjectSponsored` (or enrich `outcome.Sponsored` as well).
+    - **(6) Minor consistency in `browse` & `multimodal` (`spanner_service.go:393, 457`):** Gate the concurrent exact `spannerBrowseCount` / `spannerLexicalCount` on `cappedErr != nil || cappedCnt >= 501` in `browse` and `multimodal` just like the hybrid path does.
+
+
 
 
 
