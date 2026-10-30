@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00034-wnr`** (100% traffic, follows latest): #40 hotfix + #41 (+ #42 UI), deployed from a clean `git archive` of `952cf20`. ScaNN ANN active. ⚠️ #40 `total_found` is still window-driven when the lexical count is below 100 (see the 00034 entry). Rollback target: `psearch-serving-00033-4n8`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00035-x4l`** (100% traffic, follows latest): #42 + #44 + #40 fix-2, deployed from a clean `git archive` of `6b0aee9`; attribute seed from `d1e3f9b` (025b). ScaNN ANN active. Rollback target: `psearch-serving-00034-wnr`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -63,6 +63,7 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `021_user_session_events.sql` | DDL | #20 | `user_session_events` |
 | `023_ad_campaigns.sql` / `023b_seed_ad_campaigns.dml.sql` | DDL / DML | #35 | `ad_campaigns` + `ad_campaigns_by_tenant_product` (STORING) + `ad_clicks` (interleaved in `ad_campaigns`, ON DELETE CASCADE), applied as 3 separate statements; 5 seed campaigns (tenant `default`) |
 | `024_products_vector_index.sql` | DDL | #39 | `CREATE VECTOR INDEX products_embedding_v2_idx ON products(embedding_v2) STORING (is_visible, is_available, stock, tenant_id, locale, category, brand, price) WHERE embedding_v2 IS NOT NULL`, COSINE, `tree_depth=2`, `num_leaves=100`. Online LRO `_auto_op_8e2272d28739ab64` took about 2.5 min. **Rebuilt** 2026-10-30 after the full backfill (DROP + same DDL, LRO `_auto_op_812837e126700655`, 3 min) |
+| `025_product_attributes.sql` / `025b_seed_product_attributes.dml.sql` | DDL / DML | #42 | `products.attributes JSON`; `product_attributes` (interleaved in `products`, ON DELETE CASCADE, generated `attr_value_lower`) + `product_attributes_by_tenant_name_val`, applied as 3 statements. Seed from **`d1e3f9b`** (the `6b0aee9` version used `ROW_NUMBER()`, which Spanner rejects): 307 rows, 100 products (15 `prod-*` + 85 sunscreens with fps/skin_type/form) |
 
 ## 4. Release procedure
 
@@ -111,7 +112,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00031-n6v`** | `350f63b` | #39 | ScaNN ANN code path (ADR-012) + chunked concurrent backfill CLI. Index built, but the ANN query is rejected, so every request uses the exact fallback (`vector_index_used=false`) |
 | **`00032-46c`** | `2b3d49b` | #40 (+ #41 UI) | pagination (`page`/`offset`/`limit`, `has_next`, `total_pages`), `popularity`/`rating_desc` sorts, pager UI. ⚠️ `total_found` equals the candidate window, so it is wrong past page 8 (see #40 entry) |
 | **`00033-4n8`** | `f32ecf3` | #39 fix | ANN CTE limited to STORING-column predicates with over-fetch; `vector_index_used` reflects real query execution; single-content embedding calls. **ANN live** |
-| **`00034-wnr`** | `952cf20` | #40 fix, #41 (+ #42 UI) | true lexical/browse COUNT for `total_found`, reachable window ≤ 500; disjunctive multi-select facets (ADR-013). ✅ #41. ⚠️ #40 only partly fixed. **current** |
+| **`00034-wnr`** | `952cf20` | #40 fix, #41 (+ #42 UI) | true lexical/browse COUNT for `total_found`, reachable window ≤ 500; disjunctive multi-select facets (ADR-013). ✅ #41. ⚠️ #40 only partly fixed |
+| **`00035-x4l`** | `6b0aee9` | #42, #44, #40 fix-2 | schema-free product attributes + auto-discovered facets + admin upsert (ADR-014); similar / substitutes / co-viewed (ADR-016); fixed per-query window W. ✅ #42, #44. ⚠️ #40: pages overlap when W > 100. **current** |
 
 ---
 
@@ -750,3 +752,66 @@ Other notes: page 1 shows "Showing 1-21" because the 3 sponsored products occupy
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00033-4n8=100` (no schema changes).
 
 **Status:** #41 **closed**; #40 **open** (comment posted).
+
+## #42 Product attributes + #44 Similar products + #40 fix-2: DEPLOYED 2026-10-30
+
+Source: clean `git archive` of **`6b0aee9`** in `/tmp/deploy-6b0` (#42 `c030dfd`, #44 `a540033` + UI `6800cf9`, #40 fix-2 `1923d3b`). Backend's uncommitted #43 work in the shared tree was not deployed. **Env unchanged.**
+
+| Step | Result |
+|---|---|
+| DDL `025_product_attributes.sql` (3 statements: `ALTER products ADD attributes JSON` → `CREATE TABLE product_attributes … INTERLEAVE IN PARENT products ON DELETE CASCADE` → `CREATE INDEX product_attributes_by_tenant_name_val`) | ✅ each `done`; checked with `ddl describe` |
+| DML `025b` from `6b0aee9` (read-only dry run of its SELECT) | ❌ `UNIMPLEMENTED: Unsupported built-in function: ROW_NUMBER`. **Not applied.** It also gave sunscreen attributes to the shoes prod-002/prod-003. Reported to lead → fixed in `d1e3f9b` |
+| DML `025b` from **`d1e3f9b`** (`MOD(ABS(FARM_FINGERPRINT(product_id)),3)`) | ✅ dry run: 307 rows, 0 shoe/sunscreen rows → applied: **307 rows modified**. fps/skin_type/form 85 each; prod-002/003 have only surface/cushioning/drop |
+| `cmd/sqlcheck` (archive, prod env) | ✅ **57 OK / 0 FAIL** (new: `similar/substitutes rows=3`) |
+| Deploy → **`psearch-serving-00035-x4l`** | ✅ 100%, follows latest |
+
+### #42 Product attributes: all checks pass ✅
+
+| Check | Result |
+|---|---|
+| `q=notebook` `facets.attributes` | ✅ `ram` (16GB 2, 32GB 2), `storage` (1TB 2, 512GB 2), `processor`, `screen_size`, `connectivity`… Results carry `dynamic_attributes` (prod-007 Apple M3/16GB/512GB/15") |
+| `q=protetor` | ✅ `fps` (FPS 50: 25, FPS 30: 19, FPS 70: 13), `skin_type` (Pele Oleosa / Pele Mista / Todos os Tipos), `form` (Gel-Creme / Loção / Fluido) |
+| `q=tenis` | ✅ **no fps facet**; `surface` (Road 2, Track 1, Trail 1), `cushioning`, `drop`. prod-003 attributes = Responsive / 9mm / Trail |
+| `q=notebook&attr.ram=16GB,32GB` | ✅ 4 results (prod-007 16GB, prod-005 32GB, prod-006 32GB, prod-010 16GB) |
+| `q=notebook&attr.ram=16GB` | ✅ 2 results (prod-007, prod-010); RAM facet still shows **32GB (2)** with 16GB `selected: true`; other facets narrow |
+| `attr.bad!key=1` | ✅ 400 `invalid attribute key "bad!key" (must match ^[a-zA-Z0-9_-]{1,64}$)` |
+| `PUT /api/products/prod-005/attributes` without a token / wrong `X-Admin-Token` / wrong Bearer | ✅ 403 `forbidden` ×3; Spanner row unchanged (ram = 32GB) |
+
+### #44 Similar products: all checks pass ✅
+
+| Check | Result |
+|---|---|
+| `GET /api/products/prod-004/similar?mode=substitutes&limit=4` (prod-004 OOS sneaker) | ✅ 200: prod-003, prod-002, prod-001, all **Footwear**, all **IN_STOCK**, seed excluded |
+| `prod-012/similar?mode=substitutes` (OOS refrigerator) | ✅ prod-011, prod-013 (Appliances, IN_STOCK) |
+| `mode=co_viewed` for prod-005 before → after posting session events (`click` prod-005, then `click` prod-013, session `sess-deploy44-1793385256`) | ✅ before: prod-013 absent, no `co_view_count`. After: **prod-013 ranked first with `co_view_count=1`**, similarity 0.86. (The reverse, prod-013 → prod-005, is not boosted; co-visitation is directional) |
+| Unknown id `nope-999` | ✅ 404 `product not found` |
+| `mode=bogus` | ✅ 400 `invalid mode "bogus" (want similar \| substitutes \| co_viewed)` |
+
+Note: the smoke test left 2 click events in session `sess-deploy44-1793385256`. This is intentional evidence and was not reverted.
+
+### Storefront (jsdom against the live API), 0 JS errors ✅
+
+| Flow | Result |
+|---|---|
+| `notebook` | RAM facet with 16GB/32GB checkboxes; **7 spec badges** (`Processor: Intel Core i9 · Ram: 32GB · Screen Size: 16"` …). Ticking 16GB sends `attr.ram=16GB` → "Showing 1-1 of 2 results" (prod-007 occupies the sponsored slot); 32GB sibling still offered |
+| `protetor` / `tenis` | FPS 50 + Pele Oleosa facets / Road surface facet, **no FPS** on tenis |
+| `urban sneaker` (locale `en-US`) | OOS card shows **See In-Stock Alternatives** → calls `prod-004/similar?mode=substitutes&limit=4&only_in_stock=true` → panel lists Air Zoom Pegasus and UltraBoost Pro (IN_STOCK, Footwear); button changes to "Hide In-Stock Alternatives" |
+| Product details | Similar Products + Frequently Viewed Together carousels load (`mode=similar` / `mode=co_viewed`) |
+
+### #40 fix-2: totals fixed ✅, pages overlap when W > 100 ❌, #40 stays open
+
+| Query (`limit=12`) | Result |
+|---|---|
+| `protetor` (W=100) | ✅ `total_found=100` on pages 1/2/8/9/10/20/21/22 and offsets 492/504/1000; page 9 = 4 results, `has_next=false`; pages ≥ 10 empty with the same total; `total_pages=9`. **100 organic IDs across 9 pages, 100 unique** |
+| `running shoes` (W=100) | ✅ same pattern (total 100, page 9 = 4, then empty) |
+| `po` (W=249) | ✅ `total_found=249` on every page/offset; page 21 = 9 results, `has_next=false`; page 22+ empty. ❌ **249 organic IDs across 21 pages, only 235 unique**: 14 results appear twice (for example `med-6860` at positions 118 and 120, `med-19154` at 129 and 132) and 14 never appear |
+
+**Cause:** `handlers.go` still sets the retrieval `candidateLimit = max(100, offset+limit)`; only the response is truncated to W. Both search legs (`fts`/`ann` CTEs) are cut at that `LIMIT` before RRF, so once offset+limit > 100 the ranking depends on the page. For `po`: `offset=108,limit=12` ≠ `offset=108,limit=24`[:12], and both differ from a single-window slice. Identical requests are deterministic. **Fix:** retrieve with `candidateLimit = W` on every page (compute the lexical count first, or retrieve `maxSearchWindow` and truncate).
+
+### Separate finding (existed before this deploy): OOS products cannot be reached in unfiltered searches
+
+There are 6579 visible OOS products, yet `shoes`, `geladeira` and `urban sneaker` (`limit=100`, `only_in_stock` unset) return **no** OOS items. prod-004 is the **only lexical match** for "urban sneaker" and is still missing. It appears only when the candidate pool is small (for example `locale=en-US` → position 8). Running the `952cf20` and `6b0aee9` builds locally against prod gives the same result, so neither the 00034 nor the 00035 code caused it. Likely cause: unavailable-last ordering is applied before the candidate `LIMIT`. Since the full `embedding_v2` backfill (#39), the ANN leg alone supplies ≥ 100 in-stock candidates, so OOS rows are always cut. On 00032 (2.5k embeddings), OOS items still appeared at positions 98–99. Consequence: the #44 "See In-Stock Alternatives" button rarely appears in normal browsing.
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00034-wnr=100`. 025/025b are additive; 00034 ignores them.
+
+**Status:** #42 **closed**, #44 **closed**, #40 **open**.
