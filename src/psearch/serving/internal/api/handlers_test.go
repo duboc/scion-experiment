@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"psearch/serving-go/internal/config"
 	"psearch/serving-go/internal/models"
+	"psearch/serving-go/internal/services"
 )
 
 func newTestRouter() *gin.Engine {
@@ -898,6 +900,74 @@ func TestDisjunctiveMultiSelectFacetsAPI(t *testing.T) {
 	r.ServeHTTP(wBad, httptest.NewRequest(http.MethodGet, "/api/search?q=shoes&price_ranges=invalid-bucket", nil))
 	if wBad.Code != http.StatusBadRequest {
 		t.Fatalf("invalid price_ranges status = %d, want 400", wBad.Code)
+	}
+}
+
+// Issue #40 fix (ADR-012): total_found comes from lexical/browse COUNT(*) (exceeding
+// candidate window 500 when lexical matches > 500), stays constant across pages 1..N,
+// reachable window is min(total_found, 500), and offset >= 500 returns 200 empty results with has_next=false.
+func TestPaginationLargeCatalogTotalFoundAndReachableWindow(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Port:                   8080,
+		Environment:            "test",
+		ProjectID:              "psearch-sandbox",
+		DefaultAlpha:           0.5,
+		DefaultLimit:           12,
+		UseMemoryStore:         true,
+		ActiveEmbeddingVersion: "v1",
+	}
+	ctrl, err := NewController(cfg)
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	// Populate 650 matching products in memory mode to exercise lexical_count > MAX_SEARCH_WINDOW (500).
+	large := make([]models.SearchResult, 650)
+	qty := 10
+	for i := range large {
+		large[i] = models.SearchResult{
+			ID:                "item-" + strconv.Itoa(i+1),
+			Title:             "Protetor Solar Facial FPS 50 Item " + strconv.Itoa(i+1),
+			Description:       "Dermocosmético protetor solar diário",
+			Brands:            []string{"LaRoche"},
+			Categories:        []string{"Dermocosmetics"},
+			PriceInfo:         models.PriceInfo{CurrencyCode: "BRL", Price: "89.90", NumericPrice: 89.90},
+			Availability:      "IN_STOCK",
+			AvailableQuantity: &qty,
+			TenantID:          "default",
+		}
+	}
+	ctrl.spannerSvc = services.NewMemorySpannerServiceForTest(cfg, large)
+
+	r := gin.New()
+	r.GET("/api/search", ctrl.Search)
+
+	// 1) Page 1, Page 9, and Page 40 all report constant total_found=650 (>500 window) and total_pages=ceil(500/12)=42.
+	for _, page := range []int{1, 9, 40} {
+		resp := doSearch(t, r, "q=protetor&limit=12&ads=false&page="+strconv.Itoa(page))
+		if resp.TotalFound != 650 {
+			t.Fatalf("page=%d: total_found=%d, want 650", page, resp.TotalFound)
+		}
+		if resp.TotalPages != 42 {
+			t.Fatalf("page=%d: total_pages=%d, want 42 (ceil(500/12))", page, resp.TotalPages)
+		}
+		if len(resp.Results) != 12 || !resp.HasNext {
+			t.Fatalf("page=%d: len(results)=%d has_next=%v, want 12 and true", page, len(resp.Results), resp.HasNext)
+		}
+	}
+
+	// 2) Last reachable page (page=42, offset=492): returns 8 items (492..500) and has_next=false at the 500 boundary.
+	p42 := doSearch(t, r, "q=protetor&limit=12&ads=false&page=42")
+	if p42.TotalFound != 650 || p42.Offset != 492 || len(p42.Results) != 8 || p42.HasNext {
+		t.Fatalf("page=42 boundary: total_found=%d offset=%d len=%d has_next=%v, want 650/492/8/false",
+			p42.TotalFound, p42.Offset, len(p42.Results), p42.HasNext)
+	}
+
+	// 3) Offset >= reachable window (e.g. offset=504 <= 1000) returns HTTP 200, empty results, has_next=false, and true total_found=650.
+	off504 := doSearch(t, r, "q=protetor&limit=12&ads=false&offset=504")
+	if off504.TotalFound != 650 || len(off504.Results) != 0 || off504.HasNext {
+		t.Fatalf("offset=504: total_found=%d len=%d has_next=%v, want 650/0/false",
+			off504.TotalFound, len(off504.Results), off504.HasNext)
 	}
 }
 

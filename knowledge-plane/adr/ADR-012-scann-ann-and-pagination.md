@@ -51,13 +51,14 @@ With the `psearch` catalog scaled from 15 seed items to **20,535+ products** on 
 
 ### 3. True Pagination, Pre-Slice `total_found` & Extended `sort_by` (Issue #40)
 1. **Candidate Window & True Total Count:**
-   - Stage-1 hybrid retrieval returns up to `candidate_window` organic items (default `max(100, offset + limit)` capped at `MAX_SEARCH_WINDOW = 500`, plus a lightweight count or exact count of matched candidates). Specifically:
-     - `total_found` MUST report the **total matching organic count** (via a fast count over catalog-filtered lexical/hybrid matches or full candidate count, never `len(page_results)`).
-     - Compute `effective_offset`: if `req.Offset > 0`, use `req.Offset`; else if `req.Page > 1`, use `(req.Page - 1) * limit`; else `0`. Reject negative `offset` or `offset > 1000` with `HTTP 400`.
+   - Stage-1 hybrid retrieval returns up to `candidate_window` organic items (default `max(100, offset + limit)` capped at `MAX_SEARCH_WINDOW = 500`) while concurrently running a fast `COUNT(*)` query (`errgroup`) over the catalog-filtered lexical match set (same `SEARCH` + synonym predicates + `catalogFilterSQL`, or `SELECT COUNT(*) FROM products WHERE catalogFilterSQL` for browse queries):
+     - Define `total_found = max(lexical_count, len(candidate_window))` so broad lexical/browse queries report the true catalog match count (even when `> 500`), while pure-vector or semantic-heavy queries never report less than `len(candidate_window)`. Memory mode mirrors the identical rule.
+     - Define the reachable pagination window as `reachable = min(total_found, MAX_SEARCH_WINDOW = 500)`.
+     - Compute `effective_offset`: if `req.Offset > 0`, use `req.Offset`; else if `req.Page > 1`, use `(req.Page - 1) * limit`; else `0`. Reject negative `offset` or `offset > 1000` with `HTTP 400`. When `effective_offset >= reachable` (e.g. `500..1000`), return `HTTP 200` with `results: []`, `has_next: false`, and the true `total_found`.
      - Run Stage-2 LTR (`ADR-006`) and Session Personalization (`ADR-007`) over the candidate window **before** slicing `[effective_offset : min(len(results), effective_offset+limit)]` so cross-page ordering is deterministic and consistent.
      - Keep `ADR-011` invariant: sponsored products are injected **only** when `effective_offset == 0` (`page == 1`), and `total_found` excludes sponsored items.
 2. **Pagination Metadata on `SearchResponse`:**
-   - Add `page` (`int`, 1-based), `page_size` (`int`, effective `limit`), `offset` (`int`), `total_pages` (`int`), and `has_next` (`bool`) alongside `total_found`.
+   - Add `page` (`int`, 1-based), `page_size` (`int`, effective `limit`), `offset` (`int`), `total_pages` (`int`, `ceil(min(total_found, 500) / limit)`), and `has_next` (`bool`, `offset + limit < min(total_found, 500)`) alongside `total_found`.
 3. **Industry-Standard `sort_by` Modes:**
    - Extend `ValidatePricing` / sort validation (`pricing.go` + `spanner_service.go` + memory mode) to accept:
      - `relevance` (default RRF + boosts + optional LTR/session)

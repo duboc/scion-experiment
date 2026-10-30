@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"
 	"psearch/serving-go/internal/config"
 	"psearch/serving-go/internal/models"
@@ -34,9 +35,10 @@ type SpannerService struct {
 	variants          map[string][]models.Variant // memory-mode SKU variants (Issue #32)
 	varOnce           sync.Once
 	priceOnce         sync.Once
-	annCooldownUntil  atomic.Int64 // ADR-012 (#39): UnixNano timestamp until which ScaNN ANN is cooled down after index error
-	lastANNSucceeded  atomic.Bool  // ADR-012 (#39): true when the most recent ScaNN ANN query succeeded
-	hybridQueryRunner func(ctx context.Context, sql string, params map[string]interface{}, minScore, alpha float64, plan vectorPlan, f models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error)
+	annCooldownUntil   atomic.Int64 // ADR-012 (#39): UnixNano timestamp until which ScaNN ANN is cooled down after index error
+	lastANNSucceeded   atomic.Bool  // ADR-012 (#39): true when the most recent ScaNN ANN query succeeded
+	hybridQueryRunner  func(ctx context.Context, sql string, params map[string]interface{}, minScore, alpha float64, plan vectorPlan, f models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error)
+	lexicalCountRunner func(ctx context.Context, sql string, params map[string]interface{}) (int, error)
 }
 
 const annCooldownDuration = 60 * time.Second
@@ -163,6 +165,16 @@ func (s *SpannerService) SetQueryEmbedder(e QueryEmbedder) { s.embeddings = e }
 
 // Client exposes the Spanner client (nil in memory mode).
 func (s *SpannerService) Client() *spanner.Client { return s.client }
+
+// NewMemorySpannerServiceForTest constructs an in-memory SpannerService with a custom
+// seed catalog for unit testing large-catalog pagination and count semantics (ADR-012, #40).
+func NewMemorySpannerServiceForTest(cfg *config.Config, products []models.SearchResult) *SpannerService {
+	return &SpannerService{
+		config:       cfg,
+		seedProducts: products,
+		backendMode:  "memory",
+	}
+}
 
 func (s *SpannerService) BackendMode() string {
 	return s.backendMode
@@ -295,12 +307,33 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 	// Catalog browse (#30): an empty or "*" query lists the catalog (filters still
 	// apply) instead of running hybrid retrieval.
 	if IsBrowseQuery(query) && len(filters.ImageVector) == 0 {
-		if s.client != nil {
-			res, err := s.spannerBrowse(ctx, limit, filters)
-			if err == nil {
-				return SearchOutcome{Results: res, TotalFound: len(res), RetrievalMode: RetrievalBrowse}, nil
+		if s.client != nil || s.lexicalCountRunner != nil {
+			var res []models.SearchResult
+			var browseErr error
+			var totalCnt int
+			g, gctx := errgroup.WithContext(ctx)
+			if s.client != nil {
+				g.Go(func() error {
+					res, browseErr = s.spannerBrowse(gctx, limit, filters)
+					return nil
+				})
 			}
-			log.Printf("WARN: Spanner catalog browse fallback triggered: %v", err)
+			g.Go(func() error {
+				if cnt, cerr := s.spannerBrowseCount(gctx, filters); cerr == nil {
+					totalCnt = cnt
+				}
+				return nil
+			})
+			_ = g.Wait()
+			if s.client != nil && browseErr == nil {
+				if totalCnt < len(res) {
+					totalCnt = len(res)
+				}
+				return SearchOutcome{Results: res, TotalFound: totalCnt, RetrievalMode: RetrievalBrowse}, nil
+			}
+			if browseErr != nil {
+				log.Printf("WARN: Spanner catalog browse fallback triggered: %v", browseErr)
+			}
 		}
 		res, total := s.memoryHybridSearchExpandedWithTotal("", limit, minScore, alpha, filters, Expansion{}, RuleSet{})
 		return SearchOutcome{Results: res, TotalFound: total, RetrievalMode: RetrievalMemory}, nil
@@ -312,11 +345,32 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		plan := s.planImageQuery(ctx, query, filters)
 		plan.expansion = expansion
 		plan.rules = ruleSet
-		res, sponsored, vecIdxUsed, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
-		if err == nil {
-			return SearchOutcome{Results: res, TotalFound: len(res), Sponsored: sponsored, RetrievalMode: RetrievalMultimodal, VectorIndexUsed: vecIdxUsed, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+		var res, sponsored []models.SearchResult
+		var vecIdxUsed bool
+		var searchErr error
+		var lexCnt int
+		g, gctx := errgroup.WithContext(ctx)
+		g.Go(func() error {
+			res, sponsored, vecIdxUsed, searchErr = s.spannerHybridSearchWithAds(gctx, query, limit, minScore, alpha, plan, filters)
+			return nil
+		})
+		if !plan.vectorOnly {
+			g.Go(func() error {
+				if cnt, cerr := s.spannerLexicalCount(gctx, query, expansion, filters); cerr == nil {
+					lexCnt = cnt
+				}
+				return nil
+			})
 		}
-		log.Printf("WARN: Spanner multimodal search fallback triggered: %v", err)
+		_ = g.Wait()
+		if searchErr == nil {
+			totalFound := len(res)
+			if lexCnt > totalFound {
+				totalFound = lexCnt
+			}
+			return SearchOutcome{Results: res, TotalFound: totalFound, Sponsored: sponsored, RetrievalMode: RetrievalMultimodal, VectorIndexUsed: vecIdxUsed, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+		}
+		log.Printf("WARN: Spanner multimodal search fallback triggered: %v", searchErr)
 	}
 	if len(filters.ImageVector) > 0 && IsBrowseQuery(query) {
 		// The in-memory engine has no product vectors in the gemini-embedding-2
@@ -328,7 +382,28 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		plan := s.planVectorQuery(ctx, query)
 		plan.expansion = expansion
 		plan.rules = ruleSet
-		res, sponsored, vecIdxUsed, err := s.spannerHybridSearchWithAds(ctx, query, limit, minScore, alpha, plan, filters)
+		var res, sponsored []models.SearchResult
+		var vecIdxUsed bool
+		var err error
+		var lexCnt int
+		g, gctx := errgroup.WithContext(ctx)
+		g.Go(func() error {
+			res, sponsored, vecIdxUsed, err = s.spannerHybridSearchWithAds(gctx, query, limit, minScore, alpha, plan, filters)
+			return nil
+		})
+		if s.client != nil || s.lexicalCountRunner != nil {
+			g.Go(func() error {
+				if cnt, cerr := s.spannerLexicalCount(gctx, query, expansion, filters); cerr == nil {
+					lexCnt = cnt
+				}
+				return nil
+			})
+		}
+		_ = g.Wait()
+		totalFound := len(res)
+		if lexCnt > totalFound {
+			totalFound = lexCnt
+		}
 		switch {
 		case err != nil:
 			log.Printf("WARN: Spanner HybridSearch fallback triggered: %v", err)
@@ -336,7 +411,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			// Degraded v2: return Spanner's lexical results as-is (even if empty).
 			// Falling back to the in-memory engine here would mask the outage with
 			// deterministic 768-d vector scores.
-			return SearchOutcome{Results: res, TotalFound: len(res), Sponsored: sponsored, RetrievalMode: RetrievalLexicalOnly, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+			return SearchOutcome{Results: res, TotalFound: totalFound, Sponsored: sponsored, RetrievalMode: RetrievalLexicalOnly, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 		default:
 			// A successful Spanner query is authoritative even when it returns no rows
 			// (e.g. tenant/category filters exclude everything). Falling back to the
@@ -345,7 +420,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			if plan.column == vectorColumnV2 {
 				mode = RetrievalHybridV2
 			}
-			return SearchOutcome{Results: res, TotalFound: len(res), Sponsored: sponsored, RetrievalMode: mode, VectorIndexUsed: vecIdxUsed, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
+			return SearchOutcome{Results: res, TotalFound: totalFound, Sponsored: sponsored, RetrievalMode: mode, VectorIndexUsed: vecIdxUsed, CacheHit: plan.cacheHit, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 		}
 	}
 
@@ -1021,6 +1096,7 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 	}
 
 	var out []models.SearchResult
+	lexicalCount := 0
 	for i := range items {
 		if filters.OnlyInStock && isUnavailable(items[i].prod.Availability, items[i].prod.AvailableQuantity) {
 			continue
@@ -1039,10 +1115,11 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 			!s.deliverableInMemory(items[i].prod.ID, filters.Zip5, filters.MaxSLAHours) {
 			continue
 		}
-		items[i].vecRRF = 1.0 / float64(60+items[i].vecRank)
 		if items[i].txtRaw > 0 || qLower == "" {
+			lexicalCount++
 			items[i].txtRRF = 1.0 / float64(60+items[i].txtRank)
 		}
+		items[i].vecRRF = 1.0 / float64(60+items[i].vecRank)
 		items[i].rrfScore = alpha*items[i].vecRRF + (1.0-alpha)*items[i].txtRRF
 		if items[i].rrfScore < minScore {
 			continue
@@ -1101,9 +1178,13 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 		}
 		return out[i].ID < out[j].ID // deterministic tie-break
 	})
-	totalFound := len(out)
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
+	}
+	// ADR-012 (#40): total_found = max(lexical_count, len(candidate_window)).
+	totalFound := len(out)
+	if lexicalCount > totalFound {
+		totalFound = lexicalCount
 	}
 	return out, totalFound
 }
@@ -1324,4 +1405,116 @@ func (s *SpannerService) CheckSpannerBrowse(ctx context.Context, filters models.
 	}
 	res, err := s.spannerBrowse(ctx, 100, filters)
 	return len(res), err
+}
+
+// buildLexicalCountSQL renders the fast COUNT(*) query over the catalog-filtered
+// lexical match set (same SEARCH + synonym predicates + catalogFilterSQL as fts; ADR-012 #40).
+func buildLexicalCountSQL(folded bool) string {
+	titleTok, descTok := "title_tokens", "description_tokens"
+	if folded {
+		titleTok, descTok = "title_tokens_folded", "description_tokens_folded"
+	}
+	return optimizerHint + `SELECT COUNT(*)
+		FROM products
+		WHERE (SEARCH(` + titleTok + `, @query_text) OR SEARCH(` + descTok + `, @query_text)
+			OR SEARCH(` + titleTok + `, @syn_text) OR SEARCH(` + descTok + `, @syn_text))
+			AND ` + catalogFilterSQL
+}
+
+// buildBrowseCountSQL renders the fast COUNT(*) query for catalog browse (ADR-012 #40).
+func buildBrowseCountSQL() string {
+	return optimizerHint + `SELECT COUNT(*)
+		FROM products
+		WHERE ` + catalogFilterSQL
+}
+
+func (s *SpannerService) filterCountParams(f models.SearchFilters) map[string]interface{} {
+	f = normalizeFilters(f)
+	return map[string]interface{}{
+		"channel":        f.Channel,
+		"only_available": f.OnlyInStock,
+		"tenant_id":      f.TenantID,
+		"locale":         f.Locale,
+		"category":       f.Category,
+		"categories":     nonNilStrings(f.Categories),
+		"brand":          f.Brand,
+		"brands":         nonNilStrings(f.Brands),
+		"zip5":           f.Zip5,
+		"max_sla":        f.MaxSLAHours,
+		"min_price":      f.MinPrice,
+		"max_price":      f.MaxPrice,
+		"price_table":    f.PriceTable,
+		"price_ranges":   nonNilStrings(f.PriceRanges),
+		"color":          f.Color,
+		"colors":         nonNilStrings(f.Colors),
+		"size":           f.Size,
+		"sizes":          nonNilStrings(f.Sizes),
+	}
+}
+
+func (s *SpannerService) spannerLexicalCount(ctx context.Context, query string, expansion Expansion, filters models.SearchFilters) (int, error) {
+	queryText := query
+	if s.config.TextFolding {
+		queryText = FoldAccents(query)
+	}
+	if filters.RelaxText {
+		queryText = RelaxedQuery(queryText)
+	}
+	synText := queryText
+	if len(expansion.Terms) > 0 {
+		synText = expansion.SpannerQuery()
+	}
+	params := s.filterCountParams(filters)
+	params["query_text"] = queryText
+	params["syn_text"] = synText
+	sql := buildLexicalCountSQL(s.config.TextFolding)
+	if s.lexicalCountRunner != nil {
+		return s.lexicalCountRunner(ctx, sql, params)
+	}
+	if s.client == nil {
+		return 0, fmt.Errorf("no Spanner client")
+	}
+	iter := s.client.Single().Query(ctx, spanner.Statement{SQL: sql, Params: params})
+	defer iter.Stop()
+	row, err := iter.Next()
+	if err != nil {
+		return 0, err
+	}
+	var cnt int64
+	if err := row.Columns(&cnt); err != nil {
+		return 0, err
+	}
+	return int(cnt), nil
+}
+
+func (s *SpannerService) spannerBrowseCount(ctx context.Context, filters models.SearchFilters) (int, error) {
+	params := s.filterCountParams(filters)
+	sql := buildBrowseCountSQL()
+	if s.lexicalCountRunner != nil {
+		return s.lexicalCountRunner(ctx, sql, params)
+	}
+	if s.client == nil {
+		return 0, fmt.Errorf("no Spanner client")
+	}
+	iter := s.client.Single().Query(ctx, spanner.Statement{SQL: sql, Params: params})
+	defer iter.Stop()
+	row, err := iter.Next()
+	if err != nil {
+		return 0, err
+	}
+	var cnt int64
+	if err := row.Columns(&cnt); err != nil {
+		return 0, err
+	}
+	return int(cnt), nil
+}
+
+// CheckSpannerCount validates the lexical and browse COUNT(*) SQL against Spanner (cmd/sqlcheck, ADR-012 #40).
+func (s *SpannerService) CheckSpannerCount(ctx context.Context, query string, filters models.SearchFilters) (int, error) {
+	if IsBrowseQuery(query) {
+		return s.spannerBrowseCount(ctx, filters)
+	}
+	nf := normalizeFilters(filters)
+	exp := s.synonyms.Expand(ctx, nf.TenantID, nf.Locale, query)
+	return s.spannerLexicalCount(ctx, query, exp, filters)
 }

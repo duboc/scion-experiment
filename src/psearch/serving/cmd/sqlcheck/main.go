@@ -180,6 +180,15 @@ func main() {
 			log.Printf("OK   catalog browse %+v rows=%d", f, n)
 		}
 	}
+	// Lexical & browse COUNT(*) queries (Issue #40, ADR-012).
+	for _, cq := range []string{"running shoes", "*"} {
+		if cnt, err := svc.CheckSpannerCount(ctx, cq, models.SearchFilters{}); err != nil {
+			failed = true
+			log.Printf("FAIL count q=%q: %v", cq, err)
+		} else {
+			log.Printf("OK   count q=%q total_found=%d", cq, cnt)
+		}
+	}
 	// Variant facets (Issue #32).
 	if f, err := svc.Facets(ctx, []string{"prod-001", "prod-002", "prod-005"}, "", "default"); err != nil {
 		failed = true

@@ -453,8 +453,10 @@ intentDone:
 	const facetCandidates = 100
 	const maxSearchWindow = 500
 	candidateLimit := facetCandidates
-	if need := effectiveOffset + limit; need > candidateLimit {
-		candidateLimit = need
+	if effectiveOffset < maxSearchWindow {
+		if need := effectiveOffset + limit; need > candidateLimit {
+			candidateLimit = need
+		}
 	}
 	if candidateLimit > maxSearchWindow {
 		candidateLimit = maxSearchWindow
@@ -594,12 +596,20 @@ intentDone:
 		}
 		personalized = c.session.Personalize(ctx.Request.Context(), filters.TenantID, events, results, outcome.Pins, outcome.Buries, req.SortBy, ltrRes.ModelVersion != "")
 	}
-	// ADR-012 (Issue #40): slice [effectiveOffset : min(len(results), effectiveOffset+limit)]
-	// AFTER Stage-2 LTR and Session Personalization so cross-page ordering is deterministic.
-	if effectiveOffset >= len(results) {
+	// ADR-012 (Issue #40): reachable window is min(total_found, maxSearchWindow=500).
+	// Slice [effectiveOffset : min(len(results), effectiveOffset+limit)] AFTER Stage-2
+	// LTR and Session Personalization so cross-page ordering is deterministic.
+	reachableTotal := organicTotal
+	if reachableTotal > maxSearchWindow {
+		reachableTotal = maxSearchWindow
+	}
+	if effectiveOffset >= reachableTotal || effectiveOffset >= len(results) {
 		results = []models.SearchResult{}
 	} else {
 		end := effectiveOffset + limit
+		if end > reachableTotal {
+			end = reachableTotal
+		}
 		if end > len(results) {
 			end = len(results)
 		}
@@ -609,10 +619,10 @@ intentDone:
 		attachPromises(results, true)
 	}
 	totalPages := 0
-	if organicTotal > 0 && limit > 0 {
-		totalPages = (organicTotal + limit - 1) / limit
+	if reachableTotal > 0 && limit > 0 {
+		totalPages = (reachableTotal + limit - 1) / limit
 	}
-	hasNext := effectiveOffset+limit < organicTotal
+	hasNext := effectiveOffset+limit < reachableTotal
 	// ADR-011 (Issue #35): Sponsored product injection as the very last step of
 	// Controller.Search, after LTR, session re-rank, and pagination.
 	// Ads are kept out of facets, total_found, LTR features, and the session centroid.
