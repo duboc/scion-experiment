@@ -455,14 +455,13 @@ func (c *Controller) Search(ctx *gin.Context) {
 intentDone:
 	// Facets are aggregated over a wider candidate set (top facetCandidates) than
 	// the page returned to the client (Issue #5, ADR-003), and Stage-1 retrieves up
-	// to max(100, effectiveOffset + limit) capped at maxSearchWindow = 500 (ADR-012, #40).
+	// to L = min(maxSearchWindow = 500, max(100, effectiveOffset + limit)) before
+	// truncating to the fixed per-query window W = min(max(lexical_count, 100), 500) (ADR-012, #40 fix-2).
 	const facetCandidates = 100
 	const maxSearchWindow = 500
 	candidateLimit := facetCandidates
-	if effectiveOffset < maxSearchWindow {
-		if need := effectiveOffset + limit; need > candidateLimit {
-			candidateLimit = need
-		}
+	if need := effectiveOffset + limit; need > candidateLimit {
+		candidateLimit = need
 	}
 	if candidateLimit > maxSearchWindow {
 		candidateLimit = maxSearchWindow
@@ -602,19 +601,27 @@ intentDone:
 		}
 		personalized = c.session.Personalize(ctx.Request.Context(), filters.TenantID, events, results, outcome.Pins, outcome.Buries, req.SortBy, ltrRes.ModelVersion != "")
 	}
-	// ADR-012 (Issue #40): reachable window is min(total_found, maxSearchWindow=500).
-	// Slice [effectiveOffset : min(len(results), effectiveOffset+limit)] AFTER Stage-2
-	// LTR and Session Personalization so cross-page ordering is deterministic.
+	// ADR-012 (Issue #40 fix-2): results is already truncated to the fixed per-query
+	// window W = min(max(lexical_count, 100), 500). Reachable window is min(total_found, 500),
+	// and has_next = effectiveOffset + limit < min(reachable, len(truncated)).
 	reachableTotal := organicTotal
 	if reachableTotal > maxSearchWindow {
 		reachableTotal = maxSearchWindow
 	}
-	if effectiveOffset >= reachableTotal || effectiveOffset >= len(results) {
+	expectedWindow := candidateLimit
+	if reachableTotal < expectedWindow {
+		expectedWindow = reachableTotal
+	}
+	reachableBound := reachableTotal
+	if len(results) < expectedWindow {
+		reachableBound = len(results)
+	}
+	if effectiveOffset >= reachableBound || effectiveOffset >= len(results) {
 		results = []models.SearchResult{}
 	} else {
 		end := effectiveOffset + limit
-		if end > reachableTotal {
-			end = reachableTotal
+		if end > reachableBound {
+			end = reachableBound
 		}
 		if end > len(results) {
 			end = len(results)
@@ -628,7 +635,7 @@ intentDone:
 	if reachableTotal > 0 && limit > 0 {
 		totalPages = (reachableTotal + limit - 1) / limit
 	}
-	hasNext := effectiveOffset+limit < reachableTotal
+	hasNext := effectiveOffset+limit < reachableBound
 	// ADR-011 (Issue #35): Sponsored product injection as the very last step of
 	// Controller.Search, after LTR, session re-rank, and pagination.
 	// Ads are kept out of facets, total_found, LTR features, and the session centroid.

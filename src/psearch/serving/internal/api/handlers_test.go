@@ -1080,3 +1080,103 @@ func TestSimilarProductsSubstitutesAndCoViewedAPI(t *testing.T) {
 	}
 }
 
+// Issue #40 fix-2 (ADR-012 §3): fixed per-query window W = min(max(lexical_count, 100), 500)
+// independent of offset when ANN fills up to L = min(500, max(100, offset+limit)).
+// Verifies lexical_count=80 (W=100, total_found=100) and lexical_count=249 (W=249, total_found=249)
+// across all pages and offsets 0..1000: constant total_found, zero duplicate IDs, and exact reachable count.
+func TestPaginationFixedWindowInvariantsForLexical80And249(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tc := range []struct {
+		name         string
+		lexicalCount int
+		wantTotal    int
+		wantPages    int
+	}{
+		{"protetor_lexical_80", 80, 100, 9},
+		{"po_lexical_249", 249, 249, 21},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{
+				Port:                   8080,
+				Environment:            "test",
+				ProjectID:              "psearch-sandbox",
+				DefaultAlpha:           0.5,
+				DefaultLimit:           12,
+				UseMemoryStore:         true,
+				ActiveEmbeddingVersion: "v1",
+			}
+			ctrl, err := NewController(cfg)
+			if err != nil {
+				t.Fatalf("NewController: %v", err)
+			}
+			// Build 550 catalog items: first tc.lexicalCount items match the query lexically ("protetor"),
+			// while all 550 items are returned by the vector leg (simulating ANN filling L up to 500).
+			catalog := make([]models.SearchResult, 550)
+			qty := 10
+			for i := range catalog {
+				title := "Item Generico Catalogo " + strconv.Itoa(i+1)
+				if i < tc.lexicalCount {
+					title = "Protetor Solar Match " + strconv.Itoa(i+1)
+				}
+				catalog[i] = models.SearchResult{
+					ID:                "sku-" + strconv.Itoa(i+1),
+					Title:             title,
+					Description:       "Produto de teste",
+					Brands:            []string{"TestBrand"},
+					Categories:        []string{"Dermocosmetics"},
+					PriceInfo:         models.PriceInfo{CurrencyCode: "BRL", Price: "59.90", NumericPrice: 59.90},
+					Availability:      "IN_STOCK",
+					AvailableQuantity: &qty,
+					TenantID:          "default",
+				}
+			}
+			ctrl.spannerSvc = services.NewMemorySpannerServiceForTest(cfg, catalog)
+
+			r := gin.New()
+			r.GET("/api/search", ctrl.Search)
+
+			seen := map[string]bool{}
+			totalCollected := 0
+			for page := 1; page <= tc.wantPages+3; page++ {
+				resp := doSearch(t, r, "q=protetor&limit=12&ads=false&page="+strconv.Itoa(page))
+				if resp.TotalFound != tc.wantTotal {
+					t.Fatalf("page=%d: total_found=%d, want constant %d", page, resp.TotalFound, tc.wantTotal)
+				}
+				if resp.TotalPages != tc.wantPages {
+					t.Fatalf("page=%d: total_pages=%d, want %d", page, resp.TotalPages, tc.wantPages)
+				}
+				for _, item := range resp.Results {
+					if seen[item.ID] {
+						t.Fatalf("duplicate product_id %s on page %d", item.ID, page)
+					}
+					seen[item.ID] = true
+					totalCollected++
+				}
+				wantHasNext := page < tc.wantPages
+				if resp.HasNext != wantHasNext {
+					t.Fatalf("page=%d: has_next=%v, want %v (len=%d)", page, resp.HasNext, wantHasNext, len(resp.Results))
+				}
+				if page > tc.wantPages && len(resp.Results) != 0 {
+					t.Fatalf("page=%d (> wantPages=%d): expected empty results, got %d", page, tc.wantPages, len(resp.Results))
+				}
+			}
+			if totalCollected != tc.wantTotal {
+				t.Fatalf("total collected across pages = %d, want exact %d", totalCollected, tc.wantTotal)
+			}
+
+			// Verify offsets up to 1000 (including 492, 504, 1000) report the exact same total_found.
+			for _, off := range []int{0, 96, 108, 240, 252, 492, 504, 1000} {
+				resp := doSearch(t, r, "q=protetor&limit=12&ads=false&offset="+strconv.Itoa(off))
+				if resp.TotalFound != tc.wantTotal {
+					t.Fatalf("offset=%d: total_found=%d, want constant %d", off, resp.TotalFound, tc.wantTotal)
+				}
+				if off >= tc.wantTotal && (len(resp.Results) != 0 || resp.HasNext) {
+					t.Fatalf("offset=%d (>= %d): expected empty results and has_next=false, got len=%d has_next=%v",
+						off, tc.wantTotal, len(resp.Results), resp.HasNext)
+				}
+			}
+		})
+	}
+}
+

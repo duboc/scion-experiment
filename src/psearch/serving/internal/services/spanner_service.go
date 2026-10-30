@@ -290,6 +290,19 @@ type SearchOutcome struct {
 	Pins, Buries    []string // merchandising pins/buries (kept by the LTR re-ranker, Issue #10)
 }
 
+// fixedSearchWindow computes the offset-independent candidate window W = min(max(lexicalCount, 100), 500)
+// so the ANN vector leg never inflates total_found as pagination offset grows (ADR-012, #40 fix-2).
+func fixedSearchWindow(lexicalCount int) int {
+	w := lexicalCount
+	if w < 100 {
+		w = 100
+	}
+	if w > 500 {
+		w = 500
+	}
+	return w
+}
+
 // HybridSearch executes hybrid vector + full-text RRF search against Cloud Spanner (with deterministic fallback).
 func (s *SpannerService) HybridSearch(ctx context.Context, query string, limit int, minScore float64, alpha float64, filters models.SearchFilters) ([]models.SearchResult, error) {
 	out, err := s.HybridSearchDetailed(ctx, query, limit, minScore, alpha, filters)
@@ -330,6 +343,10 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			})
 			_ = g.Wait()
 			if s.client != nil && browseErr == nil {
+				w := fixedSearchWindow(totalCnt)
+				if len(res) > w {
+					res = res[:w]
+				}
 				if totalCnt < len(res) {
 					totalCnt = len(res)
 				}
@@ -368,6 +385,10 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		}
 		_ = g.Wait()
 		if searchErr == nil {
+			w := fixedSearchWindow(lexCnt)
+			if len(res) > w {
+				res = res[:w]
+			}
 			totalFound := len(res)
 			if lexCnt > totalFound {
 				totalFound = lexCnt
@@ -404,6 +425,10 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			})
 		}
 		_ = g.Wait()
+		w := fixedSearchWindow(lexCnt)
+		if len(res) > w {
+			res = res[:w]
+		}
 		totalFound := len(res)
 		if lexCnt > totalFound {
 			totalFound = lexCnt
@@ -1229,7 +1254,11 @@ func (s *SpannerService) memoryHybridSearchExpandedWithTotal(query string, limit
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
-	// ADR-012 (#40): total_found = max(lexical_count, len(candidate_window)).
+	w := fixedSearchWindow(lexicalCount)
+	if len(out) > w {
+		out = out[:w]
+	}
+	// ADR-012 (#40 fix-2): total_found = max(lexical_count, len(truncated)).
 	totalFound := len(out)
 	if lexicalCount > totalFound {
 		totalFound = lexicalCount
