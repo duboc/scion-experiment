@@ -1,8 +1,8 @@
 # ADR-015: Closed-Loop Search Telemetry, Click Attribution & Online A/B Metrics
 
 - **Status:** Proposed (Wave 6 — Production Search Depth)
-- **Covered Issue:** GitHub **Issue #43** — "Closed-Loop Search Telemetry (`query_id`), Click/Conversion Attribution, A/B Experiment KPIs & LTR Signal Rollup"
-- **Migrations:** `src/iac/migrations/026_search_events.sql`
+- **Covered Issue:** GitHub **Issue #43** (and follow-up **Issue #47**) — "Closed-Loop Search Telemetry (`query_id`), Click/Conversion Attribution, A/B Experiment KPIs & LTR Signal Rollup"
+- **Migrations:** `src/iac/migrations/026_search_events.sql`, `src/iac/migrations/027_products_signal_baseline.sql`
 
 ## Context
 Today `psearch` consumes engagement features (`clicks`, `orders`, `ctr`, `conversion_rate`) in Stage-1 SQL boosts (`ADR-004`) and Stage-2 Learning-to-Rank (`ADR-006`, `internal/services/ltr.go`), but those columns are populated only by static seed data (`016b_backfill_boost_signals.dml.sql`). Furthermore, search operators have no visibility into:
@@ -63,7 +63,15 @@ STORING (product_id, position, revenue_micros);
    - Idempotent on `(tenant_id, event_id)` (`AlreadyExists` returns `200 OK` with `duplicate: true`).
    - Also forwards `click`/`purchase` to `SessionService` (`ADR-007`) when `session_id` is supplied so callers only need a single event beacon if desired.
 2. **Online Product Signal Rollup (`POST /api/analytics/rollup`, guarded by `c.authorizeAdmin(ctx)`):**
-   - Aggregates recent `search_impressions` (per-product impression exposures from `result_ids`) and `search_conversions` (`click`, `purchase`) over a configurable window (default `30d`), and updates `products.(clicks, orders, ctr, conversion_rate)` for products with `impressions > 0` using **Bayesian prior blending** `(events + k * prior) / (impressions + k)` (default `k = 100`, configurable via `prior_weight`/`k`) so low-traffic rollups never flatten existing product priors. Products with zero new impressions are left untouched, and `dry_run=true` returns the proposed per-product diffs without mutating storage (#47).
+   - Aggregates recent `search_impressions` (per-product impression exposures from `result_ids`) and `search_conversions` (`click`, `purchase`) over a configurable window (`window_days` in `[1, 90]`, default `30`), and updates `products.(clicks, orders, ctr, conversion_rate)` for products with `impressions > 0` as an **idempotent window overlay over a frozen baseline** (`027_products_signal_baseline.sql`, Issue #47):
+     - On the first live rollup touching a product (`baseline_ctr IS NULL`), atomically snapshot `baseline_clicks := clicks`, `baseline_orders := orders`, `baseline_ctr := ctr`, `baseline_conversion_rate := conversion_rate` in the same `ReadWriteTransaction` (and in-memory baseline map).
+     - All subsequent rollups compute strictly from the frozen baseline (never compounding onto already-rolled-up values):
+       - `clicks = baseline_clicks + window_clicks`
+       - `orders = baseline_orders + window_purchases`
+       - `ctr = (window_clicks + k * baseline_ctr) / (window_impressions + k)`
+       - `conversion_rate = (window_purchases + k * baseline_conversion_rate) / (window_impressions + k)`
+       where `k` (`prior_weight` / `k`, default `100`, finite in `(0, 10000]`) is the Bayesian prior weight.
+     - Products with zero new impressions are left untouched, and `dry_run=true` computes the exact diff without writing to storage or snapshotting the baseline. Invalid `prior_weight`/`k` or `window_days` values return `HTTP 400`.
 3. **Diagnostics & A/B Summary (`GET /api/analytics/summary?tenant_id=default&window_hours=168`):**
    - Returns:
      - `total_searches`, `zero_result_searches`, `zero_result_rate`, `avg_latency_ms`

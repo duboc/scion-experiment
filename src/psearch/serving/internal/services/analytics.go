@@ -279,14 +279,30 @@ func (s SpannerAnalyticsStore) ListWindow(ctx context.Context, tenant string, si
 	return imps, convs, nil
 }
 
+// ErrInvalidRollupParam indicates an invalid prior_weight/k or window_days parameter (maps to HTTP 400; #47 fix).
+var ErrInvalidRollupParam = errors.New("invalid rollup parameter")
+
+// ValidateRollupParams checks window_days in [1, 90] and prior_weight/k finite in (0, 10000] (#47 fix).
+func ValidateRollupParams(windowDays int, priorWeight float64) error {
+	if windowDays < 1 || windowDays > 90 {
+		return fmt.Errorf("%w: window_days must be between 1 and 90", ErrInvalidRollupParam)
+	}
+	if math.IsNaN(priorWeight) || math.IsInf(priorWeight, 0) || priorWeight <= 0 || priorWeight > 10000 {
+		return fmt.Errorf("%w: prior_weight (k) must be a finite number in (0, 10000]", ErrInvalidRollupParam)
+	}
+	return nil
+}
+
 // AnalyticsService coordinates non-blocking impression logging, idempotent conversion attribution,
-// KPI summary calculation, and Laplace-smoothed LTR signal rollup (ADR-015, Issue #43).
+// KPI summary calculation, and Bayesian prior-blended LTR signal rollup (ADR-015, Issues #43/#47).
 type AnalyticsService struct {
 	store      AnalyticsStore
 	memMirror  *MemoryAnalyticsStore
 	spannerSvc *SpannerService
 	sessionSvc *SessionService
 	impCh      chan SearchImpression
+	baselineMu sync.RWMutex
+	baselines  map[string]models.BoostSignals // frozen baseline signals captured at first live rollup (#47 fix)
 }
 
 func NewAnalyticsService(store AnalyticsStore, spannerSvc *SpannerService, sessionSvc *SessionService) *AnalyticsService {
@@ -300,9 +316,18 @@ func NewAnalyticsService(store AnalyticsStore, spannerSvc *SpannerService, sessi
 		spannerSvc: spannerSvc,
 		sessionSvc: sessionSvc,
 		impCh:      make(chan SearchImpression, impressionBufferSize),
+		baselines:  map[string]models.BoostSignals{},
 	}
 	go svc.impressionWorker()
 	return svc
+}
+
+// HasMemoryBaselineForTest reports whether a frozen baseline snapshot exists in memory for productID (#47 fix).
+func (a *AnalyticsService) HasMemoryBaselineForTest(productID string) bool {
+	a.baselineMu.RLock()
+	defer a.baselineMu.RUnlock()
+	_, ok := a.baselines[productID]
+	return ok
 }
 
 func (a *AnalyticsService) impressionWorker() {
@@ -769,28 +794,29 @@ func (a *AnalyticsService) RollupProductSignals(ctx context.Context, tenant stri
 }
 
 // RollupProductSignalsWithOptions aggregates recent search_impressions and search_conversions into
-// Bayesian-blended product engagement signals `(events + k * prior) / (impressions + k)`:
-//   - Products with zero new impressions (pe.impressions == 0) are NEVER touched (#47).
-//   - Existing product ctr and conversion_rate act as the prior with configurable weight k (default 100).
-//   - When opts.DryRun is true, returns the proposed diffs and UpdatedSignals without writing to memory or Spanner (#47).
+// Bayesian-blended product engagement signals `(events + k * baseline) / (impressions + k)` as an
+// idempotent window overlay over a frozen baseline (ADR-015, Issue #47):
+//   - Products with zero new impressions (pe.impressions == 0) are NEVER touched.
+//   - On the first live rollup touching a product, its current (clicks, orders, ctr, conversion_rate)
+//     are snapshotted into baseline_*; all subsequent rollups compute strictly from the frozen baseline
+//     so re-running rollup over the same window never double-counts or compounds drift.
+//   - When opts.DryRun is true, returns the proposed diffs and UpdatedSignals without writing to
+//     memory or Spanner and without snapshotting the baseline.
 func (a *AnalyticsService) RollupProductSignalsWithOptions(ctx context.Context, opts RollupOptions) (models.AnalyticsRollupResponse, error) {
 	tenant := strings.TrimSpace(opts.TenantID)
 	if tenant == "" {
 		tenant = "default"
 	}
 	windowDays := opts.WindowDays
-	if windowDays <= 0 {
+	if windowDays == 0 {
 		windowDays = defaultRollupWindowDays
 	}
-	if windowDays > 90 {
-		windowDays = 90
-	}
 	priorK := opts.PriorWeight
-	if priorK <= 0 {
+	if priorK == 0 {
 		priorK = DefaultRollupPriorK
 	}
-	if priorK > 10000 {
-		priorK = 10000
+	if err := ValidateRollupParams(windowDays, priorK); err != nil {
+		return models.AnalyticsRollupResponse{}, err
 	}
 	since := time.Now().UTC().Add(-time.Duration(windowDays) * 24 * time.Hour)
 
@@ -857,59 +883,15 @@ func (a *AnalyticsService) RollupProductSignalsWithOptions(ctx context.Context, 
 		}, nil
 	}
 
-	// Load current priors from Spanner if connected, falling back to in-memory seedProducts.
-	priors := map[string]models.BoostSignals{}
-	if a.spannerSvc != nil {
-		a.spannerSvc.attrMu.RLock()
-		for i := range a.spannerSvc.seedProducts {
-			p := &a.spannerSvc.seedProducts[i]
-			if p.Signals != nil {
-				priors[p.ID] = *p.Signals
-			}
+	computeFromBaseline := func(pid string, base models.BoostSignals, pe *prodExposure) (models.BoostSignals, models.SignalRollupDiff) {
+		baseCTR := base.CTR
+		if baseCTR <= 0 {
+			baseCTR = 0.05
 		}
-		a.spannerSvc.attrMu.RUnlock()
-	}
-	if a.spannerSvc != nil && a.spannerSvc.Client() != nil {
-		iter := a.spannerSvc.Client().Single().Query(ctx, spanner.Statement{
-			SQL: `SELECT product_id, IFNULL(clicks, 0), IFNULL(orders, 0), IFNULL(ctr, 0.05), IFNULL(conversion_rate, 0.01),
-					IFNULL(discount_pct, 0.0), IFNULL(popularity_score, 0.0), IFNULL(margin_pct, 0.0), IFNULL(recency_score, 0.0)
-				FROM products
-				WHERE product_id IN UNNEST(@ids)`,
-			Params: map[string]interface{}{"ids": activeIDs},
-		})
-		for {
-			row, rerr := iter.Next()
-			if rerr != nil {
-				break
-			}
-			var pid string
-			var s models.BoostSignals
-			if row.Columns(&pid, &s.Clicks, &s.Orders, &s.CTR, &s.ConversionRate, &s.DiscountPct, &s.PopularityScore, &s.MarginPct, &s.RecencyScore) == nil && pid != "" {
-				priors[pid] = s
-			}
+		baseConv := base.ConversionRate
+		if baseConv <= 0 {
+			baseConv = 0.01
 		}
-		iter.Stop()
-	}
-
-	updated := make(map[string]models.BoostSignals, len(activeIDs))
-	diffs := make([]models.SignalRollupDiff, 0, len(activeIDs))
-	var muts []*spanner.Mutation
-
-	for _, pid := range activeIDs {
-		pe := byProd[pid]
-		prior, hasPrior := priors[pid]
-		if !hasPrior {
-			prior = models.BoostSignals{CTR: 0.05, ConversionRate: 0.01}
-		}
-		priorCTR := prior.CTR
-		if priorCTR <= 0 {
-			priorCTR = 0.05
-		}
-		priorConv := prior.ConversionRate
-		if priorConv <= 0 {
-			priorConv = 0.01
-		}
-
 		denom := float64(pe.impressions) + priorK
 		obsClicks := pe.clicks
 		if obsClicks > pe.impressions {
@@ -919,38 +901,193 @@ func (a *AnalyticsService) RollupProductSignalsWithOptions(ctx context.Context, 
 		if obsPurchases > pe.impressions {
 			obsPurchases = pe.impressions
 		}
-
-		newCTR := round4(clamp((float64(obsClicks)+priorK*priorCTR)/denom, 0, 1))
-		newConv := round4(clamp((float64(obsPurchases)+priorK*priorConv)/denom, 0, 1))
-		newSig := prior
-		newSig.Clicks = prior.Clicks + pe.clicks
-		newSig.Orders = prior.Orders + pe.purchases
+		newCTR := round4(clamp((float64(obsClicks)+priorK*baseCTR)/denom, 0, 1))
+		newConv := round4(clamp((float64(obsPurchases)+priorK*baseConv)/denom, 0, 1))
+		newSig := base
+		newSig.Clicks = base.Clicks + pe.clicks
+		newSig.Orders = base.Orders + pe.purchases
 		newSig.CTR = newCTR
 		newSig.ConversionRate = newConv
-
-		updated[pid] = newSig
-		diffs = append(diffs, models.SignalRollupDiff{
+		diff := models.SignalRollupDiff{
 			ProductID:           pid,
 			Impressions:         pe.impressions,
 			AttributedClicks:    pe.clicks,
 			AttributedPurchases: pe.purchases,
-			PriorClicks:         prior.Clicks,
+			PriorClicks:         base.Clicks,
 			NewClicks:           newSig.Clicks,
-			PriorOrders:         prior.Orders,
+			PriorOrders:         base.Orders,
 			NewOrders:           newSig.Orders,
-			PriorCTR:            prior.CTR,
+			PriorCTR:            base.CTR,
 			NewCTR:              newSig.CTR,
-			PriorConversionRate: prior.ConversionRate,
+			PriorConversionRate: base.ConversionRate,
 			NewConversionRate:   newSig.ConversionRate,
-		})
-
-		if !opts.DryRun && a.spannerSvc != nil && a.spannerSvc.Client() != nil {
-			muts = append(muts, spanner.Update("products",
-				[]string{"product_id", "clicks", "orders", "ctr", "conversion_rate"},
-				[]interface{}{pid, newSig.Clicks, newSig.Orders, newSig.CTR, newSig.ConversionRate},
-			))
 		}
+		return newSig, diff
 	}
+
+	// Spanner mode: read/snapshot frozen baseline_* columns and update derived signals in ReadWriteTransaction (#47 fix).
+	if a.spannerSvc != nil && a.spannerSvc.Client() != nil {
+		client := a.spannerSvc.Client()
+		updated := make(map[string]models.BoostSignals, len(activeIDs))
+		diffs := make([]models.SignalRollupDiff, 0, len(activeIDs))
+
+		if opts.DryRun {
+			iter := client.Single().Query(ctx, spanner.Statement{
+				SQL: `SELECT product_id,
+						COALESCE(baseline_clicks, clicks, 0),
+						COALESCE(baseline_orders, orders, 0),
+						COALESCE(baseline_ctr, ctr, 0.05),
+						COALESCE(baseline_conversion_rate, conversion_rate, 0.01),
+						IFNULL(discount_pct, 0.0), IFNULL(popularity_score, 0.0), IFNULL(margin_pct, 0.0), IFNULL(recency_score, 0.0)
+					FROM products
+					WHERE product_id IN UNNEST(@ids)
+					ORDER BY product_id`,
+				Params: map[string]interface{}{"ids": activeIDs},
+			})
+			defer iter.Stop()
+			for {
+				row, rerr := iter.Next()
+				if rerr != nil {
+					break
+				}
+				var pid string
+				var base models.BoostSignals
+				if row.Columns(&pid, &base.Clicks, &base.Orders, &base.CTR, &base.ConversionRate, &base.DiscountPct, &base.PopularityScore, &base.MarginPct, &base.RecencyScore) == nil && pid != "" {
+					if pe := byProd[pid]; pe != nil {
+						newSig, diff := computeFromBaseline(pid, base, pe)
+						updated[pid] = newSig
+						diffs = append(diffs, diff)
+					}
+				}
+			}
+			return models.AnalyticsRollupResponse{
+				TenantID:        tenant,
+				WindowDays:      windowDays,
+				PriorWeight:     priorK,
+				DryRun:          true,
+				ProductsUpdated: len(updated),
+				UpdatedSignals:  updated,
+				Diffs:           diffs,
+			}, nil
+		}
+
+		for i := 0; i < len(activeIDs); i += 100 {
+			end := i + 100
+			if end > len(activeIDs) {
+				end = len(activeIDs)
+			}
+			chunkIDs := activeIDs[i:end]
+			_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+				iter := txn.Query(ctx, spanner.Statement{
+					SQL: `SELECT product_id,
+							IFNULL(clicks, 0), IFNULL(orders, 0), IFNULL(ctr, 0.05), IFNULL(conversion_rate, 0.01),
+							baseline_clicks, baseline_orders, baseline_ctr, baseline_conversion_rate,
+							IFNULL(discount_pct, 0.0), IFNULL(popularity_score, 0.0), IFNULL(margin_pct, 0.0), IFNULL(recency_score, 0.0)
+						FROM products
+						WHERE product_id IN UNNEST(@ids)
+						ORDER BY product_id`,
+					Params: map[string]interface{}{"ids": chunkIDs},
+				})
+				defer iter.Stop()
+				var muts []*spanner.Mutation
+				for {
+					row, rerr := iter.Next()
+					if rerr == iterator.Done {
+						break
+					}
+					if rerr != nil {
+						return rerr
+					}
+					var pid string
+					var cur models.BoostSignals
+					var bClicks, bOrders spanner.NullInt64
+					var bCTR, bConv spanner.NullFloat64
+					if err := row.Columns(&pid, &cur.Clicks, &cur.Orders, &cur.CTR, &cur.ConversionRate,
+						&bClicks, &bOrders, &bCTR, &bConv,
+						&cur.DiscountPct, &cur.PopularityScore, &cur.MarginPct, &cur.RecencyScore); err != nil {
+						return err
+					}
+					pe := byProd[pid]
+					if pe == nil {
+						continue
+					}
+					needSnapshot := !bCTR.Valid || !bConv.Valid || !bClicks.Valid || !bOrders.Valid
+					base := cur
+					if !needSnapshot {
+						base.Clicks = bClicks.Int64
+						base.Orders = bOrders.Int64
+						base.CTR = bCTR.Float64
+						base.ConversionRate = bConv.Float64
+					}
+					newSig, diff := computeFromBaseline(pid, base, pe)
+					updated[pid] = newSig
+					diffs = append(diffs, diff)
+					if needSnapshot {
+						muts = append(muts, spanner.Update("products",
+							[]string{"product_id", "baseline_clicks", "baseline_orders", "baseline_ctr", "baseline_conversion_rate", "clicks", "orders", "ctr", "conversion_rate"},
+							[]interface{}{pid, base.Clicks, base.Orders, base.CTR, base.ConversionRate, newSig.Clicks, newSig.Orders, newSig.CTR, newSig.ConversionRate},
+						))
+					} else {
+						muts = append(muts, spanner.Update("products",
+							[]string{"product_id", "clicks", "orders", "ctr", "conversion_rate"},
+							[]interface{}{pid, newSig.Clicks, newSig.Orders, newSig.CTR, newSig.ConversionRate},
+						))
+					}
+				}
+				return txn.BufferWrite(muts)
+			})
+			if err != nil {
+				log.Printf("WARN: analytics rollup Spanner ReadWriteTransaction failed: %v", err)
+				break
+			}
+		}
+
+		return models.AnalyticsRollupResponse{
+			TenantID:        tenant,
+			WindowDays:      windowDays,
+			PriorWeight:     priorK,
+			DryRun:          false,
+			ProductsUpdated: len(updated),
+			UpdatedSignals:  updated,
+			Diffs:           diffs,
+		}, nil
+	}
+
+	// Memory mode: snapshot immutable baseline on first live rollup only; dry_run never snapshots baseline (#47 fix).
+	currentSeeds := map[string]models.BoostSignals{}
+	if a.spannerSvc != nil {
+		a.spannerSvc.attrMu.RLock()
+		for i := range a.spannerSvc.seedProducts {
+			p := &a.spannerSvc.seedProducts[i]
+			if p.Signals != nil {
+				currentSeeds[p.ID] = *p.Signals
+			}
+		}
+		a.spannerSvc.attrMu.RUnlock()
+	}
+
+	updated := make(map[string]models.BoostSignals, len(activeIDs))
+	diffs := make([]models.SignalRollupDiff, 0, len(activeIDs))
+
+	a.baselineMu.Lock()
+	for _, pid := range activeIDs {
+		pe := byProd[pid]
+		base, hasBase := a.baselines[pid]
+		if !hasBase {
+			if cur, ok := currentSeeds[pid]; ok {
+				base = cur
+			} else {
+				base = models.BoostSignals{CTR: 0.05, ConversionRate: 0.01}
+			}
+			if !opts.DryRun {
+				a.baselines[pid] = base
+			}
+		}
+		newSig, diff := computeFromBaseline(pid, base, pe)
+		updated[pid] = newSig
+		diffs = append(diffs, diff)
+	}
+	a.baselineMu.Unlock()
 
 	if !opts.DryRun && a.spannerSvc != nil {
 		a.spannerSvc.attrMu.Lock()
@@ -962,19 +1099,6 @@ func (a *AnalyticsService) RollupProductSignalsWithOptions(ctx context.Context, 
 			}
 		}
 		a.spannerSvc.attrMu.Unlock()
-
-		if a.spannerSvc.Client() != nil && len(muts) > 0 {
-			for i := 0; i < len(muts); i += 200 {
-				end := i + 200
-				if end > len(muts) {
-					end = len(muts)
-				}
-				if _, err := a.spannerSvc.Client().Apply(ctx, muts[i:end]); err != nil {
-					log.Printf("WARN: analytics rollup Spanner apply: %v", err)
-					break
-				}
-			}
-		}
 	}
 
 	return models.AnalyticsRollupResponse{

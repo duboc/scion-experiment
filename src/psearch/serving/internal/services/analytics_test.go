@@ -124,18 +124,26 @@ func TestAnalyticsRollup_BayesianPriorBlendingDryRunAndZeroImpressionSkip(t *tes
 	origProd001 := *spannerSvc.seedProducts[0].Signals // prod-001 (prior CTR = 0.186)
 	origProd010 := *spannerSvc.seedProducts[9].Signals // prod-010 (will have 0 impressions)
 
-	// Record 3 impressions for prod-001 with 0 clicks (low traffic).
+	// Record 3 impressions for prod-001 with 1 click and 1 purchase (low traffic).
 	for i := 1; i <= 3; i++ {
+		impID := "imp-low-" + string(rune('0'+i))
 		analytics.EnqueueImpression(SearchImpression{
-			ImpressionID: "imp-low-" + string(rune('0'+i)),
+			ImpressionID: impID,
 			TenantID:     "default",
 			QueryRaw:     "shoes",
 			TotalFound:   1,
 			ResultIDs:    []string{"prod-001"},
 		})
 	}
+	_, _ = analytics.RecordEvent(ctx, models.AnalyticsEventRequest{
+		EventID: "evt-low-click-1", QueryID: "imp-low-1", EventType: "click", ProductID: "prod-001", Position: 1,
+	})
+	_, _ = analytics.RecordEvent(ctx, models.AnalyticsEventRequest{
+		EventID: "evt-low-purch-1", QueryID: "imp-low-1", EventType: "purchase", ProductID: "prod-001", Position: 1,
+	})
 
-	// 1) Dry-run returns proposed diff for prod-001 only (prod-010 untouched) and writes NOTHING to seedProducts.
+	// 1) Dry-run returns proposed diff for prod-001 only (prod-010 untouched), writes NOTHING to seedProducts,
+	// and does NOT snapshot the baseline (#47 fix).
 	dry, err := analytics.RollupProductSignalsWithOptions(ctx, RollupOptions{
 		TenantID:    "default",
 		WindowDays:  30,
@@ -145,30 +153,60 @@ func TestAnalyticsRollup_BayesianPriorBlendingDryRunAndZeroImpressionSkip(t *tes
 	if err != nil || !dry.DryRun || dry.ProductsUpdated != 1 || len(dry.Diffs) != 1 || dry.Diffs[0].ProductID != "prod-001" {
 		t.Fatalf("dry-run rollup unexpected: %+v, err=%v", dry, err)
 	}
-	if spannerSvc.seedProducts[0].Signals.CTR != origProd001.CTR {
-		t.Fatalf("dry-run mutated prod-001 CTR from %v to %v", origProd001.CTR, spannerSvc.seedProducts[0].Signals.CTR)
+	if spannerSvc.seedProducts[0].Signals.CTR != origProd001.CTR || analytics.HasMemoryBaselineForTest("prod-001") {
+		t.Fatalf("dry-run mutated prod-001 CTR or snapshotted baseline: ctr=%v hasBaseline=%v",
+			spannerSvc.seedProducts[0].Signals.CTR, analytics.HasMemoryBaselineForTest("prod-001"))
 	}
 
-	// 2) Live rollup updates prod-001 with bounded drift (< 0.01 from prior 0.186 on 3 unclicked impressions)
-	// and never touches prod-010 (0 impressions).
-	live, err := analytics.RollupProductSignalsWithOptions(ctx, RollupOptions{
+	// 2) Live rollup #1 snapshots the frozen baseline, updates prod-001 with bounded drift, and skips prod-010.
+	live1, err := analytics.RollupProductSignalsWithOptions(ctx, RollupOptions{
 		TenantID:    "default",
 		WindowDays:  30,
 		PriorWeight: 100,
 		DryRun:      false,
 	})
-	if err != nil || live.DryRun || live.ProductsUpdated != 1 {
-		t.Fatalf("live rollup unexpected: %+v, err=%v", live, err)
+	if err != nil || live1.DryRun || live1.ProductsUpdated != 1 || !analytics.HasMemoryBaselineForTest("prod-001") {
+		t.Fatalf("live1 rollup unexpected: %+v, err=%v", live1, err)
 	}
-	if _, touched := live.UpdatedSignals["prod-010"]; touched {
-		t.Fatal("prod-010 had 0 impressions and must not be in UpdatedSignals")
+	if _, touched := live1.UpdatedSignals["prod-010"]; touched || analytics.HasMemoryBaselineForTest("prod-010") {
+		t.Fatal("prod-010 had 0 impressions and must not be in UpdatedSignals or baseline")
 	}
 	if *spannerSvc.seedProducts[9].Signals != origProd010 {
 		t.Fatalf("prod-010 without impressions was modified: got %+v, want %+v", *spannerSvc.seedProducts[9].Signals, origProd010)
 	}
-	newProd001CTR := spannerSvc.seedProducts[0].Signals.CTR
-	drift := math.Abs(newProd001CTR - origProd001.CTR)
-	if drift > 0.01 {
-		t.Fatalf("prod-001 CTR drifted too far on 3 impressions: prior=%v new=%v drift=%v", origProd001.CTR, newProd001CTR, drift)
+	sigAfterLive1 := *spannerSvc.seedProducts[0].Signals
+	drift := math.Abs(sigAfterLive1.CTR - origProd001.CTR)
+	if drift > 0.01 || sigAfterLive1.Clicks != origProd001.Clicks+1 || sigAfterLive1.Orders != origProd001.Orders+1 {
+		t.Fatalf("prod-001 after live1: %+v (orig=%+v, drift=%v)", sigAfterLive1, origProd001, drift)
+	}
+
+	// 3) Live rollup #2 over the exact same window events must be 100% IDEMPOTENT
+	// (identical clicks, orders, ctr, and conversion_rate; zero double-counting).
+	live2, err := analytics.RollupProductSignalsWithOptions(ctx, RollupOptions{
+		TenantID:    "default",
+		WindowDays:  30,
+		PriorWeight: 100,
+		DryRun:      false,
+	})
+	if err != nil {
+		t.Fatalf("live2 rollup error: %v", err)
+	}
+	sigAfterLive2 := *spannerSvc.seedProducts[0].Signals
+	if sigAfterLive2 != sigAfterLive1 || live2.UpdatedSignals["prod-001"] != live1.UpdatedSignals["prod-001"] {
+		t.Fatalf("consecutive rollups must be idempotent: live1=%+v live2=%+v", sigAfterLive1, sigAfterLive2)
+	}
+
+	// 4) Invalid prior_weight or window_days must return ErrInvalidRollupParam.
+	for _, bad := range []RollupOptions{
+		{WindowDays: -1, PriorWeight: 100},
+		{WindowDays: 91, PriorWeight: 100},
+		{WindowDays: 30, PriorWeight: -5},
+		{WindowDays: 30, PriorWeight: 10001},
+		{WindowDays: 30, PriorWeight: math.NaN()},
+		{WindowDays: 30, PriorWeight: math.Inf(1)},
+	} {
+		if _, err := analytics.RollupProductSignalsWithOptions(ctx, bad); err == nil {
+			t.Errorf("expected error for invalid RollupOptions %+v", bad)
+		}
 	}
 }

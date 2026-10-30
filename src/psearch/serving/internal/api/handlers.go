@@ -1171,33 +1171,56 @@ func (c *Controller) RollupAnalytics(ctx *gin.Context) {
 		PriorWeight: services.DefaultRollupPriorK,
 		DryRun:      ctx.Query("dry_run") == "true" || ctx.Query("dry_run") == "1",
 	}
+	if raw := strings.TrimSpace(ctx.Query("window_days")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 1 || v > 90 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "window_days must be an integer between 1 and 90"})
+			return
+		}
+		opts.WindowDays = v
+	}
+	for _, qp := range []string{"prior_weight", "k"} {
+		if raw := strings.TrimSpace(ctx.Query(qp)); raw != "" {
+			v, err := strconv.ParseFloat(raw, 64)
+			if err != nil || services.ValidateRollupParams(opts.WindowDays, v) != nil {
+				ctx.JSON(http.StatusBadRequest, gin.H{"error": "prior_weight (k) must be a finite number in (0, 10000]"})
+				return
+			}
+			opts.PriorWeight = v
+		}
+	}
 	var body struct {
 		TenantID    string   `json:"tenant_id"`
-		WindowDays  int      `json:"window_days"`
+		WindowDays  *int     `json:"window_days"`
 		PriorWeight *float64 `json:"prior_weight"`
 		K           *float64 `json:"k"`
 		DryRun      *bool    `json:"dry_run"`
 	}
-	_ = ctx.ShouldBindJSON(&body)
-	if body.WindowDays > 0 {
-		opts.WindowDays = body.WindowDays
-	} else if raw := strings.TrimSpace(ctx.Query("window_days")); raw != "" {
-		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
-			opts.WindowDays = v
+	if ctx.Request.Body != nil && ctx.Request.ContentLength != 0 {
+		if err := ctx.ShouldBindJSON(&body); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
 	}
-	if body.PriorWeight != nil && *body.PriorWeight > 0 {
+	if body.WindowDays != nil {
+		if *body.WindowDays < 1 || *body.WindowDays > 90 {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "window_days must be between 1 and 90"})
+			return
+		}
+		opts.WindowDays = *body.WindowDays
+	}
+	if body.PriorWeight != nil {
+		if services.ValidateRollupParams(opts.WindowDays, *body.PriorWeight) != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "prior_weight (k) must be a finite number in (0, 10000]"})
+			return
+		}
 		opts.PriorWeight = *body.PriorWeight
-	} else if body.K != nil && *body.K > 0 {
+	} else if body.K != nil {
+		if services.ValidateRollupParams(opts.WindowDays, *body.K) != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "k must be a finite number in (0, 10000]"})
+			return
+		}
 		opts.PriorWeight = *body.K
-	} else if raw := strings.TrimSpace(ctx.Query("prior_weight")); raw != "" {
-		if v, err := strconv.ParseFloat(raw, 64); err == nil && v > 0 {
-			opts.PriorWeight = v
-		}
-	} else if raw := strings.TrimSpace(ctx.Query("k")); raw != "" {
-		if v, err := strconv.ParseFloat(raw, 64); err == nil && v > 0 {
-			opts.PriorWeight = v
-		}
 	}
 	if body.DryRun != nil {
 		opts.DryRun = *body.DryRun
@@ -1207,6 +1230,10 @@ func (c *Controller) RollupAnalytics(ctx *gin.Context) {
 	}
 	res, err := c.analytics.RollupProductSignalsWithOptions(ctx.Request.Context(), opts)
 	if err != nil {
+		if errors.Is(err, services.ErrInvalidRollupParam) {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
 	}

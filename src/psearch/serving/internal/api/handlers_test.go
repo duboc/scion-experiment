@@ -1260,6 +1260,38 @@ func TestSearchAnalyticsEventsSummaryAndRollupAPI(t *testing.T) {
 	if wr.Code != http.StatusOK || json.Unmarshal(wr.Body.Bytes(), &rollup) != nil || rollup.DryRun || rollup.ProductsUpdated == 0 {
 		t.Fatalf("POST /api/analytics/rollup = %d %+v (%s)", wr.Code, rollup, wr.Body.String())
 	}
+	// Second consecutive live rollup over the same events must be idempotent (#47 fix).
+	wr2 := doPost("/api/analytics/rollup", "s3cret", `{"window_days":30,"prior_weight":100}`)
+	var rollup2 models.AnalyticsRollupResponse
+	_ = json.Unmarshal(wr2.Body.Bytes(), &rollup2)
+	for pid, sig1 := range rollup.UpdatedSignals {
+		if sig2 := rollup2.UpdatedSignals[pid]; sig1 != sig2 {
+			t.Fatalf("non-idempotent rollup for %s: run1=%+v run2=%+v", pid, sig1, sig2)
+		}
+	}
+	// Invalid prior_weight/k or window_days (query or JSON body) must return HTTP 400 (#47 fix).
+	for _, bad := range []struct {
+		path string
+		body string
+	}{
+		{"/api/analytics/rollup?prior_weight=0", `{}`},
+		{"/api/analytics/rollup?prior_weight=-10", `{}`},
+		{"/api/analytics/rollup?prior_weight=10001", `{}`},
+		{"/api/analytics/rollup?prior_weight=abc", `{}`},
+		{"/api/analytics/rollup?k=NaN", `{}`},
+		{"/api/analytics/rollup?window_days=0", `{}`},
+		{"/api/analytics/rollup?window_days=91", `{}`},
+		{"/api/analytics/rollup?window_days=abc", `{}`},
+		{"/api/analytics/rollup", `{"prior_weight":0}`},
+		{"/api/analytics/rollup", `{"prior_weight":15000}`},
+		{"/api/analytics/rollup", `{"k":-1}`},
+		{"/api/analytics/rollup", `{"window_days":0}`},
+		{"/api/analytics/rollup", `{"window_days":120}`},
+	} {
+		if wBad := doPost(bad.path, "s3cret", bad.body); wBad.Code != http.StatusBadRequest {
+			t.Errorf("POST %s body=%s status = %d, want 400", bad.path, bad.body, wBad.Code)
+		}
+	}
 }
 
 // Issue #45: Out-of-stock products with strong lexical relevance (e.g. prod-004 for "urban sneaker")
