@@ -1,7 +1,7 @@
 # `psearch` Knowledge Plane — Master Index
 
 Welcome to the canonical **Knowledge Plane** for the `psearch` Software Factory on [`duboc/scion-experiment`](https://github.com/duboc/scion-experiment).
-All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult this index and the linked ADRs before planning, implementing, reviewing, or deploying any GitHub Issue (`#1`–`#11`, `#19`–`#23`, `#28`, `#32`–`#35`).
+All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult this index and the linked ADRs before planning, implementing, reviewing, or deploying any GitHub Issue (`#1`–`#11`, `#19`–`#23`, `#28`, `#32`–`#35`, `#39`–`#44`).
 
 ---
 
@@ -20,6 +20,11 @@ All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult 
 | [`adr/ADR-009-variant-grouping.md`](adr/ADR-009-variant-grouping.md) | **#32** | Variant grouping — ✅ Accepted (live since `00027-dmv`) | **Variant Grouping / Collapse** (one card per parent `product_id`; `skus` variant columns; `EXISTS` color/size filters on the interleaved child; `ARRAY` aggregation of variants in the hybrid SQL; color/size facets) |
 | [`adr/ADR-010-visual-multimodal-search.md`](adr/ADR-010-visual-multimodal-search.md) | **#33** | Visual & multimodal search — ✅ Accepted (live since `00028-klr`) | **Visual & Multimodal Search** (photo query via `gemini-embedding-2` into the existing `embedding_v2` space; fused photo+text vector, text drives FTS; vector-only SQL for photo-only; inline base64 only, no URL fetch; `multimodal_v2` mode) |
 | [`adr/ADR-011-sponsored-products.md`](adr/ADR-011-sponsored-products.md) | **#35** | Sponsored products / retail media — ✅ Accepted (live since `00030-pqq`) | **Sponsored Products** (`ad_campaigns` + interleaved `ad_clicks`, integer micros; 3rd CTE `sponsored_matches` selects relevant in-budget in-stock ads with the same `catalogFilterSQL`; Go `InjectSponsored` places them last at slots `1,4,8`, deduped, page 1 only, `ads=false` opt-out; `POST /api/ads/click` single `ReadWriteTransaction` idempotent CPC burn, no overspend; `/api/ads/campaigns` admin CRUD) |
+| [`adr/ADR-012-scann-ann-and-pagination.md`](adr/ADR-012-scann-ann-and-pagination.md) | **#39**, **#40** | Wave 6 — 📋 Proposed | **ScaNN ANN Vector Index & True Pagination** (`024_products_vector_index.sql` `CREATE VECTOR INDEX` + `APPROX_COSINE_DISTANCE` with automatic exact fallback; concurrent batched & chunked `cmd/backfill-embeddings`; real `page`/`offset` slicing, true pre-slice `total_found`/`total_pages`/`has_next`, and `popularity`/`rating_desc` sorts) |
+| [`adr/ADR-013-disjunctive-facets.md`](adr/ADR-013-disjunctive-facets.md) | **#41** | Wave 6 — 📋 Proposed | **Disjunctive Multi-Select Faceting** (`categories[]`, `brands[]`, `colors[]`, `sizes[]`, `price_ranges[]` with `OR` within dimension, `AND` across dimensions, and exclude-own-dimension sibling facet counts) |
+| [`adr/ADR-014-dynamic-product-attributes.md`](adr/ADR-014-dynamic-product-attributes.md) | **#42** | Wave 6 — 📋 Proposed | **Schema-Free Dynamic Product Attributes** (`025_product_attributes.sql` interleaved `product_attributes` + `products.attributes JSON`, `attrs` / `attr.<key>` disjunctive filtering, auto-discovered `facets.attributes` for any industry vertical, and `PUT /api/products/:id/attributes`) |
+| [`adr/ADR-015-search-telemetry-and-attribution.md`](adr/ADR-015-search-telemetry-and-attribution.md) | **#43** | Wave 6 — 📋 Proposed | **Closed-Loop Search Telemetry & Attribution** (`026_search_events.sql` `search_impressions` & `search_conversions` with 90-day TTL, async `query_id` tracking, `POST /api/analytics/events`, `GET /api/analytics/summary` CTR/MRR@10/zero-result/A/B KPIs, and `POST /api/analytics/rollup` into LTR signals) |
+| [`adr/ADR-016-similar-items-and-substitutes.md`](adr/ADR-016-similar-items-and-substitutes.md) | **#44** | Wave 6 — 📋 Proposed | **Item-to-Item Similarity & In-Stock Substitutes** (`GET /api/products/:id/similar` blending Spanner `embedding_v2` ANN kNN + `user_session_events` co-visitation across `similar`, `substitutes`, and `co_viewed` modes) |
 
 ---
 
@@ -68,7 +73,7 @@ All agents (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) MUST consult 
 - **Active revision:** `psearch-serving-00030-pqq` (Issue #35 sponsored products / ADR-011, accepted; source `git archive` of `5e6bf63` = code `0644c6f` + `a7e1054`; migrations `023`/`023b` applied), rollback `00029-7ss`. History: `00025-5mx` (#23) → `00027-dmv` (#32) → `00028-klr` (#33) → `00029-7ss` (#34) → `00030-pqq` (#35). Models: `gemini-3.8-flash` (text), `gemini-4-argon` (pro), `gemini-embedding-2` 1024-d, Vertex AI `global`. All 14 requirements (4.1.1–4.1.14) live.
 - **Product & engineering docs:** [`../README.md`](../README.md) · [`../PRODUCT.md`](../PRODUCT.md) · [`../DESIGN.md`](../DESIGN.md) · [`../DEPLOYMENT.md`](../DEPLOYMENT.md) · [`../REVIEW.md`](../REVIEW.md).
 - **Verification & evaluation:** [`../docs/scion/verification-and-eval.md`](../docs/scion/verification-and-eval.md) — control-plane verification and the 5-layer (L1–L5) product evaluation pyramid.
-- **Migrations:** `src/iac/migrations/011`–`021` (see DEPLOYMENT.md §3).
+- **Migrations:** `src/iac/migrations/011`–`023` applied (see DEPLOYMENT.md §3); `024`–`026` planned for Wave 6 (`ADR-012`, `ADR-014`, `ADR-015`).
 
 ---
 

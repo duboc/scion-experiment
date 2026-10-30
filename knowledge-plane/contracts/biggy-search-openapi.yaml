@@ -1,17 +1,17 @@
 openapi: 3.0.3
 info:
   title: psearch Serving API (Cloud Spanner Hybrid Search)
-  version: 2.5.0
+  version: 2.6.0
   description: |
-    Canonical REST contract for `psearch-serving` (`src/psearch/serving`) across Waves 1–5
-    (Issues #1–#10, #11, and #19–#22).
+    Canonical REST contract for `psearch-serving` (`src/psearch/serving`) across Waves 1–6
+    (Issues #1–#11, #19–#23, #32–#35, and #39–#44).
 paths:
   /api/health:
     get:
       summary: Cloud Run health probe (`status`, `service`, `backend_mode`)
   /api/info:
     get:
-      summary: Service, sandbox, Spanner, active embedding version (v1/v2), and embedding cache stats
+      summary: Service, sandbox, Spanner, active embedding version (v1/v2), ScaNN vector index state, and embedding cache stats
   /api/config/embedding-version:
     get:
       summary: Active embedding version (`v1` 768-d legacy vs `v2` 1024-d gemini-embedding-2)
@@ -20,22 +20,31 @@ paths:
   /api/search:
     get:
       summary: >
-        Hybrid RRF + Faceted + Merchandised + Delivery Promise + Two-Stage LTR +
-        Conversational Intent + Session Personalization + Spell Check + B2B Contract Pricing search
+        Hybrid RRF (ScaNN ANN / exact vector + FTS) + Disjunctive Multi-Select & Dynamic Attribute Facets +
+        Merchandising + Delivery Promise + Two-Stage LTR + Conversational Intent + Session Personalization +
+        Spell Check + B2B Contract Pricing + Pagination + Sponsored Products search
       parameters:
         - { name: q, in: query, schema: { type: string } }
         - { name: alpha, in: query, schema: { type: number, minimum: 0.0, maximum: 1.0 } }
         - { name: limit, in: query, schema: { type: integer } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
         - { name: min_score, in: query, schema: { type: number } }
         - { name: tenant_id, in: query, schema: { type: string, default: default } }
         - { name: locale, in: query, schema: { type: string } }
         - { name: category, in: query, schema: { type: string } }
+        - { name: categories, in: query, schema: { type: string, description: Comma-separated disjunctive categories (Issue #41, ADR-013) } }
         - { name: brand, in: query, schema: { type: string } }
+        - { name: brands, in: query, schema: { type: string, description: Comma-separated disjunctive brands (Issue #41, ADR-013) } }
         - { name: color, in: query, schema: { type: string } }
+        - { name: colors, in: query, schema: { type: string, description: Comma-separated disjunctive SKU colors (Issue #41, ADR-013) } }
+        - { name: size, in: query, schema: { type: string } }
+        - { name: sizes, in: query, schema: { type: string, description: Comma-separated disjunctive SKU sizes (Issue #41, ADR-013) } }
+        - { name: price_ranges, in: query, schema: { type: string, description: Comma-separated price range buckets (Issue #41, ADR-013) } }
         - { name: min_price, in: query, schema: { type: number } }
         - { name: max_price, in: query, schema: { type: number } }
         - { name: price_table_id, in: query, schema: { type: string } }
-        - { name: sort_by, in: query, schema: { type: string, enum: [relevance, price_asc, price_desc] } }
+        - { name: sort_by, in: query, schema: { type: string, enum: [relevance, price_asc, price_desc, popularity, rating_desc] } }
         - { name: channel, in: query, schema: { type: string, enum: [web, mobile, store] } }
         - { name: only_in_stock, in: query, schema: { type: boolean } }
         - { name: cep, in: query, schema: { type: string } }
@@ -43,9 +52,35 @@ paths:
         - { name: ltr, in: query, schema: { type: boolean } }
         - { name: parse_intent, in: query, schema: { type: boolean } }
         - { name: session_id, in: query, schema: { type: string } }
+        - { name: experiment_id, in: query, schema: { type: string, description: Optional A/B experiment variant tag (Issue #43, ADR-015) } }
         - { name: ads, in: query, schema: { type: boolean, default: true } }
     post:
-      summary: Same search contract via JSON request body (`models.SearchRequest`)
+      summary: Same search contract via JSON request body (`models.SearchRequest`, including `image_base64` and dynamic `attrs` map)
+  /api/products/{id}/attributes:
+    put:
+      summary: Upsert dynamic schema-free JSON & interleaved `product_attributes` for a product (Issue #42, ADR-014; requires `X-Admin-Token`)
+  /api/products/{id}/similar:
+    get:
+      summary: Item-to-item similar products, in-stock substitutes, and co-viewed recommendations via Spanner ANN + session co-visitation (Issue #44, ADR-016)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: mode, in: query, schema: { type: string, enum: [similar, substitutes, co_viewed], default: similar } }
+        - { name: limit, in: query, schema: { type: integer, default: 6, maximum: 24 } }
+        - { name: tenant_id, in: query, schema: { type: string, default: default } }
+        - { name: locale, in: query, schema: { type: string } }
+        - { name: channel, in: query, schema: { type: string } }
+        - { name: price_table_id, in: query, schema: { type: string } }
+        - { name: cep, in: query, schema: { type: string } }
+        - { name: only_in_stock, in: query, schema: { type: boolean } }
+  /api/analytics/events:
+    post:
+      summary: Record idempotent search attribution events (`click`, `add_to_cart`, `purchase`) linked to `query_id` and `position` (Issue #43, ADR-015)
+  /api/analytics/summary:
+    get:
+      summary: Tenant-scoped search KPIs — total/zero-result searches, top zero-result queries, CTR, MRR@10, conversion rate, and A/B `experiment_id` breakdown (Issue #43, ADR-015)
+  /api/analytics/rollup:
+    post:
+      summary: Aggregate search impressions & conversions into Laplace-smoothed `products.(clicks, orders, ctr, conversion_rate)` LTR signals (Issue #43, ADR-015; requires `X-Admin-Token`)
   /api/ads/campaigns:
     get:
       summary: List sponsored product ad campaigns for a tenant (Issue #35, ADR-011)
