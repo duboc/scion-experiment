@@ -109,6 +109,60 @@ func TestPricingSQL(t *testing.T) {
 	}
 }
 
+func TestCountCacheKey_DistinctAcrossEveryDimensionAndBoundedEviction(t *testing.T) {
+	svc := &SpannerService{config: testConfig("v1")}
+	baseF := models.SearchFilters{}
+	baseExp := Expansion{}
+	baseKey := svc.countCacheKey("shoes", baseExp, baseF)
+
+	variants := map[string]struct {
+		q      string
+		exp    Expansion
+		folded bool
+		f      models.SearchFilters
+	}{
+		"sizes":          {"shoes", baseExp, false, models.SearchFilters{Sizes: []string{"40", "42"}}},
+		"zip5":           {"shoes", baseExp, false, models.SearchFilters{Zip5: "01310"}},
+		"attrs":          {"shoes", baseExp, false, models.SearchFilters{Attrs: map[string][]string{"ram": {"16GB"}}}},
+		"price_ranges":   {"shoes", baseExp, false, models.SearchFilters{PriceRanges: []string{"100-500"}}},
+		"categories":     {"shoes", baseExp, false, models.SearchFilters{Categories: []string{"Footwear", "Audio"}}},
+		"brands":         {"shoes", baseExp, false, models.SearchFilters{Brands: []string{"Nike", "Asics"}}},
+		"colors":         {"shoes", baseExp, false, models.SearchFilters{Colors: []string{"azul", "preto"}}},
+		"tenant_id":      {"shoes", baseExp, false, models.SearchFilters{TenantID: "acme"}},
+		"locale":         {"shoes", baseExp, false, models.SearchFilters{Locale: "pt-BR"}},
+		"channel":        {"shoes", baseExp, false, models.SearchFilters{Channel: "mobile"}},
+		"price_table_id": {"shoes", baseExp, false, models.SearchFilters{PriceTable: "b2b-gold"}},
+		"only_in_stock":  {"shoes", baseExp, false, models.SearchFilters{OnlyInStock: true}},
+		"min_price":      {"shoes", baseExp, false, models.SearchFilters{MinPrice: 50}},
+		"max_price":      {"shoes", baseExp, false, models.SearchFilters{MaxPrice: 500}},
+		"max_sla_hours":  {"shoes", baseExp, false, models.SearchFilters{Zip5: "01310", MaxSLAHours: 24}},
+		"relax_text":     {"shoes", baseExp, false, models.SearchFilters{RelaxText: true}},
+		"synonyms":       {"shoes", Expansion{Terms: []string{"sneakers"}, Weight: 0.4}, false, baseF},
+		"text_folding":   {"shoes", baseExp, true, baseF},
+	}
+
+	seen := map[string]string{baseKey: "base"}
+	for name, v := range variants {
+		svc.config.TextFolding = v.folded
+		k := svc.countCacheKey(v.q, v.exp, v.f)
+		if prev, exists := seen[k]; exists {
+			t.Fatalf("countCacheKey collision between %q and %q: %s", name, prev, k)
+		}
+		seen[k] = name
+	}
+
+	// Verify bounded cache size (maxCountCacheEntries = 512).
+	for i := 0; i < maxCountCacheEntries+50; i++ {
+		svc.setCachedCounts(strings.Repeat("k", 4)+string(rune(i)), 10, 10, true)
+	}
+	svc.countMu.RLock()
+	sz := len(svc.countCache)
+	svc.countMu.RUnlock()
+	if sz > maxCountCacheEntries {
+		t.Fatalf("countCache size = %d, want <= %d", sz, maxCountCacheEntries)
+	}
+}
+
 func TestMemorySortByPopularityAndRatingDesc(t *testing.T) {
 	ctx := context.Background()
 	svc := &SpannerService{config: testConfig("v1"), seedProducts: DefaultSeedProducts()}

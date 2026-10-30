@@ -681,6 +681,9 @@ func TestSponsoredProductsSearchAndOptOut(t *testing.T) {
 	if !resp.Results[0].Sponsored || resp.Results[0].AdCampaignID == "" || resp.Results[0].AdClickID == "" {
 		t.Fatalf("slot 1 must be sponsored with campaign_id and click_id: %+v", resp.Results[0])
 	}
+	if len(resp.Results[0].DynamicAttributes) == 0 || len(resp.Results[0].Attributes) == 0 {
+		t.Fatalf("sponsored slot 1 (%s) must be enriched with DynamicAttributes: %+v", resp.Results[0].ID, resp.Results[0])
+	}
 	// Organic copy must be deduplicated (no duplicate product IDs).
 	seen := map[string]bool{}
 	for _, res := range resp.Results {

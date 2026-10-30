@@ -635,7 +635,6 @@ intentDone:
 		}
 		results = results[effectiveOffset:end]
 	}
-	c.spannerSvc.EnrichResultsWithAttributes(ctx.Request.Context(), results)
 	if !req.LTR {
 		attachPromises(results, true)
 	}
@@ -660,6 +659,8 @@ intentDone:
 			}
 		}
 	}
+	// Enrich the final returned page (including any injected sponsored items) with DynamicAttributes (#46 fix).
+	c.spannerSvc.EnrichResultsWithAttributes(ctx.Request.Context(), results)
 	tenant := strings.TrimSpace(req.TenantID)
 	if tenant == "" {
 		tenant = "default"

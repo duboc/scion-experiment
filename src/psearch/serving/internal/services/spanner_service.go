@@ -372,10 +372,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 	// apply) instead of running hybrid retrieval.
 	if IsBrowseQuery(query) && len(filters.ImageVector) == 0 {
 		if s.client != nil || s.lexicalCountRunner != nil {
-			var cappedCnt int
-			if cnt, cerr := s.spannerCappedBrowseCount(ctx, filters); cerr == nil {
-				cappedCnt = cnt
-			}
+			cappedCnt, cappedErr := s.spannerCappedBrowseCount(ctx, filters)
 			w := fixedSearchWindow(cappedCnt)
 			queryLimit := limit
 			if limit >= 100 {
@@ -385,19 +382,22 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 				var res []models.SearchResult
 				var browseErr error
 				exactCnt := cappedCnt
+				needExact := cappedErr != nil || cappedCnt >= 501
 				g, gctx := errgroup.WithContext(ctx)
 				g.Go(func() error {
 					res, browseErr = s.spannerBrowse(gctx, queryLimit, filters)
 					return nil
 				})
-				g.Go(func() error {
-					cctx, cancel := context.WithTimeout(gctx, 2*time.Second)
-					defer cancel()
-				if cnt, cerr := s.spannerBrowseCount(cctx, filters); cerr == nil {
-					exactCnt = cnt
+				if needExact {
+					g.Go(func() error {
+						cctx, cancel := context.WithTimeout(gctx, 2*time.Second)
+						defer cancel()
+						if cnt, cerr := s.spannerBrowseCount(cctx, filters); cerr == nil {
+							exactCnt = cnt
+						}
+						return nil
+					})
 				}
-					return nil
-				})
 				_ = g.Wait()
 				if browseErr == nil {
 					if len(res) > w {
@@ -424,6 +424,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 	if s.client != nil && len(filters.ImageVector) > 0 && s.config.UseGeminiEmbeddings() {
 		var plan vectorPlan
 		var cappedCnt int
+		var cappedErr error
 		g, gctx := errgroup.WithContext(ctx)
 		g.Go(func() error {
 			plan = s.planImageQuery(gctx, query, filters)
@@ -431,9 +432,7 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		})
 		if !IsBrowseQuery(query) {
 			g.Go(func() error {
-				if cnt, cerr := s.spannerCappedLexicalCount(gctx, query, expansion, filters); cerr == nil {
-					cappedCnt = cnt
-				}
+				cappedCnt, cappedErr = s.spannerCappedLexicalCount(gctx, query, expansion, filters)
 				return nil
 			})
 		}
@@ -449,12 +448,13 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		var vecIdxUsed bool
 		var searchErr error
 		exactCnt := cappedCnt
+		needExact := !plan.vectorOnly && (cappedErr != nil || cappedCnt >= 501)
 		g2, gctx2 := errgroup.WithContext(ctx)
 		g2.Go(func() error {
 			res, sponsored, vecIdxUsed, searchErr = s.spannerHybridSearchWithAds(gctx2, query, queryLimit, minScore, alpha, plan, filters)
 			return nil
 		})
-		if !plan.vectorOnly {
+		if needExact {
 			g2.Go(func() error {
 				cctx, cancel := context.WithTimeout(gctx2, 2*time.Second)
 				defer cancel()
@@ -990,9 +990,10 @@ func injectDynamicAttrClauses(sql string, attrs map[string][]string, params map[
 	return sql
 }
 
-// EnrichResultsWithAttributes attaches dynamic product attributes to the given slice of results.
+// EnrichResultsWithAttributes attaches dynamic product attributes to the given slice of results
+// in both Spanner and Memory modes (including injected sponsored items; #46 fix).
 func (s *SpannerService) EnrichResultsWithAttributes(ctx context.Context, results []models.SearchResult) {
-	if s == nil || s.client == nil || len(results) == 0 {
+	if s == nil || len(results) == 0 {
 		return
 	}
 	s.enrichResultsWithAttributes(ctx, results)
@@ -1711,7 +1712,7 @@ func (s *SpannerService) filterCountParams(f models.SearchFilters) map[string]in
 }
 
 func (s *SpannerService) spannerLexicalCount(ctx context.Context, query string, expansion Expansion, filters models.SearchFilters) (int, error) {
-	cacheKey := s.countCacheKey(query, filters)
+	cacheKey := s.countCacheKey(query, expansion, filters)
 	if entry, ok := s.getCachedCounts(cacheKey); ok && entry.hasExact {
 		return entry.exact, nil
 	}
@@ -1764,10 +1765,22 @@ func (s *SpannerService) spannerLexicalCount(ctx context.Context, query string, 
 }
 
 func (s *SpannerService) spannerBrowseCount(ctx context.Context, filters models.SearchFilters) (int, error) {
+	cacheKey := s.countCacheKey("*", Expansion{}, filters)
+	if entry, ok := s.getCachedCounts(cacheKey); ok && entry.hasExact {
+		return entry.exact, nil
+	}
 	params := s.filterCountParams(filters)
 	sql := injectDynamicAttrClauses(buildBrowseCountSQL(), filters.Attrs, params)
 	if s.lexicalCountRunner != nil {
-		return s.lexicalCountRunner(ctx, sql, params)
+		cnt, err := s.lexicalCountRunner(ctx, sql, params)
+		if err == nil {
+			capped := cnt
+			if capped > 501 {
+				capped = 501
+			}
+			s.setCachedCounts(cacheKey, capped, cnt, true)
+		}
+		return cnt, err
 	}
 	if s.client == nil {
 		return 0, fmt.Errorf("no Spanner client")
@@ -1782,15 +1795,95 @@ func (s *SpannerService) spannerBrowseCount(ctx context.Context, filters models.
 	if err := row.Columns(&cnt); err != nil {
 		return 0, err
 	}
-	return int(cnt), nil
+	c := int(cnt)
+	capped := c
+	if capped > 501 {
+		capped = 501
+	}
+	s.setCachedCounts(cacheKey, capped, c, true)
+	return c, nil
 }
 
-func (s *SpannerService) countCacheKey(query string, f models.SearchFilters) string {
+const maxCountCacheEntries = 512
+
+type canonicalCountKey struct {
+	Query       string              `json:"q"`
+	SynQuery    string              `json:"syn"`
+	Folded      bool                `json:"folded"`
+	RelaxText   bool                `json:"relax"`
+	OnlyInStock bool                `json:"in_stock"`
+	Channel     string              `json:"channel"`
+	TenantID    string              `json:"tenant"`
+	Locale      string              `json:"locale"`
+	Categories  []string            `json:"categories"`
+	Brands      []string            `json:"brands"`
+	Colors      []string            `json:"colors"`
+	Sizes       []string            `json:"sizes"`
+	PriceTable  string              `json:"price_table"`
+	PriceRanges []string            `json:"price_ranges"`
+	MinPrice    float64             `json:"min_price"`
+	MaxPrice    float64             `json:"max_price"`
+	Zip5        string              `json:"zip5"`
+	MaxSLAHours int64               `json:"max_sla"`
+	Attrs       map[string][]string `json:"attrs"`
+}
+
+func sortedCopy(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, len(in))
+	for i, s := range in {
+		out[i] = strings.ToLower(strings.TrimSpace(s))
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s *SpannerService) countCacheKey(query string, expansion Expansion, f models.SearchFilters) string {
 	f = normalizeFilters(f)
-	return fmt.Sprintf("%s|%t|%s|%s|%v|%v|%s|%v|%v|%v|%s|%v|%s|%v|%s|%d|%v",
-		strings.ToLower(strings.TrimSpace(query)), f.RelaxText, f.TenantID, f.Locale,
-		f.Categories, f.Brands, f.Channel, f.OnlyInStock, f.MinPrice, f.MaxPrice,
-		f.PriceTable, f.PriceRanges, f.Color, f.Colors, f.Size, f.MaxSLAHours, f.Attrs)
+	folded := s != nil && s.config != nil && s.config.TextFolding
+	qNorm := strings.ToLower(strings.TrimSpace(query))
+	if folded {
+		qNorm = FoldAccents(qNorm)
+	}
+	synNorm := ""
+	if len(expansion.Terms) > 0 {
+		synNorm = strings.ToLower(strings.TrimSpace(expansion.SpannerQuery()))
+	}
+	var canonAttrs map[string][]string
+	if len(f.Attrs) > 0 {
+		canonAttrs = make(map[string][]string, len(f.Attrs))
+		for k, vs := range f.Attrs {
+			lk := strings.ToLower(strings.TrimSpace(k))
+			if lk != "" && len(vs) > 0 {
+				canonAttrs[lk] = sortedCopy(vs)
+			}
+		}
+	}
+	ck := canonicalCountKey{
+		Query:       qNorm,
+		SynQuery:    synNorm,
+		Folded:      folded,
+		RelaxText:   f.RelaxText,
+		OnlyInStock: f.OnlyInStock,
+		Channel:     f.Channel,
+		TenantID:    f.TenantID,
+		Locale:      strings.ToLower(f.Locale),
+		Categories:  sortedCopy(f.Categories),
+		Brands:      sortedCopy(f.Brands),
+		Colors:      sortedCopy(f.Colors),
+		Sizes:       sortedCopy(f.Sizes),
+		PriceTable:  strings.ToLower(strings.TrimSpace(f.PriceTable)),
+		PriceRanges: sortedCopy(f.PriceRanges),
+		MinPrice:    f.MinPrice,
+		MaxPrice:    f.MaxPrice,
+		Zip5:        strings.TrimSpace(f.Zip5),
+		MaxSLAHours: f.MaxSLAHours,
+		Attrs:       canonAttrs,
+	}
+	b, _ := json.Marshal(ck)
+	return string(b)
 }
 
 func (s *SpannerService) getCachedCounts(key string) (countCacheEntry, bool) {
@@ -1812,8 +1905,24 @@ func (s *SpannerService) setCachedCounts(key string, capped int, exact int, hasE
 	if s.countCache == nil {
 		s.countCache = map[string]countCacheEntry{}
 	}
-	if len(s.countCache) > 512 {
-		s.countCache = map[string]countCacheEntry{}
+	now := time.Now()
+	if _, exists := s.countCache[key]; !exists && len(s.countCache) >= maxCountCacheEntries {
+		// Evict expired entries first; if still at capacity, evict the entry with the earliest expiration.
+		var oldestKey string
+		var oldestExp time.Time
+		for k, v := range s.countCache {
+			if now.After(v.expiresAt) {
+				delete(s.countCache, k)
+				continue
+			}
+			if oldestKey == "" || v.expiresAt.Before(oldestExp) {
+				oldestKey = k
+				oldestExp = v.expiresAt
+			}
+		}
+		if len(s.countCache) >= maxCountCacheEntries && oldestKey != "" {
+			delete(s.countCache, oldestKey)
+		}
 	}
 	prev := s.countCache[key]
 	if !hasExact && prev.hasExact {
@@ -1828,12 +1937,12 @@ func (s *SpannerService) setCachedCounts(key string, capped int, exact int, hasE
 		capped:    capped,
 		exact:     exact,
 		hasExact:  hasExact,
-		expiresAt: time.Now().Add(30 * time.Second),
+		expiresAt: now.Add(30 * time.Second),
 	}
 }
 
 func (s *SpannerService) spannerCappedLexicalCount(ctx context.Context, query string, expansion Expansion, filters models.SearchFilters) (int, error) {
-	cacheKey := s.countCacheKey(query, filters)
+	cacheKey := s.countCacheKey(query, expansion, filters)
 	if entry, ok := s.getCachedCounts(cacheKey); ok {
 		return entry.capped, nil
 	}
@@ -1882,6 +1991,10 @@ func (s *SpannerService) spannerCappedLexicalCount(ctx context.Context, query st
 }
 
 func (s *SpannerService) spannerCappedBrowseCount(ctx context.Context, filters models.SearchFilters) (int, error) {
+	cacheKey := s.countCacheKey("*", Expansion{}, filters)
+	if entry, ok := s.getCachedCounts(cacheKey); ok {
+		return entry.capped, nil
+	}
 	params := s.filterCountParams(filters)
 	sql := injectDynamicAttrClauses(buildCappedBrowseCountSQL(), filters.Attrs, params)
 	if s.lexicalCountRunner != nil {
@@ -1892,6 +2005,7 @@ func (s *SpannerService) spannerCappedBrowseCount(ctx context.Context, filters m
 		if cnt > 501 {
 			cnt = 501
 		}
+		s.setCachedCounts(cacheKey, cnt, cnt, cnt < 501)
 		return cnt, nil
 	}
 	if s.client == nil {
@@ -1907,7 +2021,9 @@ func (s *SpannerService) spannerCappedBrowseCount(ctx context.Context, filters m
 	if err := row.Columns(&cnt); err != nil {
 		return 0, err
 	}
-	return int(cnt), nil
+	c := int(cnt)
+	s.setCachedCounts(cacheKey, c, c, c < 501)
+	return c, nil
 }
 
 // CheckSpannerCappedCount validates the capped COUNT(*) (LIMIT 501) SQL against Spanner (cmd/sqlcheck, ADR-012 #40 perf).
