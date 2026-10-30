@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00035-x4l`** (100% traffic, follows latest): #42 + #44 + #40 fix-2, deployed from a clean `git archive` of `6b0aee9`; attribute seed from `d1e3f9b` (025b). ScaNN ANN active. Rollback target: `psearch-serving-00034-wnr`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00037-g74`** (100% traffic, follows latest): #43 + #40 fix-3 + #45 (+ Go side of the #42 seed fix), deployed from a clean `git archive` of `739c62e`. ScaNN ANN active. Rollback target: `psearch-serving-00035-x4l`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -64,6 +64,7 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `023_ad_campaigns.sql` / `023b_seed_ad_campaigns.dml.sql` | DDL / DML | #35 | `ad_campaigns` + `ad_campaigns_by_tenant_product` (STORING) + `ad_clicks` (interleaved in `ad_campaigns`, ON DELETE CASCADE), applied as 3 separate statements; 5 seed campaigns (tenant `default`) |
 | `024_products_vector_index.sql` | DDL | #39 | `CREATE VECTOR INDEX products_embedding_v2_idx ON products(embedding_v2) STORING (is_visible, is_available, stock, tenant_id, locale, category, brand, price) WHERE embedding_v2 IS NOT NULL`, COSINE, `tree_depth=2`, `num_leaves=100`. Online LRO `_auto_op_8e2272d28739ab64` took about 2.5 min. **Rebuilt** 2026-10-30 after the full backfill (DROP + same DDL, LRO `_auto_op_812837e126700655`, 3 min) |
 | `025_product_attributes.sql` / `025b_seed_product_attributes.dml.sql` | DDL / DML | #42 | `products.attributes JSON`; `product_attributes` (interleaved in `products`, ON DELETE CASCADE, generated `attr_value_lower`) + `product_attributes_by_tenant_name_val`, applied as 3 statements. Seed from **`d1e3f9b`** (the `6b0aee9` version used `ROW_NUMBER()`, which Spanner rejects): 307 rows, 100 products (15 `prod-*` + 85 sunscreens with fps/skin_type/form) |
+| `026_search_events.sql` | DDL | #43 | `search_impressions` (PK `tenant_id, impression_id`) + `search_impressions_by_tenant_time` (STORING); `search_conversions` (PK `tenant_id, event_id`) + `search_conversions_by_impression` (STORING); both tables `ROW DELETION POLICY (OLDER_THAN(created_at, INTERVAL 90 DAY))`. Applied as 4 statements |
 
 ## 4. Release procedure
 
@@ -113,7 +114,9 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00032-46c`** | `2b3d49b` | #40 (+ #41 UI) | pagination (`page`/`offset`/`limit`, `has_next`, `total_pages`), `popularity`/`rating_desc` sorts, pager UI. ⚠️ `total_found` equals the candidate window, so it is wrong past page 8 (see #40 entry) |
 | **`00033-4n8`** | `f32ecf3` | #39 fix | ANN CTE limited to STORING-column predicates with over-fetch; `vector_index_used` reflects real query execution; single-content embedding calls. **ANN live** |
 | **`00034-wnr`** | `952cf20` | #40 fix, #41 (+ #42 UI) | true lexical/browse COUNT for `total_found`, reachable window ≤ 500; disjunctive multi-select facets (ADR-013). ✅ #41. ⚠️ #40 only partly fixed |
-| **`00035-x4l`** | `6b0aee9` | #42, #44, #40 fix-2 | schema-free product attributes + auto-discovered facets + admin upsert (ADR-014); similar / substitutes / co-viewed (ADR-016); fixed per-query window W. ✅ #42, #44. ⚠️ #40: pages overlap when W > 100. **current** |
+| **`00035-x4l`** | `6b0aee9` | #42, #44, #40 fix-2 | schema-free product attributes + auto-discovered facets + admin upsert (ADR-014); similar / substitutes / co-viewed (ADR-016); fixed per-query window W. ✅ #42, #44. ⚠️ #40: pages overlap when W > 100 |
+| `00036-nf2` | `90e289a` | #43, #40 fix-3 | ❌ **never served**: container failed to start (`Application exec likely failed`, no app output; build normal; same code starts locally in 4 s). Cloud Run kept 00035 at 100% |
+| **`00037-g74`** | `739c62e` | #43, #40 fix-3, #45 | search telemetry (`query_id`, impressions/conversions, A/B summary, rollup) (ADR-015); page-independent candidate set W; relevance-ranked window with OOS-last applied after it. ✅ #40, #43, #45. **current** |
 
 ---
 
@@ -815,3 +818,48 @@ There are 6579 visible OOS products, yet `shoes`, `geladeira` and `urban sneaker
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00034-wnr=100`. 025/025b are additive; 00034 ignores them.
 
 **Status:** #42 **closed**, #44 **closed**, #40 **open**.
+
+## #43 Search analytics + #40 fix-3 + #45 OOS reachability: DEPLOYED 2026-10-30
+
+| Step | Result |
+|---|---|
+| Latency baseline on `00035-x4l` (server `latency_ms`, 12 requests each, pages 1–5) | p50: `po` 1712 ms, `protetor` 1437 ms, `running shoes` 1184 ms |
+| DDL `026_search_events.sql` (4 statements) | ✅ each `done`; `ddl describe` shows both tables with `ROW DELETION POLICY (OLDER_THAN(created_at, INTERVAL 90 DAY))` and both indexes |
+| `cmd/sqlcheck` `90e289a` / `739c62e` | ✅ 58/0 and 59/0 |
+| Deploy `90e289a` → `00036-nf2` | ❌ `terminated: Application failed to start … Application exec likely failed`, startup TCP probe failed after about 10 s, no application logs. Cloud Build normal (`CGO_ENABLED=0` static binary, same Dockerfile/base images as 00035); the same build starts locally in 4 s. **No traffic impact**: 00035 kept serving 100% |
+| Deploy `739c62e` (90e289a + #45 `ae3f046`/`b28f6b4`) → **`psearch-serving-00037-g74`** | ✅ 100%, follows latest. The 00036 failure was transient |
+
+### #40 fix-3 + #45: walking every page (`limit=12`, `ads=false`)
+
+| Query | `total_found` (all pages + next empty page) | Pages | Last page | IDs / unique | OOS | First OOS position | OOS strictly last |
+|---|---|---|---|---|---|---|---|
+| `po` (W=249) | {249} | 21 | 9 results, `has_next=false`; page 22 empty | **249 / 249** | 61 | 188 | ✅ |
+| `protetor` (W=100) | {100} | 9 | 4, `has_next=false` | 100 / 100 | 18 | 82 | ✅ |
+| `urban sneaker` | {100} | 9 | 4, `has_next=false` | 100 / 100 | 26 | 74 (**prod-004 at 74**, first OOS) | ✅ |
+| `shoes` | {100} | 9 | 4 | 100 / 100 | 17 | 83 (prod-004 at 83) | ✅ |
+| `geladeira` | {100} | 9 | 4 | 100 / 100 | 10 | 90 | ✅ |
+
+With ads on: `po` 249/249 organic unique; `running shoes` 98 organic unique + 2 sponsored on page 1. Storefront: OOS cards appear on deep pages, and "See In-Stock Alternatives" works on them (#44 flow, verified on 00035).
+
+**Latency follow-up** (server `latency_ms` p50, same method as the baseline): `po` **1712 → 3939 ms** (p90 3737 → 6084), `protetor` 1437 → 1934 ms, `running shoes` 1184 → 1334 ms. The `po` increase is larger than the added COUNT alone: every page now retrieves the full W=249 window (previously 100 for pages 1–8). Backend is optimizing this separately.
+
+### #43 Search analytics: all checks pass ✅
+
+| Check | Result |
+|---|---|
+| `GET /api/search?q=notebook&experiment_id=ltr_v2` | ✅ `query_id=imp-1793387978033049975-df6f961d267496f5`, `experiment_id=ltr_v2` |
+| `POST /api/analytics/events` click `dep43-click-1` (prod-005, `position=2`) | ✅ 200 `recorded=true, duplicate=false` |
+| purchase `dep43-purchase-1` (`revenue_micros=1299000000`) | ✅ 200 `recorded=true` |
+| Replay of the click | ✅ 200 **`duplicate=true, recorded=false`**; summary still shows 1 click |
+| `GET /api/analytics/summary?window_hours=24` | ✅ `total_clicks=1`, `total_conversions=1`, `ctr=0.0075` (1/133), `mrr_at_10=0.5`, `attributed_revenue_micros=1299000000`. Experiments: **`ltr_v2`** searches 1, clicks 1, conversions 1, CTR 1.0, **MRR@10 0.5**, revenue 1299000000; `default` 132 searches |
+| `q=xyznonexistent99`, then summary | ✅ `top_zero_result_queries=[{xyznonexistent99, 1}]`, `zero_result_searches=1`. Note: the search response itself shows `total_found=100` (the ANN leg fills the window); telemetry classifies by lexical zero |
+| Spanner | ✅ `search_impressions` 133 rows (19:12:24 → 19:19:40Z); our impression has `query_norm=notebook`, `ltr_v2`, `hybrid_v2`, `total_found=100`, 10 organic `result_ids`. `search_conversions` holds `dep43-click-1` (click, pos 2) + `dep43-purchase-1` (purchase, 1299000000) |
+| `POST /api/analytics/rollup` on prod, no token / wrong `X-Admin-Token` | ✅ 403 `forbidden` ×2; `products` signals unchanged (prod-001 clicks 792, ctr 0.186) |
+| Admin rollup | Not run against prod Spanner (lead's decision: it would rewrite `clicks/orders/ctr/conversion_rate` catalog-wide). Local **memory-mode** server (`USE_MEMORY_STORE=true`, nonexistent project/instance, `backend_mode=memory` confirmed before calling): no token 403; `X-Admin-Token` → **200**, `products_updated=14`, `window_days=30`, **no NaN/Inf**. Note that with near-zero impressions the smoothing flattened prod-001 `ctr` 0.186 → 0.0476, which confirms the risk of running it on prod. `ADMIN_TOKEN` stays unset on the service (user decision) |
+| Storefront (jsdom against the live API, analytics POSTs intercepted so nothing extra reached prod) | ✅ experiment selector (`control`, `ltr_v2`, `ltr_boost`) → search sends `experiment_id=ltr_v2`. **"+ Clique"** on an organic card → `/api/analytics/events` `{event_type: click, query_id, position: 2, experiment_id: ltr_v2}` + `/api/session/events`. **"+ Cart"** → `add_to_cart` beacon (sponsored cards also fire `/api/ads/click`). Analytics drawer (`window_hours=168`): CTR 0.7%, MRR 0.500, zero-result 0.7%, conversion 0.7%, zero query `xyznonexistent99`, A/B rows default vs ltr_v2. **0 JS errors** |
+
+Note: the smoke test left 1 click + 1 purchase (1,299 currency units) on impression `imp-1793387978033049975-df6f961d267496f5` (`ltr_v2`), plus verification impressions. This is intentional evidence; the rows expire through the 90-day TTL. A leftover local `srv-6b0` process (from the #45 investigation; read-only searches with pre-#43 code, so no analytics writes) was found and stopped.
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00035-x4l=100`. 026 is additive.
+
+**Status:** #40, #43, #45 **closed**.
