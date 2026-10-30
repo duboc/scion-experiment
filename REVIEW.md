@@ -406,6 +406,17 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
     - **(c) ScaNN ANN `STORING`-only subquery, exact fallback & `NULL`-embedding fallback:** `buildSimilarVectorSQL` restricts the inner `products@{FORCE_INDEX=products_embedding_v2_idx}` subquery to `annStoringFilterSQL` (`LIMIT @ann_limit`) and applies `catalogFilterForAlias("p")` in the outer `JOIN products AS p`, falls back to exact `COSINE_DISTANCE` (with 60s cooldown) on index errors, and falls back to lexical search over `seed.Title + " " + seed.Category` when the seed product has a `NULL` embedding. `cmd/sqlcheck` exercises `CheckSpannerSimilar`.
     - **(d) Storefront & React UI (`6800cf9`):** `ProductDetails.js`, `App.js`, and `defaultStorefrontHTML` render `Similar Products` (`mode=similar&limit=6`), `Frequently Viewed Together` (`mode=co_viewed&limit=6`), and `See In-Stock Alternatives` (`mode=substitutes&limit=4&only_in_stock=true`) on out-of-stock cards and detail views. Issues: none.
 
+## #45 Out-of-Stock Products Reachable in Unfiltered Hybrid Search (`ae3f046`, `b28f6b4`, ADR-002 / ADR-012)
+- **Date:** 2026-10-30
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), isolated `/tmp/review-45` archive (removed)
+- **Status:** PASS (APPROVED)
+- **Checks:**
+    - `go vet ./...` and `go test -race -count=1 ./...` in `src/psearch/serving`: PASS (`internal/api`, `internal/config`, `internal/services` incl. `TestOOSProductReachableInUnfilteredHybridSearchAfterVectorFill`, `TestBuildHybridSQL_CatalogFiltersAndUnavailableLast`, `TestPaginationFixedWindowInvariantsForLexical80And249`, `TestMemorySortByPopularityAndRatingDesc`).
+    - **(a) Stage-1 candidate selection pre-`LIMIT` vs post-`LIMIT` `unavailable_rank`:** `buildHybridSQLANN`, `browseSQL`, `buildSimilarVectorSQL`, and `memoryHybridSearchExpandedWithTotal` select Stage-1 `@limit` (`W`) candidates by relevance / explicit `sort_by` ONLY before `LIMIT` (with zero `unavailable_rank` pre-`LIMIT`, verified by `TestBuildHybridSQL_CatalogFiltersAndUnavailableLast` asserting `unavailIdx > limitIdx`), and apply `ADR-002` `unavailable_rank` (`IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1)`) only in the outer `ORDER BY` over the selected window `W`.
+    - **(b) Strong lexical OOS match reachability (`q=urban+sneaker` -> `prod-004`):** `TestOOSProductReachableInUnfilteredHybridSearchAfterVectorFill` verifies that when 140 `IN_STOCK` footwear items fill the vector leg, `prod-004` (`OUT_OF_STOCK`, sole lexical match for `urban sneaker`) enters the 100-item candidate window `W` and ranks after every in-stock item.
+    - **(c) #40 pagination invariants & no residual page-1 trim heuristic:** `b28f6b4` removes the rejected page-1 OOS trim heuristic from `handlers.go` (`git diff 90e289a..b28f6b4` has zero changes in `handlers.go`); constant `total_found`, disjoint pages whose union equals `W` unique IDs, and OOS-last ordering across all 5 `sort_by` modes hold. `cmd/sqlcheck` includes the `urban sneaker` case. Issues: none.
+
+
 
 
 
