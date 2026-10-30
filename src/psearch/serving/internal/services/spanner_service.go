@@ -867,8 +867,8 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 						IFNULL((SELECT MIN(o) FROM UNNEST(@pin_ids) AS pid WITH OFFSET AS o WHERE pid = a.product_id), 1000) AS pin_rank,
 						IF(a.product_id IN UNNEST(@bury_ids), 1, 0) AS buried,
 						` + effectivePriceSQL("p") + ` AS effective_price,
-						IF(@sort_by = 'popularity', ` + popularitySortSQL("p") + `, 0.0) AS popularity_sort,
-						IF(@sort_by = 'rating_desc', ` + ratingSortSQL("p") + `, 0.0) AS rating_sort,
+						` + popularitySortSQL("p") + ` AS popularity_sort,
+						` + ratingSortSQL("p") + ` AS rating_sort,
 						` + variantsArraySQL("a") + ` AS variants
 					FROM (
 					SELECT
@@ -1093,14 +1093,14 @@ func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query s
 	// database default. A statement hint is the least invasive fix (verified by
 	// deployer on psearch-db: sqlcheck 27/27).
 	sql := optimizerHint + buildHybridSQLANN(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, useANN, numLeaves)
-	sql = injectDynamicAttrClauses(sql, f.Attrs, params)
+	sql = specializeSQLForFilters(injectDynamicAttrClauses(sql, f.Attrs, params), f)
 	results, sponsored, err := s.executeHybridStatement(ctx, sql, params, minScore, alpha, plan, f)
 	if err != nil && useANN && isANNIndexError(err) {
 		log.Printf("WARN: ScaNN vector index unavailable (%v); cooling down ANN for %s and falling back to exact COSINE_DISTANCE", err, annCooldownDuration)
 		s.lastANNSucceeded.Store(false)
 		s.annCooldownUntil.Store(time.Now().Add(annCooldownDuration).UnixNano())
 		exactSQL := optimizerHint + buildHybridSQLANN(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, false, numLeaves)
-		exactSQL = injectDynamicAttrClauses(exactSQL, f.Attrs, params)
+		exactSQL = specializeSQLForFilters(injectDynamicAttrClauses(exactSQL, f.Attrs, params), f)
 		results, sponsored, err = s.executeHybridStatement(ctx, exactSQL, params, minScore, alpha, plan, f)
 		if err == nil && s.client != nil && len(results) <= 48 {
 			s.enrichResultsWithAttributes(ctx, results)
@@ -1579,7 +1579,7 @@ func (s *SpannerService) spannerBrowse(ctx context.Context, limit int, filters m
 		"color": f.Color, "colors": nonNilStrings(f.Colors), "size": f.Size, "sizes": nonNilStrings(f.Sizes),
 		"boost_weight": s.config.BoostWeight,
 	}
-	sql := injectDynamicAttrClauses(browseSQL(), f.Attrs, params)
+	sql := specializeSQLForFilters(injectDynamicAttrClauses(browseSQL(), f.Attrs, params), f)
 	iter := s.client.Single().Query(ctx, spanner.Statement{SQL: sql, Params: params})
 	defer iter.Stop()
 	results := []models.SearchResult{}
@@ -1730,7 +1730,7 @@ func (s *SpannerService) spannerLexicalCount(ctx context.Context, query string, 
 	params := s.filterCountParams(filters)
 	params["query_text"] = queryText
 	params["syn_text"] = synText
-	sql := injectDynamicAttrClauses(buildLexicalCountSQL(s.config.TextFolding), filters.Attrs, params)
+	sql := specializeSQLForFilters(injectDynamicAttrClauses(buildLexicalCountSQL(s.config.TextFolding), filters.Attrs, params), filters)
 	if s.lexicalCountRunner != nil {
 		cnt, err := s.lexicalCountRunner(ctx, sql, params)
 		if err == nil {
@@ -1770,7 +1770,7 @@ func (s *SpannerService) spannerBrowseCount(ctx context.Context, filters models.
 		return entry.exact, nil
 	}
 	params := s.filterCountParams(filters)
-	sql := injectDynamicAttrClauses(buildBrowseCountSQL(), filters.Attrs, params)
+	sql := specializeSQLForFilters(injectDynamicAttrClauses(buildBrowseCountSQL(), filters.Attrs, params), filters)
 	if s.lexicalCountRunner != nil {
 		cnt, err := s.lexicalCountRunner(ctx, sql, params)
 		if err == nil {
@@ -1960,7 +1960,7 @@ func (s *SpannerService) spannerCappedLexicalCount(ctx context.Context, query st
 	params := s.filterCountParams(filters)
 	params["query_text"] = queryText
 	params["syn_text"] = synText
-	sql := injectDynamicAttrClauses(buildCappedLexicalCountSQL(s.config.TextFolding), filters.Attrs, params)
+	sql := specializeSQLForFilters(injectDynamicAttrClauses(buildCappedLexicalCountSQL(s.config.TextFolding), filters.Attrs, params), filters)
 	if s.lexicalCountRunner != nil {
 		cnt, err := s.lexicalCountRunner(ctx, sql, params)
 		if err != nil {
@@ -1996,7 +1996,7 @@ func (s *SpannerService) spannerCappedBrowseCount(ctx context.Context, filters m
 		return entry.capped, nil
 	}
 	params := s.filterCountParams(filters)
-	sql := injectDynamicAttrClauses(buildCappedBrowseCountSQL(), filters.Attrs, params)
+	sql := specializeSQLForFilters(injectDynamicAttrClauses(buildCappedBrowseCountSQL(), filters.Attrs, params), filters)
 	if s.lexicalCountRunner != nil {
 		cnt, err := s.lexicalCountRunner(ctx, sql, params)
 		if err != nil {

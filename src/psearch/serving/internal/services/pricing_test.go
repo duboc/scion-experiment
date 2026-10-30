@@ -107,6 +107,45 @@ func TestPricingSQL(t *testing.T) {
 	if !strings.Contains(cappedBrowse, "SELECT COUNT(*) FROM (SELECT 1") || !strings.Contains(cappedBrowse, "LIMIT 501)") {
 		t.Errorf("buildCappedBrowseCountSQL malformed: %s", cappedBrowse)
 	}
+
+	// #46 fix-2 regression guard: generated SQL must never contain IF(@price_table,
+	// and when price_table_id is empty, specializeSQLForFilters must emit plain
+	// products.price / p.price with no correlated product_prices subquery and omit
+	// unset min_price / max_price predicates.
+	rawHybrid := buildHybridSQLANN(vectorColumnV2, false, false, true, true, 20)
+	if strings.Contains(rawHybrid, "IF(@price_table") {
+		t.Fatalf("SQL must not contain IF(@price_table wrapper (rejected by Spanner FTS planner)")
+	}
+	specEmpty := specializeSQLForFilters(rawHybrid, models.SearchFilters{})
+	for _, forbidden := range []string{
+		"IF(@price_table",
+		"FROM product_prices AS pp",
+		"@min_price <=",
+		"@max_price <=",
+		"JSON_VALUE(",
+	} {
+		if strings.Contains(specEmpty, forbidden) {
+			t.Errorf("specialized SQL for empty filters must not contain %q", forbidden)
+		}
+	}
+	for _, want := range []string{"products.price", "p.price AS effective_price"} {
+		if !strings.Contains(specEmpty, want) {
+			t.Errorf("specialized SQL for empty price_table missing %q", want)
+		}
+	}
+
+	// When price_table_id and min_price/max_price are set, specializeSQLForFilters preserves the COALESCE subquery.
+	specContract := specializeSQLForFilters(rawHybrid, models.SearchFilters{
+		PriceTable: "b2b-gold",
+		MinPrice:   100,
+		MaxPrice:   2000,
+		SortBy:     "rating_desc",
+	})
+	for _, want := range []string{"FROM product_prices AS pp", "@min_price <=", "@max_price <=", "JSON_VALUE("} {
+		if !strings.Contains(specContract, want) {
+			t.Errorf("specialized SQL for contract price + rating_desc missing %q", want)
+		}
+	}
 }
 
 func TestCountCacheKey_DistinctAcrossEveryDimensionAndBoundedEviction(t *testing.T) {

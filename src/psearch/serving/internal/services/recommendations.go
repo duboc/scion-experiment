@@ -252,7 +252,7 @@ func (s *SpannerService) querySimilarVectorSpanner(ctx context.Context, seed see
 	}
 
 	runQuery := func(useANN bool) ([]models.SearchResult, map[string]float64, error) {
-		sql := buildSimilarVectorSQL(col, useANN, s.config.EffectiveANNNumLeaves())
+		sql := specializeSQLForFilters(buildSimilarVectorSQL(col, useANN, s.config.EffectiveANNNumLeaves()), f)
 		iter := s.client.Single().Query(ctx, spanner.Statement{SQL: sql, Params: params})
 		defer iter.Stop()
 		var list []models.SearchResult

@@ -12,11 +12,51 @@ import (
 // products (migration 019), so these correlated lookups are split-local.
 
 // effectivePriceSQL resolves the buyer's price for products alias `alias`.
-// Short-circuits the correlated product_prices lookup when @price_table = '' (#46 perf).
 func effectivePriceSQL(alias string) string {
-	return `IF(@price_table = '', ` + alias + `.price, COALESCE((SELECT pp.price FROM product_prices AS pp
+	return `COALESCE((SELECT pp.price FROM product_prices AS pp
 					WHERE pp.product_id = ` + alias + `.product_id AND pp.price_table_id = @price_table
-						AND pp.tenant_id = @tenant_id), ` + alias + `.price))`
+						AND pp.tenant_id = @tenant_id), ` + alias + `.price)`
+}
+
+// specializeSQLForFilters rewrites SQL in Go based on the active request filters (#46 fix-2):
+//   - When f.PriceTable is empty, replaces correlated product_prices effectivePriceSQL(alias)
+//     lookups with plain `alias.price` (no SQL IF wrapper and no correlated subquery).
+//   - When f.MinPrice <= 0 or f.MaxPrice <= 0, omits the min_price / max_price WHERE predicates.
+//   - When f.SortBy is not popularity / rating_desc, replaces those sort expressions with 0.0.
+func specializeSQLForFilters(sql string, f models.SearchFilters) string {
+	if strings.TrimSpace(f.PriceTable) == "" {
+		for _, alias := range []string{"products", "p"} {
+			sql = strings.ReplaceAll(sql, effectivePriceSQL(alias), alias+".price")
+		}
+	}
+	if f.MinPrice <= 0 {
+		for _, alias := range []string{"products", "p"} {
+			for _, eff := range []string{effectivePriceSQL(alias), alias + ".price"} {
+				clause := "\n\t\t\t\t\tAND (@min_price <= 0 OR IFNULL(" + eff + ", 0) >= @min_price)"
+				sql = strings.ReplaceAll(sql, clause, "")
+			}
+		}
+		sql = strings.ReplaceAll(sql, "\n\t\t\t\t\tAND (@min_price <= 0 OR IFNULL(price, 0) >= @min_price)", "")
+	}
+	if f.MaxPrice <= 0 {
+		for _, alias := range []string{"products", "p"} {
+			for _, eff := range []string{effectivePriceSQL(alias), alias + ".price"} {
+				clause := "\n\t\t\t\t\tAND (@max_price <= 0 OR IFNULL(" + eff + ", 0) <= @max_price)"
+				sql = strings.ReplaceAll(sql, clause, "")
+			}
+		}
+	}
+	if f.SortBy != "popularity" {
+		for _, alias := range []string{"products", "p"} {
+			sql = strings.ReplaceAll(sql, popularitySortSQL(alias), "0.0")
+		}
+	}
+	if f.SortBy != "rating_desc" {
+		for _, alias := range []string{"products", "p"} {
+			sql = strings.ReplaceAll(sql, ratingSortSQL(alias), "0.0")
+		}
+	}
+	return sql
 }
 
 // assortmentSQL hides products that have exclusive contract rows unless the buyer
