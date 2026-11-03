@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00038-mpb`** (100% traffic, follows latest): #46 latency fix + #47 idempotent rollup, deployed from a clean `git archive` of `8b28300`. ScaNN ANN active. Rollback target: `psearch-serving-00037-g74`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00039-x8j`** (100% traffic, follows latest): #49 Brasileirão club colour themes (storefront only), deployed from a clean `git archive` of `ff5f8eb`. Rollback target: `psearch-serving-00038-mpb`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -118,7 +118,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00035-x4l`** | `6b0aee9` | #42, #44, #40 fix-2 | schema-free product attributes + auto-discovered facets + admin upsert (ADR-014); similar / substitutes / co-viewed (ADR-016); fixed per-query window W. ✅ #42, #44. ⚠️ #40: pages overlap when W > 100 |
 | `00036-nf2` | `90e289a` | #43, #40 fix-3 | ❌ **never served**: container failed to start (`Application exec likely failed`, no app output; build normal; same code starts locally in 4 s). Cloud Run kept 00035 at 100% |
 | **`00037-g74`** | `739c62e` | #43, #40 fix-3, #45 | search telemetry (`query_id`, impressions/conversions, A/B summary, rollup) (ADR-015); page-independent candidate set W; relevance-ranked window with OOS-last applied after it. ✅ #40, #43, #45 |
-| **`00038-mpb`** | `8b28300` | #46, #47 | capped critical-path count + concurrent exact count, Go-side SQL specialization (no `IF` inside the SEARCH `WHERE`), scoped enrichment, ANN over-fetch only when needed; rollup over a frozen baseline (027) with strict params / dry-run. **p50 400/185/152 ms.** ✅ #46, #47. **current** |
+| **`00038-mpb`** | `8b28300` | #46, #47 | capped critical-path count + concurrent exact count, Go-side SQL specialization (no `IF` inside the SEARCH `WHERE`), scoped enrichment, ANN over-fetch only when needed; rollup over a frozen baseline (027) with strict params / dry-run. **p50 400/185/152 ms.** ✅ #46, #47 |
+| **`00039-x8j`** | `ff5f8eb` | #49 (+ #48 docs) | storefront theme picker (Padrão + 15 Brasileirão clubs), `?theme=` param, localStorage persistence; serving code otherwise identical to 00038. **current** |
 
 ---
 
@@ -900,3 +901,25 @@ Note: the smoke test left 1 click + 1 purchase (1,299 currency units) on impress
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00037-g74=100`. 027 is additive; 00037 ignores the baseline columns.
 
 **Status:** #46 **closed** (latency target met by a wide margin), #47 **closed**.
+
+## #49 Brasileirão club colour themes: DEPLOYED 2026-11-03
+
+Source: clean `git archive` of **`ff5f8eb`** in `/tmp/deploy-ff5` (feature `6509c0b`; `ff5f8eb` adds REVIEW.md; the snapshot also carries the #48 docs commits). Since `8b28300` the only serving changes are `internal/api/routes.go` (embedded storefront) and `storefront_test.go`. **No DDL. Env unchanged.**
+
+| Step | Result |
+|---|---|
+| sqlcheck gate (real Spanner) | ✅ **63 OK / 0 FAIL**; `go test ./internal/api -run 'Storefront\|Theme'` ok |
+| Deploy → **`psearch-serving-00039-x8j`** | ✅ 100%, follows latest |
+
+| Check (`<SERVICE_URL>`, jsdom against the live service for client-side behaviour) | Result |
+|---|---|
+| `GET /` | ✅ 200; `#theme-select` with **16 options**: `padrao` + flamengo, palmeiras, corinthians, sao-paulo, santos, vasco, fluminense, botafogo, gremio, internacional, atletico-mg, cruzeiro, bahia, fortaleza, athletico-pr; one `[data-theme="…"]` CSS block per club |
+| `/?theme=flamengo` / `/?theme=palmeiras` | ✅ `<html data-theme="flamengo">` / `"palmeiras"`; picker synced; stored in `localStorage.psearch_storefront_theme`. `?theme=FLAMENGO` normalizes to `flamengo` |
+| `/?theme=<script>alert(1)</script>` and `/?theme=nonexistent-club` | ✅ fall back to Padrão (no `data-theme`, picker `padrao`, nothing stored); payload not reflected in the server HTML; no injected script nodes; 0 errors |
+| Persistence | ✅ picker → corinthians stores `corinthians`; reload with that storage → `data-theme=corinthians`, picker `corinthians`. A URL param overrides storage (`?theme=palmeiras` with stored corinthians → palmeiras). Tampered stored value (`<img src=x onerror=…>`) → Padrão, 0 errors |
+| Regression suites (0 JS errors in every run) | ✅ pagination "Showing 1-24 of 100", pager, Next → 25-48, 5 sort modes; multi-select facets + pills + Clear all; In-Stock Alternatives panel + Similar / Frequently Viewed carousels; experiment selector → `experiment_id=ltr_v2`, analytics drawer (CTR, MRR 0.500, A/B rows); attribute facets + 7 spec badges, no FPS on `tenis`. With `?theme=flamengo`: `running shoes` → "Showing 1-22 of 100", **2 sponsored badges**, 0 errors |
+| `/api/search` p50 (n=20, same method) | ✅ unchanged: `po` **398 ms** (00038: 400), `protetor` **184** (185), `running shoes` **171** (152; p90 184 for both) |
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00038-mpb=100` (storefront only, no schema changes).
+
+**Status:** #49 **closed**.
