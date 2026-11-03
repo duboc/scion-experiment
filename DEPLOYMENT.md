@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00039-x8j`** (100% traffic, follows latest): #49 Brasileirão club colour themes (storefront only), deployed from a clean `git archive` of `ff5f8eb`. Rollback target: `psearch-serving-00038-mpb`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00040-r2j`** (100% traffic, follows latest): #50 world country flag-colour themes (storefront only), deployed from a clean `git archive` of `3de4d36`. Rollback target: `psearch-serving-00039-x8j`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -119,7 +119,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | `00036-nf2` | `90e289a` | #43, #40 fix-3 | ❌ **never served**: container failed to start (`Application exec likely failed`, no app output; build normal; same code starts locally in 4 s). Cloud Run kept 00035 at 100% |
 | **`00037-g74`** | `739c62e` | #43, #40 fix-3, #45 | search telemetry (`query_id`, impressions/conversions, A/B summary, rollup) (ADR-015); page-independent candidate set W; relevance-ranked window with OOS-last applied after it. ✅ #40, #43, #45 |
 | **`00038-mpb`** | `8b28300` | #46, #47 | capped critical-path count + concurrent exact count, Go-side SQL specialization (no `IF` inside the SEARCH `WHERE`), scoped enrichment, ANN over-fetch only when needed; rollup over a frozen baseline (027) with strict params / dry-run. **p50 400/185/152 ms.** ✅ #46, #47 |
-| **`00039-x8j`** | `ff5f8eb` | #49 (+ #48 docs) | storefront theme picker (Padrão + 15 Brasileirão clubs), `?theme=` param, localStorage persistence; serving code otherwise identical to 00038. **current** |
+| **`00039-x8j`** | `ff5f8eb` | #49 (+ #48 docs) | storefront theme picker (Padrão + 15 Brasileirão clubs), `?theme=` param, localStorage persistence; serving code otherwise identical to 00038 |
+| **`00040-r2j`** | `3de4d36` | #50 | theme picker gains a "Países" optgroup (27 `pais-*` flag-colour themes) next to "Times do Brasileirão" (15); storefront only. **current** |
 
 ---
 
@@ -923,3 +924,26 @@ Source: clean `git archive` of **`ff5f8eb`** in `/tmp/deploy-ff5` (feature `6509
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00038-mpb=100` (storefront only, no schema changes).
 
 **Status:** #49 **closed**.
+
+## #50 World country flag-colour themes: DEPLOYED 2026-11-03
+
+Source: clean `git archive` of **`3de4d36`** in `/tmp/deploy-3de` (feature `d482744`; `3de4d36` adds REVIEW.md). Since `ff5f8eb` the only serving changes are `internal/api/routes.go` (embedded storefront) and `storefront_test.go`. **No DDL. Env unchanged.**
+
+| Step | Result |
+|---|---|
+| sqlcheck gate (real Spanner) | ✅ **63 OK / 0 FAIL**; `go test ./internal/api` ok |
+| Deploy → **`psearch-serving-00040-r2j`** | ✅ 100%, follows latest |
+
+| Check (jsdom against the live service for client-side behaviour) | Result |
+|---|---|
+| `GET /` | ✅ 200; `#theme-select` = `padrao` + optgroup **"Times do Brasileirão" (15)** + optgroup **"Países" (27)**: pais-brasil, argentina, estados-unidos, mexico, canada, reino-unido, franca, alemanha, italia, espanha, portugal, holanda, belgica, japao, coreia-do-sul, china, india, australia, africa-do-sul, nigeria, uruguai, colombia, chile, croacia, marrocos, egito, arabia-saudita. 43 unique options, each with a `[data-theme]` CSS block |
+| `/?theme=pais-brasil` / `pais-japao` / `pais-alemanha` / `flamengo` | ✅ `data-theme` applied, picker synced, stored. `?theme=PAIS-JAPAO` normalizes to `pais-japao` |
+| All 43 options via the picker | ✅ each sets the matching `data-theme` (`padrao` = none) and storage; 0 mismatches |
+| Malicious/unknown: `<script>alert(1)</script>`, `pais-"><img src=x onerror=alert(1)>`, `pais-atlantida`, `pais-` | ✅ all fall back to Padrão; nothing stored; payload not reflected in the server HTML; no injected nodes |
+| Persistence | ✅ picker → `pais-portugal` survives a reload; a URL param overrides storage (palmeiras); a tampered stored value → Padrão |
+| Regression suites (0 JS errors in every run) | ✅ pagination + 5 sorts; multi-select facets/pills/Clear all; In-Stock Alternatives + Similar/Co-viewed carousels; experiment selector + beacons + analytics drawer; attribute facets + 7 spec badges. With `?theme=pais-japao`: `running shoes` "Showing 1-22 of 100", **2 sponsored badges** |
+| `/api/search` p50 | Sequential runs read about 7–13% above this morning's 00039 numbers (00040: 425/195/194 and 429/203/189 vs 398/184/171). **Interleaved A/B** (no-traffic tag `ab39` → 00039, n=30 each, alternating): `po` 449 vs 495 ms, `protetor` 204 vs 192, `running shoes` 200 vs 192, so the differences go both ways (−46/+12/+8 ms) and both revisions had drifted up together. **No code-attributable change** (backend code identical). Tag removed afterwards; traffic 100% on 00040 |
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00039-x8j=100` (storefront only).
+
+**Status:** #50 **closed**.
