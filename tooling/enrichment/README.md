@@ -1,6 +1,6 @@
 # Enrich catalog products with Vertex AI
 
-This directory contains a batch enrichment tool that generates product images and descriptions from BigQuery catalog rows using Vertex AI Gemini models, Cloud Storage, and Firestore.
+This batch tool generates product images and descriptions from BigQuery rows using Vertex AI Gemini, Cloud Storage, and Firestore.
 This document follows the Google Developer documentation style and the ASD-STE100 Simplified Technical English standard.
 
 > [!IMPORTANT]
@@ -37,7 +37,7 @@ You can run `./setup_permissions.sh` to grant these roles to your service accoun
    cd tooling/enrichment
    ```
 
-2. Copy `.env.example` to `.env`:
+2. Copy `.env.example` to `.env`, or create `.env` directly:
 
    ```bash
    cp .env.example .env
@@ -47,13 +47,15 @@ You can run `./setup_permissions.sh` to grant these roles to your service accoun
 
    | Variable | Example placeholder | Description |
    |---|---|---|
-   | `project_id` | `PROJECT_ID` | Google Cloud project ID. |
-   | `bq_dataset` | `psearch_dataset` | Source BigQuery dataset ID. |
-   | `bq_table` | `products_raw` | Source BigQuery table name. |
-   | `psearch_img_bucket` | `BUCKET_NAME` | Cloud Storage bucket for generated images and CSV reports. |
-   | `firestore_collection` | `product_enrichment` | Firestore collection that stores per-product job state. |
-   | `firestore_database` | `(default)` | Firestore database ID. |
-   | `service_account` | `SA_NAME@PROJECT_ID.iam.gserviceaccount.com` | Service account used by the Cloud Run Job. |
+   | `project_id` | `PROJECT_ID` | Google Cloud project ID (`main.py`, `consolidate_results.py`, `deploy.sh`). |
+   | `bq_dataset` | `psearch_dataset` | Source BigQuery dataset ID (`main.py`, `consolidate_results.py`, `deploy.sh`). |
+   | `bq_table` | `products_raw` | Source BigQuery table name (`main.py`, `consolidate_results.py`, `deploy.sh`). |
+   | `psearch_img_bucket` | `BUCKET_NAME` | Cloud Storage bucket for generated images and CSV reports (`main.py`, `consolidate_results.py`, `deploy.sh`). |
+   | `firestore_collection` | `product_enrichment` | Firestore collection that stores per-product job state (`main.py`, `consolidate_results.py`, `deploy.sh`). |
+   | `service_account` | `SA_NAME@PROJECT_ID.iam.gserviceaccount.com` | Service account granted IAM roles by `setup_permissions.sh`. |
+   | `GEMINI_TEXT_MODEL` | `gemini-3.8-flash` | Optional Gemini model for descriptions (`gemini_client.py`). |
+   | `GEMINI_IMAGE_MODEL` | `gemini-3.1-flash-image` | Optional Gemini model for image generation (`imagen_client.py`). |
+   | `GENAI_LOCATION` | `global` | Optional Vertex AI location (`gemini_client.py`). |
 
 4. Install the Python dependencies:
 
@@ -79,7 +81,8 @@ You can run `./setup_permissions.sh` to grant these roles to your service accoun
 
 ### Deploy as a Cloud Run Job
 
-Run `deploy.sh` to build the container image and deploy the Cloud Run Job (configured with 2 CPU cores, 2 GiB RAM, 1-hour timeout, and 3 retries):
+Run `deploy.sh` to build the container image and deploy the Cloud Run Job.
+The job uses 2 CPU cores, 2 GiB RAM, a 1-hour timeout, and 3 retries:
 
 ```bash
 chmod +x deploy.sh

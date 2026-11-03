@@ -35,10 +35,10 @@ You can interact with PSearch through the embedded storefront (`GET /`), the Rea
 ## Open the storefront
 
 1. Open `$SERVICE_URL/` in your web browser to use the zero-dependency embedded storefront.
-2. Type a query in the search bar, or click **Show All Catalog** (`q=*`) to browse all products.
-3. Use the left sidebar to select multiple brands, categories, colors, sizes, price buckets, or auto-discovered dynamic attributes.
-4. Use the top toolbar to change the sort order (`Relevance`, `Price: Low to High`, `Price: High to Low`, `Best Selling`, `Top Rated`), page size (`12`, `24`, `48`), B2B price table, or postal code (CEP).
-5. On any out-of-stock card, click **See In-Stock Alternatives** to load in-stock substitutes from the same category.
+2. Type a query in the search bar, or click **Show All Catalog** (`q=*`).
+3. Select brands, categories, colors, sizes, price buckets, or dynamic attributes in the left sidebar.
+4. Select a sort mode, page size, B2B price table, or postal code in the toolbar.
+5. Click **See In-Stock Alternatives** on any out-of-stock card to load in-stock substitutes.
 
 For the full React administration UI, see [`../src/application/ui/README.md`](../src/application/ui/README.md).
 

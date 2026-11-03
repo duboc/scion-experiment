@@ -43,7 +43,7 @@ The Locust test suite (`locustfile.py`) simulates concurrent shoppers calling th
 
 You can configure the target host and user wait time in a `.env` file or with environment variables (`config.py`).
 
-1. Copy `.env.example` to `.env`:
+1. Copy `.env.example` to `.env`, or create `.env` directly:
 
    ```bash
    cp .env.example .env
@@ -53,7 +53,7 @@ You can configure the target host and user wait time in a `.env` file or with en
 
    | Variable | Default | Description |
    |---|---|---|
-   | `API_HOST` | `https://product-search-api-1234567890.us-central1.run.app` | Default target URL when `--host` is not passed on the command line. |
+   | `API_HOST` | `SERVICE_URL` | Default target URL when `--host` is not passed on the command line. |
    | `LOCAL_API_HOST` | `http://localhost:8080` | Local development target URL. |
    | `MIN_WAIT_TIME` | `1000` | Minimum wait time between requests per simulated user (milliseconds). |
    | `MAX_WAIT_TIME` | `5000` | Maximum wait time between requests per simulated user (milliseconds). |
