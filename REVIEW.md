@@ -468,6 +468,19 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
     - **(4) Persistence (`localStorage`), `?theme=slug` override & XSS safety:** `initClubTheme()` checks `URLSearchParams.get('theme')` then `localStorage.getItem('psearch_storefront_theme')`, and `applyClubTheme()` allowlists `CLUB_THEMES[normalized] ? normalized : 'padrao'` before touching `setAttribute('data-theme', target)` or `localStorage`, preventing any DOM/HTML injection from untrusted `?theme=` values.
     - **(5) Component readability across all themes:** Sponsored badges, facet filter chips (`.filter-chip`), pagination buttons (`.page-btn`, `.page-btn-active`), recommendation carousels, substitute rows, and `#analytics-drawer` all use the theme CSS variables cleanly. Issues: none.
 
+## #50 World Country Flag-Colour Themes in the Embedded Storefront (`d482744`)
+- **Date:** 2026-11-03
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), isolated `/tmp/review-50` archive (removed)
+- **Status:** PASS (APPROVED)
+- **Checks:**
+    - `go vet ./...` and `go test -race -count=1 ./...` in `src/psearch/serving`: PASS (`internal/api`, `internal/config`, `internal/services` incl. `TestStorefrontCountryThemes`, `TestStorefrontFootballThemes`, `TestStorefrontInlineJSParses`, and all existing storefront tests).
+    - **(1) Grouped `#theme-select` (`<optgroup>`) & backward compatibility:** Default `padrao` (`Padrão`) and all 15 Brasileirão club slugs (`flamengo`..`athletico-pr` under `<optgroup label="Times do Brasileirão">`) remain unchanged so existing `?theme=<club>` links and `localStorage` values continue to work; `<optgroup label="Países">` adds 27 `pais-*`-prefixed world country slugs (`pais-brasil`, `pais-argentina`, `pais-estados-unidos`, `pais-mexico`, `pais-canada`, `pais-reino-unido`, `pais-franca`, `pais-alemanha`, `pais-italia`, `pais-espanha`, `pais-portugal`, `pais-holanda`, `pais-belgica`, `pais-japao`, `pais-coreia-do-sul`, `pais-china`, `pais-india`, `pais-australia`, `pais-africa-do-sul`, `pais-nigeria`, `pais-uruguai`, `pais-colombia`, `pais-chile`, `pais-croacia`, `pais-marrocos`, `pais-egito`, `pais-arabia-saudita`) with zero slug collisions.
+    - **(2) CSS-variable-only theming & zero external assets/emblems:** Swaps only CSS custom properties via `[data-theme="<slug>"]` with zero layout shift, zero `http://` or `https://` URLs, zero flag images/coats of arms/emblems, and pure CSS 2-stop or 3-stop `linear-gradient(135deg, ...)` swatches. Every option renders the country name in text.
+    - **(3) WCAG AA contrast (`>= 4.5:1`) & focus outlines:** Automated luminance contrast check across all 324 country colour pairs (`27 country themes x 12 pairs`: `text/bg`, `text/card`, `muted/bg`, `muted/card`, `accent/bg`, `accent/card`, `btn-text/accent`, `chip-text/chip-bg`, `oos/bg`, `oos/card`, `green/bg`, `green/card`) passes with a minimum ratio of `5.36:1` (`pais-mexico` `accent/card`; overall minimum across all 516 pairs / 43 themes is `5.15:1`), and `:focus-visible` outlines remain intact.
+    - **(4) Allowlist validation & `localStorage` persistence:** `applyClubTheme()` validates against `CLUB_THEMES[normalized]` and falls back to `'padrao'` on unknown or untrusted input (XSS-safe).
+    - **(5) Component readability:** Sponsored badges, facet chips, pagination buttons, recommendation carousels, substitute rows, and `#analytics-drawer` remain readable across all 27 country themes. Issues: none.
+
+
 
 
 
