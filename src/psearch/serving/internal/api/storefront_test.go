@@ -381,4 +381,106 @@ func TestStorefrontFootballThemes(t *testing.T) {
 	}
 }
 
+// #50: World country flag-colour themes (prefixed 'pais-') grouped via <optgroup> in #theme-select.
+func TestStorefrontCountryThemes(t *testing.T) {
+	for _, frag := range []string{
+		`<optgroup label="Times do Brasileirão"`,
+		`<optgroup label="Países"`,
+		"if (t.tertiary) {",
+		"linear-gradient(135deg, ' + t.primary + ' 0% 33%, ' + t.secondary + ' 33% 66%, ' + t.tertiary + ' 66% 100%)'",
+	} {
+		if !strings.Contains(defaultStorefrontHTML, frag) {
+			t.Errorf("storefront missing %q", frag)
+		}
+	}
 
+	countries := []struct {
+		slug string
+		name string
+	}{
+		{"pais-brasil", "Brasil"},
+		{"pais-argentina", "Argentina"},
+		{"pais-estados-unidos", "Estados Unidos"},
+		{"pais-mexico", "México"},
+		{"pais-canada", "Canadá"},
+		{"pais-reino-unido", "Reino Unido"},
+		{"pais-franca", "França"},
+		{"pais-alemanha", "Alemanha"},
+		{"pais-italia", "Itália"},
+		{"pais-espanha", "Espanha"},
+		{"pais-portugal", "Portugal"},
+		{"pais-holanda", "Holanda"},
+		{"pais-belgica", "Bélgica"},
+		{"pais-japao", "Japão"},
+		{"pais-coreia-do-sul", "Coreia do Sul"},
+		{"pais-china", "China"},
+		{"pais-india", "Índia"},
+		{"pais-australia", "Austrália"},
+		{"pais-africa-do-sul", "África do Sul"},
+		{"pais-nigeria", "Nigéria"},
+		{"pais-uruguai", "Uruguai"},
+		{"pais-colombia", "Colômbia"},
+		{"pais-chile", "Chile"},
+		{"pais-croacia", "Croácia"},
+		{"pais-marrocos", "Marrocos"},
+		{"pais-egito", "Egito"},
+		{"pais-arabia-saudita", "Arábia Saudita"},
+	}
+
+	varRe := regexp.MustCompile(`--([a-z-]+):\s*(#[0-9a-fA-F]{6})`)
+	for _, c := range countries {
+		if !strings.HasPrefix(c.slug, "pais-") {
+			t.Fatalf("country slug %q must be prefixed with 'pais-'", c.slug)
+		}
+		cssRulePrefix := `[data-theme="` + c.slug + `"]`
+		if !strings.Contains(defaultStorefrontHTML, cssRulePrefix) {
+			t.Errorf("missing CSS rule %s", cssRulePrefix)
+		}
+		optFrag := `<option value="` + c.slug + `">` + c.name + `</option>`
+		if !strings.Contains(defaultStorefrontHTML, optFrag) {
+			t.Errorf("missing country theme option %s", optFrag)
+		}
+		jsEntry := `'` + c.slug + `': { name: '` + c.name + `'`
+		if !strings.Contains(defaultStorefrontHTML, jsEntry) {
+			t.Errorf("missing CLUB_THEMES entry %s", jsEntry)
+		}
+
+		// Extract CSS variables for this country theme and verify WCAG AA >= 4.5:1 contrast.
+		ruleRe := regexp.MustCompile(`\[data-theme="` + regexp.QuoteMeta(c.slug) + `"\]\s*\{([^}]+)\}`)
+		m := ruleRe.FindStringSubmatch(defaultStorefrontHTML)
+		if m == nil {
+			t.Fatalf("could not parse CSS block for country theme %q", c.slug)
+		}
+		vars := make(map[string]string)
+		for _, vm := range varRe.FindAllStringSubmatch(m[1], -1) {
+			vars[vm[1]] = vm[2]
+		}
+		for _, reqVar := range []string{"bg", "card", "accent", "text", "muted", "green", "btn-text", "chip-bg", "chip-text", "oos"} {
+			if vars[reqVar] == "" {
+				t.Fatalf("country theme %q missing CSS variable --%s", c.slug, reqVar)
+			}
+		}
+
+		pairs := []struct {
+			label string
+			fg    string
+			bg    string
+		}{
+			{"text/bg", vars["text"], vars["bg"]},
+			{"text/card", vars["text"], vars["card"]},
+			{"muted/bg", vars["muted"], vars["bg"]},
+			{"muted/card", vars["muted"], vars["card"]},
+			{"accent/bg", vars["accent"], vars["bg"]},
+			{"accent/card", vars["accent"], vars["card"]},
+			{"btn-text/accent", vars["btn-text"], vars["accent"]},
+			{"chip-text/chip-bg", vars["chip-text"], vars["chip-bg"]},
+			{"oos/card", vars["oos"], vars["card"]},
+		}
+		for _, p := range pairs {
+			ratio := wcagContrastRatio(t, p.fg, p.bg)
+			if ratio < 4.5 {
+				t.Errorf("country theme %q pair %s (%s on %s) contrast = %.2f:1, want >= 4.5:1 (WCAG AA)", c.slug, p.label, p.fg, p.bg, ratio)
+			}
+		}
+	}
+}
