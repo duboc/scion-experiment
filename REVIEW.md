@@ -456,6 +456,19 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
     - **(2) Google Developer style & ASD-STE100 sentence length check:** Second person (`you`), active voice, present tense, sentence-case headings, imperative numbered steps; automated sentence-length verification across all 6 markdown files (`README.md`, `docs/USAGE.md`, `docs/contributing.md`, `src/application/ui/README.md`, `tooling/enrichment/README.md`, `tooling/loadtest/README.md`) reports zero procedural sentences `> 20` words and zero descriptive sentences `> 25` words.
     - **(3) Safety grep check:** Zero occurrences of `riojucu`, `run.app`, `sk-`, `AIza`, `ghp_`, or real project IDs/URLs/tokens across all 6 markdown files and both `.env.example` files. Issues: none.
 
+## #49 Brasileirão Club Colour Themes in the Embedded Storefront (`6509c0b`)
+- **Date:** 2026-11-03
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), isolated `/tmp/review-49` archive (removed)
+- **Status:** PASS (APPROVED)
+- **Checks:**
+    - `go vet ./...` and `go test -race -count=1 ./...` in `src/psearch/serving`: PASS (`internal/api`, `internal/config`, `internal/services` incl. `TestStorefrontFootballThemes`, `TestStorefrontInlineJSParses`, and all existing storefront tests).
+    - **(1) Header theme picker & CSS-variable-only theming:** `#theme-select` (`data-testid="theme-select"`, `data-testid="theme-picker"`) offers default `padrao` (`Padrão`, preserving the exact `:root` default palette `--bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; --muted: #94a3b8; --green: #22c55e`) plus 15 Brasileirão club slugs (`flamengo`, `palmeiras`, `corinthians`, `sao-paulo`, `santos`, `vasco`, `fluminense`, `botafogo`, `gremio`, `internacional`, `atletico-mg`, `cruzeiro`, `bahia`, `fortaleza`, `athletico-pr`), swapping only CSS custom properties via `[data-theme="<slug>"]` with zero layout shift.
+    - **(2) Zero-dependency & no official marks/external assets:** Zero `http://` or `https://` URLs, zero external images/fonts/CDNs, and `#theme-swatch` uses pure CSS (`linear-gradient(135deg, var(--accent) 50%, var(--bg) 50%)`).
+    - **(3) WCAG AA contrast (`>= 4.5:1`) & focus outlines:** Automated luminance contrast check across all 192 colour pairs (`16 themes x 12 pairs`: `text/bg`, `text/card`, `muted/bg`, `muted/card`, `accent/bg`, `accent/card`, `btn-text/accent`, `chip-text/chip-bg`, `oos/bg`, `oos/card`, `green/bg`, `green/card`) passes with a minimum ratio of `5.15:1` (`bahia` `accent/card`; `sponsored-badge` `#fef3c7` on `#78350f` is `8.15:1`), and `:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }` is applied across interactive elements.
+    - **(4) Persistence (`localStorage`), `?theme=slug` override & XSS safety:** `initClubTheme()` checks `URLSearchParams.get('theme')` then `localStorage.getItem('psearch_storefront_theme')`, and `applyClubTheme()` allowlists `CLUB_THEMES[normalized] ? normalized : 'padrao'` before touching `setAttribute('data-theme', target)` or `localStorage`, preventing any DOM/HTML injection from untrusted `?theme=` values.
+    - **(5) Component readability across all themes:** Sponsored badges, facet filter chips (`.filter-chip`), pagination buttons (`.page-btn`, `.page-btn-active`), recommendation carousels, substitute rows, and `#analytics-drawer` all use the theme CSS variables cleanly. Issues: none.
+
+
 
 
 
