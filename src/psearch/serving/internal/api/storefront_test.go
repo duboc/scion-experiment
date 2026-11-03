@@ -1,10 +1,12 @@
 package api
 
 import (
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -232,4 +234,151 @@ func TestStorefrontAnalyticsAndAttribution(t *testing.T) {
 		}
 	}
 }
+
+func srgbRelLumChannel(c uint64) float64 {
+	v := float64(c) / 255.0
+	if v <= 0.04045 {
+		return v / 12.92
+	}
+	return math.Pow((v+0.055)/1.055, 2.4)
+}
+
+func hexRelLuminance(t *testing.T, hexColor string) float64 {
+	t.Helper()
+	h := strings.TrimPrefix(strings.TrimSpace(hexColor), "#")
+	if len(h) != 6 {
+		t.Fatalf("expected 6-digit hex color, got %q", hexColor)
+	}
+	r, err1 := strconv.ParseUint(h[0:2], 16, 8)
+	g, err2 := strconv.ParseUint(h[2:4], 16, 8)
+	b, err3 := strconv.ParseUint(h[4:6], 16, 8)
+	if err1 != nil || err2 != nil || err3 != nil {
+		t.Fatalf("invalid hex color %q", hexColor)
+	}
+	return 0.2126*srgbRelLumChannel(r) + 0.7152*srgbRelLumChannel(g) + 0.0722*srgbRelLumChannel(b)
+}
+
+func wcagContrastRatio(t *testing.T, fg, bg string) float64 {
+	t.Helper()
+	l1 := hexRelLuminance(t, fg)
+	l2 := hexRelLuminance(t, bg)
+	if l1 < l2 {
+		l1, l2 = l2, l1
+	}
+	return (l1 + 0.05) / (l2 + 0.05)
+}
+
+// #49: Brasileirão football club themes in the embedded storefront.
+func TestStorefrontFootballThemes(t *testing.T) {
+	// Default :root theme must remain unchanged.
+	wantDefaultRoot := `:root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; --muted: #94a3b8; --green: #22c55e;`
+	if !strings.Contains(defaultStorefrontHTML, wantDefaultRoot) {
+		t.Errorf("default :root theme must remain unchanged, want %q", wantDefaultRoot)
+	}
+
+	// Theme picker, persistence, URL override, and focus visibility must be present.
+	for _, frag := range []string{
+		`id="theme-select"`,
+		`data-testid="theme-select"`,
+		`data-testid="theme-picker"`,
+		"Tema / Time do coração",
+		`<option value="padrao">Padrão</option>`,
+		"const THEME_STORAGE_KEY = 'psearch_storefront_theme'",
+		"function applyClubTheme(slug, persist)",
+		"function initClubTheme()",
+		"localStorage.setItem(THEME_STORAGE_KEY, target)",
+		"localStorage.getItem(THEME_STORAGE_KEY)",
+		"params.get('theme')",
+		"document.documentElement.setAttribute('data-theme', target)",
+		"document.body.setAttribute('data-theme', target)",
+		":focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }",
+	} {
+		if !strings.Contains(defaultStorefrontHTML, frag) {
+			t.Errorf("storefront missing %q", frag)
+		}
+	}
+
+	// All required Brasileirão clubs (plus Bahia, Fortaleza, Athletico-PR) must be defined.
+	clubs := []struct {
+		slug string
+		name string
+	}{
+		{"padrao", "Padrão"},
+		{"flamengo", "Flamengo"},
+		{"palmeiras", "Palmeiras"},
+		{"corinthians", "Corinthians"},
+		{"sao-paulo", "São Paulo"},
+		{"santos", "Santos"},
+		{"vasco", "Vasco"},
+		{"fluminense", "Fluminense"},
+		{"botafogo", "Botafogo"},
+		{"gremio", "Grêmio"},
+		{"internacional", "Internacional"},
+		{"atletico-mg", "Atlético-MG"},
+		{"cruzeiro", "Cruzeiro"},
+		{"bahia", "Bahia"},
+		{"fortaleza", "Fortaleza"},
+		{"athletico-pr", "Athletico-PR"},
+	}
+
+	varRe := regexp.MustCompile(`--([a-z-]+):\s*(#[0-9a-fA-F]{6})`)
+	for _, club := range clubs {
+		cssRulePrefix := `[data-theme="` + club.slug + `"]`
+		if !strings.Contains(defaultStorefrontHTML, cssRulePrefix) {
+			t.Errorf("missing CSS rule %s", cssRulePrefix)
+		}
+		optFrag := `<option value="` + club.slug + `">` + club.name + `</option>`
+		if !strings.Contains(defaultStorefrontHTML, optFrag) {
+			t.Errorf("missing theme option %s", optFrag)
+		}
+		jsEntry := `'` + club.slug + `': { name: '` + club.name + `'`
+		if !strings.Contains(defaultStorefrontHTML, jsEntry) {
+			t.Errorf("missing CLUB_THEMES entry %s", jsEntry)
+		}
+
+		// Extract CSS variables for this theme and verify WCAG AA >= 4.5:1 contrast.
+		ruleRe := regexp.MustCompile(`\[data-theme="` + regexp.QuoteMeta(club.slug) + `"\]\s*\{([^}]+)\}`)
+		m := ruleRe.FindStringSubmatch(defaultStorefrontHTML)
+		if m == nil {
+			t.Fatalf("could not parse CSS block for theme %q", club.slug)
+		}
+		vars := make(map[string]string)
+		for _, vm := range varRe.FindAllStringSubmatch(m[1], -1) {
+			vars[vm[1]] = vm[2]
+		}
+		for _, reqVar := range []string{"bg", "card", "accent", "text", "muted", "green", "btn-text", "chip-bg", "chip-text", "oos"} {
+			if vars[reqVar] == "" {
+				t.Fatalf("theme %q missing CSS variable --%s", club.slug, reqVar)
+			}
+		}
+
+		pairs := []struct {
+			label string
+			fg    string
+			bg    string
+		}{
+			{"text/bg", vars["text"], vars["bg"]},
+			{"text/card", vars["text"], vars["card"]},
+			{"muted/bg", vars["muted"], vars["bg"]},
+			{"muted/card", vars["muted"], vars["card"]},
+			{"accent/bg", vars["accent"], vars["bg"]},
+			{"accent/card", vars["accent"], vars["card"]},
+			{"btn-text/accent", vars["btn-text"], vars["accent"]},
+			{"chip-text/chip-bg", vars["chip-text"], vars["chip-bg"]},
+			{"oos/card", vars["oos"], vars["card"]},
+		}
+		for _, p := range pairs {
+			ratio := wcagContrastRatio(t, p.fg, p.bg)
+			if ratio < 4.5 {
+				t.Errorf("theme %q pair %s (%s on %s) contrast = %.2f:1, want >= 4.5:1 (WCAG AA)", club.slug, p.label, p.fg, p.bg, ratio)
+			}
+		}
+	}
+
+	// Zero-dependency check: no external HTTP/HTTPS assets, CDN fonts, or crest images.
+	if strings.Contains(defaultStorefrontHTML, "http://") || strings.Contains(defaultStorefrontHTML, "https://") {
+		t.Error("storefront must remain zero-dependency with no external URLs, CDNs, or crest images")
+	}
+}
+
 

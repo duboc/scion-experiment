@@ -79,41 +79,62 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>psearch — Hybrid Vector & Full-Text Search (Cloud Spanner)</title>
   <style>
-    :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; --muted: #94a3b8; --green: #22c55e; }
+    :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; --muted: #94a3b8; --green: #22c55e; --btn-text: #0f172a; --border: #334155; --chip-bg: #0c4a6e; --chip-text: #e0f2fe; --oos: #f87171; }
+    [data-theme="padrao"] { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; --muted: #94a3b8; --green: #22c55e; --btn-text: #0f172a; --border: #334155; --chip-bg: #0c4a6e; --chip-text: #e0f2fe; --oos: #f87171; }
+    [data-theme="flamengo"] { --bg: #140708; --card: #230d10; --accent: #ff4d5a; --text: #fff5f5; --muted: #e2b2b6; --green: #34d399; --btn-text: #140708; --border: #5c1920; --chip-bg: #450a0a; --chip-text: #ffe4e6; --oos: #fda4af; }
+    [data-theme="palmeiras"] { --bg: #061e12; --card: #0c2e1d; --accent: #4ade80; --text: #f0fdf4; --muted: #a7f3d0; --green: #4ade80; --btn-text: #061e12; --border: #166534; --chip-bg: #14532d; --chip-text: #dcfce7; --oos: #fda4af; }
+    [data-theme="corinthians"] { --bg: #0b0b0d; --card: #18181c; --accent: #f4f4f6; --text: #fafafa; --muted: #b4b4be; --green: #4ade80; --btn-text: #0b0b0d; --border: #3f3f46; --chip-bg: #27272a; --chip-text: #fafafa; --oos: #fca5a5; }
+    [data-theme="sao-paulo"] { --bg: #17090b; --card: #261014; --accent: #ff5c6c; --text: #ffffff; --muted: #e5b8be; --green: #34d399; --btn-text: #17090b; --border: #6b1d27; --chip-bg: #4c0519; --chip-text: #ffe4e6; --oos: #fda4af; }
+    [data-theme="santos"] { --bg: #0d1117; --card: #161b22; --accent: #facc15; --text: #f8fafc; --muted: #b8c4d0; --green: #4ade80; --btn-text: #0d1117; --border: #374151; --chip-bg: #1f2937; --chip-text: #fef9c3; --oos: #fca5a5; }
+    [data-theme="vasco"] { --bg: #101216; --card: #1b1f26; --accent: #f59e0b; --text: #f8fafc; --muted: #c2c8d1; --green: #34d399; --btn-text: #101216; --border: #4b5563; --chip-bg: #27272a; --chip-text: #fef3c7; --oos: #fca5a5; }
+    [data-theme="fluminense"] { --bg: #1b0810; --card: #2b101b; --accent: #34d399; --text: #fdf2f6; --muted: #dfb5c4; --green: #34d399; --btn-text: #1b0810; --border: #681d38; --chip-bg: #064e3b; --chip-text: #ecfdf5; --oos: #fda4af; }
+    [data-theme="botafogo"] { --bg: #0a0c10; --card: #151921; --accent: #e2e8f0; --text: #f8fafc; --muted: #b0bac9; --green: #4ade80; --btn-text: #0a0c10; --border: #334155; --chip-bg: #1e293b; --chip-text: #f8fafc; --oos: #fca5a5; }
+    [data-theme="gremio"] { --bg: #071829; --card: #0e253d; --accent: #38bdf8; --text: #f0f9ff; --muted: #9bd5f5; --green: #4ade80; --btn-text: #071829; --border: #1e4e79; --chip-bg: #0c4a6e; --chip-text: #e0f2fe; --oos: #fda4af; }
+    [data-theme="internacional"] { --bg: #1c0608; --card: #2d0c10; --accent: #ff6b78; --text: #fff5f5; --muted: #ebb5ba; --green: #4ade80; --btn-text: #1c0608; --border: #731b24; --chip-bg: #450a0a; --chip-text: #ffe4e6; --oos: #fecdd3; }
+    [data-theme="atletico-mg"] { --bg: #0c0d10; --card: #171920; --accent: #fbbf24; --text: #f9fafb; --muted: #bcc2ce; --green: #4ade80; --btn-text: #0c0d10; --border: #374151; --chip-bg: #27272a; --chip-text: #fef3c7; --oos: #fca5a5; }
+    [data-theme="cruzeiro"] { --bg: #061433; --card: #0d214f; --accent: #60a5fa; --text: #f0f7ff; --muted: #a8ccf7; --green: #4ade80; --btn-text: #061433; --border: #1d4ed8; --chip-bg: #1e3a8a; --chip-text: #eff6ff; --oos: #fda4af; }
+    [data-theme="bahia"] { --bg: #07162c; --card: #102444; --accent: #ff5c6c; --text: #f8fafc; --muted: #a9c5e8; --green: #4ade80; --btn-text: #07162c; --border: #1e40af; --chip-bg: #1e3a8a; --chip-text: #f8fafc; --oos: #fda4af; }
+    [data-theme="fortaleza"] { --bg: #09152b; --card: #132342; --accent: #ff6675; --text: #f8fafc; --muted: #adc4e6; --green: #4ade80; --btn-text: #09152b; --border: #254682; --chip-bg: #1e3a8a; --chip-text: #f8fafc; --oos: #fda4af; }
+    [data-theme="athletico-pr"] { --bg: #170709; --card: #260d11; --accent: #ff5260; --text: #fff5f6; --muted: #e0b0b5; --green: #34d399; --btn-text: #170709; --border: #611821; --chip-bg: #450a0a; --chip-text: #ffe4e6; --oos: #fda4af; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
-    header { padding: 20px 32px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    header { padding: 20px 32px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
     .badge { background: #0284c7; color: #fff; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .theme-picker-wrap { display: inline-flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--text); }
+    .theme-picker-label { font-weight: 600; color: var(--muted); white-space: nowrap; }
+    .theme-swatch { width: 14px; height: 14px; border-radius: 999px; border: 1px solid var(--text); display: inline-block; flex-shrink: 0; background: linear-gradient(135deg, var(--accent) 50%, var(--bg) 50%); }
+    .theme-picker-wrap select { padding: 4px 8px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-weight: 600; cursor: pointer; }
     main { max-width: 1200px; margin: 0 auto; padding: 24px 32px; }
-    .search-bar { display: flex; gap: 12px; align-items: center; background: var(--card); padding: 16px; border-radius: 12px; border: 1px solid #334155; flex-wrap: wrap; }
-    input[type="text"] { flex: 1; min-width: 240px; padding: 12px 16px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 16px; }
+    .search-bar { display: flex; gap: 12px; align-items: center; background: var(--card); padding: 16px; border-radius: 12px; border: 1px solid var(--border); flex-wrap: wrap; }
+    input[type="text"] { flex: 1; min-width: 240px; padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 16px; }
     .slider-wrap { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
-    button { background: var(--accent); color: #0f172a; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+    button { background: var(--accent); color: var(--btn-text); border: none; padding: 12px 20px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+    button:focus-visible, select:focus-visible, input:focus-visible, .page-btn:focus-visible, .facet-click:focus-visible, .filter-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .meta { margin: 16px 0; color: var(--muted); font-size: 14px; display: flex; gap: 20px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-    .card { background: var(--card); border: 1px solid #334155; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
-    .card.card-sponsored { background: linear-gradient(180deg, rgba(245, 158, 11, 0.12) 0%, var(--card) 100%); border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+    .card.card-sponsored { background: linear-gradient(180deg, rgba(245, 158, 11, 0.14) 0%, var(--card) 100%); border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
     .sponsored-badge { background: #78350f; border: 1px solid #f59e0b; color: #fef3c7; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.02em; }
-    .card h3 { margin: 0; font-size: 16px; }
+    .card h3 { margin: 0; font-size: 16px; color: var(--text); }
     .price { font-size: 20px; font-weight: 700; color: var(--accent); }
     .stock-in { color: var(--green); font-size: 12px; font-weight: 600; }
-    .stock-out { color: #f87171; font-size: 12px; font-weight: 600; }
-    .scores { font-family: monospace; font-size: 11px; color: var(--muted); background: #0f172a; padding: 6px 8px; border-radius: 6px; }
-    select { padding: 10px 14px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 14px; }
+    .stock-out { color: var(--oos); font-size: 12px; font-weight: 600; }
+    .scores { font-family: monospace; font-size: 11px; color: var(--muted); background: var(--bg); padding: 6px 8px; border-radius: 6px; }
+    select { padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; }
     .checkbox-wrap { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); cursor: pointer; user-select: none; }
     input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
     .facet-group { margin-bottom: 14px; }
-    .facet-title { font-size: 13px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px; }
+    .facet-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
     .facet-list { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
     .facet-item { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
     .facet-click { cursor: pointer; border-radius: 4px; padding: 2px 4px; margin: 0 -4px; }
-    .facet-click:hover, .facet-click:focus { background: #1e293b; color: #f8fafc; outline: none; }
-    .facet-active { background: #0c4a6e; color: #e0f2fe; font-weight: 600; }
-    .filter-chip { display: inline-flex; align-items: center; gap: 4px; background: #0c4a6e; border: 1px solid #38bdf8; color: #e0f2fe; border-radius: 999px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
-    .facet-count { background: #0f172a; padding: 1px 6px; border-radius: 999px; font-size: 11px; color: #cbd5e1; }
-    .page-btn { background: #1e293b; color: #e2e8f0; border: 1px solid #475569; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .facet-click:hover, .facet-click:focus { background: var(--bg); color: var(--text); outline: 1px solid var(--accent); }
+    .facet-active { background: var(--chip-bg); color: var(--chip-text); font-weight: 600; }
+    .filter-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--chip-bg); border: 1px solid var(--accent); color: var(--chip-text); border-radius: 999px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+    .facet-count { background: var(--bg); padding: 1px 6px; border-radius: 999px; font-size: 11px; color: var(--text); }
+    .page-btn { background: var(--card); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
     .page-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    .page-btn-active { background: var(--accent); color: #0f172a; border-color: var(--accent); }
+    .page-btn-active { background: var(--accent); color: var(--btn-text); border-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -122,7 +143,29 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <h1 style="margin:0;font-size:22px;">psearch — Enterprise Hybrid & Vector Search</h1>
       <div style="color:var(--muted);font-size:13px;">Powered by Cloud Spanner (RRF Vector + Full-Text Search) & Vertex AI</div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <label for="theme-select" class="theme-picker-wrap" data-testid="theme-picker">
+        <span class="theme-picker-label">Tema / Time do coração:</span>
+        <span id="theme-swatch" class="theme-swatch" aria-hidden="true"></span>
+        <select id="theme-select" data-testid="theme-select" title="Tema / Time do coração" aria-label="Tema / Time do coração" onchange="applyClubTheme(this.value, true)">
+          <option value="padrao">Padrão</option>
+          <option value="flamengo">Flamengo</option>
+          <option value="palmeiras">Palmeiras</option>
+          <option value="corinthians">Corinthians</option>
+          <option value="sao-paulo">São Paulo</option>
+          <option value="santos">Santos</option>
+          <option value="vasco">Vasco</option>
+          <option value="fluminense">Fluminense</option>
+          <option value="botafogo">Botafogo</option>
+          <option value="gremio">Grêmio</option>
+          <option value="internacional">Internacional</option>
+          <option value="atletico-mg">Atlético-MG</option>
+          <option value="cruzeiro">Cruzeiro</option>
+          <option value="bahia">Bahia</option>
+          <option value="fortaleza">Fortaleza</option>
+          <option value="athletico-pr">Athletico-PR</option>
+        </select>
+      </label>
       <span class="badge" data-testid="repo-badge">Repo: duboc/scion-experiment | Sandbox: riojucu-sandbox</span>
       <span class="badge" id="backend-badge">Spanner</span>
       <span class="badge" id="retrieval-badge">Retrieval: -</span>
@@ -136,7 +179,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <span class="badge" id="personalized-badge" style="display:none;background:#3b0764;border-color:#a855f7;color:#e9d5ff;"></span>
       <span class="badge" id="sponsored-badge" style="display:none;background:#78350f;border:1px solid #f59e0b;color:#fef3c7;"></span>
       <span class="badge" id="experiment-badge" style="display:none;background:#1e3a8a;border:1px solid #60a5fa;color:#dbeafe;"></span>
-      <span class="badge" id="query-id-badge" style="display:none;background:#1e293b;border:1px solid #64748b;color:#cbd5e1;"></span>
+      <span class="badge" id="query-id-badge" style="display:none;background:var(--card);border:1px solid var(--border);color:var(--text);"></span>
     </div>
   </header>
   <main>
@@ -145,7 +188,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <datalist id="q-suggestions"></datalist>
       <input type="file" id="image-file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="onImagePicked(this)" />
       <button type="button" id="image-btn" onclick="document.getElementById('image-file').click()" title="Search by photo; the text box refines it (e.g. mas em verde)">&#128247; Photo</button>
-      <span id="image-chip" style="display:none;align-items:center;gap:6px;background:#1e293b;border:1px solid #a855f7;border-radius:8px;padding:2px 6px;">
+      <span id="image-chip" style="display:none;align-items:center;gap:6px;background:var(--card);border:1px solid #a855f7;border-radius:8px;padding:2px 6px;">
         <img id="image-thumb" alt="query photo" style="width:32px;height:32px;object-fit:cover;border-radius:4px;" />
         <span style="font-size:11px;color:#e9d5ff;">photo query</span>
         <button type="button" id="image-clear" onclick="clearQueryImage()" title="Remove photo" style="padding:0 6px;">&times;</button>
@@ -225,9 +268,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       </select>
       <button onclick="runSearch()">Search</button>
       <button id="show-all-btn" onclick="showAllCatalog()" title="Show every product across locales">Show All Catalog</button>
-      <button type="button" id="open-analytics-btn" data-testid="open-analytics-drawer-btn" onclick="toggleAnalyticsDrawer()" style="background:#1e293b;color:#38bdf8;border:1px solid #38bdf8;">Search Analytics</button>
+      <button type="button" id="open-analytics-btn" data-testid="open-analytics-drawer-btn" onclick="toggleAnalyticsDrawer()" style="background:var(--card);color:var(--accent);border:1px solid var(--accent);">Search Analytics</button>
     </div>
-    <div id="analytics-drawer" data-testid="search-analytics-drawer" style="display:none;margin-top:20px;padding:18px;background:var(--card);border:1px solid #38bdf8;border-radius:12px;">
+    <div id="analytics-drawer" data-testid="search-analytics-drawer" style="display:none;margin-top:20px;padding:18px;background:var(--card);border:1px solid var(--accent);border-radius:12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:12px;flex-wrap:wrap;">
         <div>
           <span style="font-size:11px;color:var(--accent);text-transform:uppercase;font-weight:700;">Search Telemetry &amp; Attribution (ADR-015)</span>
@@ -239,40 +282,40 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px;">
-        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
           <div style="font-size:11px;color:var(--muted);">CTR (Click-Through Rate)</div>
           <div id="analytics-ctr" data-testid="analytics-ctr" style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">0.0%</div>
           <div id="analytics-searches-sub" style="font-size:11px;color:var(--muted);margin-top:2px;">0 clicks / 0 searches</div>
         </div>
-        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
           <div style="font-size:11px;color:var(--muted);">MRR@10</div>
           <div id="analytics-mrr10" data-testid="analytics-mrr10" style="font-size:20px;font-weight:700;color:var(--accent);margin-top:4px;">0.000</div>
           <div style="font-size:11px;color:var(--muted);margin-top:2px;">Mean Reciprocal Rank</div>
         </div>
-        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
           <div style="font-size:11px;color:var(--muted);">Zero-Result Rate</div>
-          <div id="analytics-zero-rate" data-testid="analytics-zero-result-rate" style="font-size:20px;font-weight:700;color:#f87171;margin-top:4px;">0.0%</div>
+          <div id="analytics-zero-rate" data-testid="analytics-zero-result-rate" style="font-size:20px;font-weight:700;color:var(--oos);margin-top:4px;">0.0%</div>
           <div id="analytics-zero-sub" style="font-size:11px;color:var(--muted);margin-top:2px;">0 zero-result queries</div>
         </div>
-        <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
           <div style="font-size:11px;color:var(--muted);">Conversion Rate</div>
-          <div id="analytics-conv-rate" data-testid="analytics-conversion-rate" style="font-size:20px;font-weight:700;color:#22c55e;margin-top:4px;">0.0%</div>
+          <div id="analytics-conv-rate" data-testid="analytics-conversion-rate" style="font-size:20px;font-weight:700;color:var(--green);margin-top:4px;">0.0%</div>
           <div id="analytics-conv-sub" style="font-size:11px;color:var(--muted);margin-top:2px;">0 conversions</div>
         </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
-        <div data-testid="top-zero-result-queries-section" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+        <div data-testid="top-zero-result-queries-section" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
           <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px;">Top Zero-Result Queries</div>
           <div id="analytics-zero-queries" style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px;">No zero-result queries recorded.</div>
         </div>
-        <div data-testid="ab-experiment-comparison-section" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;">
+        <div data-testid="ab-experiment-comparison-section" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;">
           <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px;">A/B Experiment Comparison (control vs ltr_v2)</div>
           <div id="analytics-experiments" style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:6px;">No experiment cohorts recorded yet.</div>
         </div>
       </div>
     </div>
     <div style="display:flex;gap:24px;margin-top:20px;align-items:flex-start;">
-      <aside id="facet-sidebar" style="width:230px;flex-shrink:0;background:var(--card);padding:16px;border-radius:12px;border:1px solid #334155;">
+      <aside id="facet-sidebar" style="width:230px;flex-shrink:0;background:var(--card);padding:16px;border-radius:12px;border:1px solid var(--border);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:6px;">
           <h3 style="margin:0;font-size:15px;color:var(--accent);">Facets</h3>
           <div style="display:flex;align-items:center;gap:8px;">
@@ -1508,9 +1551,9 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
             zList.forEach(function(item) {
               const row = document.createElement('div');
               row.setAttribute('data-testid', 'zero-result-query-item');
-              row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:4px 6px;background:#1e293b;border-radius:4px;';
+              row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:4px 6px;background:var(--card);border-radius:4px;';
               const qSpan = document.createElement('span');
-              qSpan.style.cssText = 'color:#f8fafc;font-weight:600;';
+              qSpan.style.cssText = 'color:var(--text);font-weight:600;';
               qSpan.textContent = '"' + (item.query || '') + '"';
               const cSpan = document.createElement('span');
               cSpan.className = 'facet-count';
@@ -1532,12 +1575,12 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
             expList.forEach(function(exp) {
               const row = document.createElement('div');
               row.setAttribute('data-testid', 'experiment-breakdown-row');
-              row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#1e293b;border:1px solid #334155;border-radius:6px;flex-wrap:wrap;gap:6px;';
+              row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--card);border:1px solid var(--border);border-radius:6px;flex-wrap:wrap;gap:6px;';
               const nameSpan = document.createElement('span');
               nameSpan.className = 'badge';
               nameSpan.textContent = exp.experiment_id || 'default';
               const metricsSpan = document.createElement('span');
-              metricsSpan.style.cssText = 'color:#e2e8f0;font-size:11px;';
+              metricsSpan.style.cssText = 'color:var(--text);font-size:11px;';
               metricsSpan.textContent = 'searches=' + (exp.searches || 0) + ' · clicks=' + (exp.clicks || 0) + ' · CTR=' + (((Number(exp.ctr) || 0) * 100).toFixed(1)) + '% · MRR@10=' + Number(exp.mrr_at_10 || 0).toFixed(3);
               row.appendChild(nameSpan);
               row.appendChild(metricsSpan);
@@ -1576,7 +1619,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       }
       items.forEach(function(item) {
         const card = document.createElement('div');
-        card.style.cssText = 'min-width:190px;max-width:210px;flex-shrink:0;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;cursor:pointer;';
+        card.style.cssText = 'min-width:190px;max-width:210px;flex-shrink:0;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;cursor:pointer;';
         const title = document.createElement('div');
         title.style.cssText = 'font-weight:700;font-size:13px;color:var(--text);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
         title.textContent = item.title || item.name || item.id;
@@ -1586,7 +1629,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         const bottom = document.createElement('div');
         bottom.style.cssText = 'display:flex;justify-content:space-between;align-items:center;';
         const price = document.createElement('span');
-        price.style.cssText = 'font-weight:700;font-size:13px;color:#22c55e;';
+        price.style.cssText = 'font-weight:700;font-size:13px;color:var(--green);';
         price.textContent = '$' + ((item.priceInfo && item.priceInfo.price) || '0.00');
         const stock = document.createElement('span');
         const inStock = item.availability === 'IN_STOCK';
@@ -1599,7 +1642,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         card.appendChild(bottom);
         if (item.similarity_score !== undefined) {
           const meta = document.createElement('div');
-          meta.style.cssText = 'font-size:10px;color:#94a3b8;margin-top:4px;';
+          meta.style.cssText = 'font-size:10px;color:var(--muted);margin-top:4px;';
           meta.textContent = 'sim=' + Number(item.similarity_score).toFixed(2) + (item.co_view_count ? ' · co-views=' + item.co_view_count : '');
           card.appendChild(meta);
         }
@@ -1676,12 +1719,12 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
         items.forEach(function(sub) {
           const row = document.createElement('div');
           row.setAttribute('data-testid', 'substitute-item');
-          row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #334155;font-size:12px;cursor:pointer;';
+          row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px;cursor:pointer;';
           const left = document.createElement('span');
-          left.style.cssText = 'color:#f8fafc;font-weight:600;';
+          left.style.cssText = 'color:var(--text);font-weight:600;';
           left.textContent = (sub.title || sub.name || sub.id) + (sub.substitute_reason ? ' (' + sub.substitute_reason + ')' : '');
           const right = document.createElement('span');
-          right.style.cssText = 'color:#22c55e;font-weight:700;';
+          right.style.cssText = 'color:var(--green);font-weight:700;';
           right.textContent = '$' + ((sub.priceInfo && sub.priceInfo.price) || '0.00') + ' · IN_STOCK';
           row.appendChild(left);
           row.appendChild(right);
@@ -1753,6 +1796,73 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       if (szEl) szEl.value = '';
       runSearch({ browseAll: true });
     }
+    const THEME_STORAGE_KEY = 'psearch_storefront_theme';
+    const CLUB_THEMES = {
+      'padrao': { name: 'Padrão', primary: '#38bdf8', secondary: '#0f172a' },
+      'flamengo': { name: 'Flamengo', primary: '#ff4d5a', secondary: '#140708' },
+      'palmeiras': { name: 'Palmeiras', primary: '#4ade80', secondary: '#061e12' },
+      'corinthians': { name: 'Corinthians', primary: '#f4f4f6', secondary: '#0b0b0d' },
+      'sao-paulo': { name: 'São Paulo', primary: '#ff5c6c', secondary: '#17090b' },
+      'santos': { name: 'Santos', primary: '#facc15', secondary: '#0d1117' },
+      'vasco': { name: 'Vasco', primary: '#f59e0b', secondary: '#101216' },
+      'fluminense': { name: 'Fluminense', primary: '#34d399', secondary: '#1b0810' },
+      'botafogo': { name: 'Botafogo', primary: '#e2e8f0', secondary: '#0a0c10' },
+      'gremio': { name: 'Grêmio', primary: '#38bdf8', secondary: '#071829' },
+      'internacional': { name: 'Internacional', primary: '#ff6b78', secondary: '#1c0608' },
+      'atletico-mg': { name: 'Atlético-MG', primary: '#fbbf24', secondary: '#0c0d10' },
+      'cruzeiro': { name: 'Cruzeiro', primary: '#60a5fa', secondary: '#061433' },
+      'bahia': { name: 'Bahia', primary: '#ff5c6c', secondary: '#07162c' },
+      'fortaleza': { name: 'Fortaleza', primary: '#ff6675', secondary: '#09152b' },
+      'athletico-pr': { name: 'Athletico-PR', primary: '#ff5260', secondary: '#170709' }
+    };
+    function applyClubTheme(slug, persist) {
+      const normalized = (slug || '').trim().toLowerCase();
+      const target = CLUB_THEMES[normalized] ? normalized : 'padrao';
+      if (target === 'padrao') {
+        document.documentElement.removeAttribute('data-theme');
+        document.body.removeAttribute('data-theme');
+      } else {
+        document.documentElement.setAttribute('data-theme', target);
+        document.body.setAttribute('data-theme', target);
+      }
+      const sel = document.getElementById('theme-select');
+      if (sel && sel.value !== target) {
+        sel.value = target;
+      }
+      const swatch = document.getElementById('theme-swatch');
+      if (swatch && CLUB_THEMES[target]) {
+        swatch.style.background = 'linear-gradient(135deg, ' + CLUB_THEMES[target].primary + ' 50%, ' + CLUB_THEMES[target].secondary + ' 50%)';
+        swatch.title = CLUB_THEMES[target].name;
+      }
+      if (persist) {
+        try {
+          localStorage.setItem(THEME_STORAGE_KEY, target);
+        } catch (e) {
+          // ignore storage errors
+        }
+      }
+    }
+    function initClubTheme() {
+      let chosen = 'padrao';
+      let fromUrl = false;
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const qTheme = (params.get('theme') || '').trim().toLowerCase();
+        if (qTheme && CLUB_THEMES[qTheme]) {
+          chosen = qTheme;
+          fromUrl = true;
+        } else {
+          const saved = (localStorage.getItem(THEME_STORAGE_KEY) || '').trim().toLowerCase();
+          if (saved && CLUB_THEMES[saved]) {
+            chosen = saved;
+          }
+        }
+      } catch (e) {
+        // ignore URL or localStorage access errors
+      }
+      applyClubTheme(chosen, fromUrl);
+    }
+    initClubTheme();
     const sidEl = document.getElementById('session_id');
     if (sidEl && !sidEl.value) {
       let storedSid = sessionStorage.getItem('psearch_storefront_session_id');
