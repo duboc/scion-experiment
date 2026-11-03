@@ -24,7 +24,7 @@ Install these tools before you build or run the user interface:
 
 - **Node.js**: Version 20 LTS or later.
 - **npm**: Version 10 or later.
-- **Go**: Version 1.24 or later (required for the serving API and storefront tests).
+- **Go**: Version 1.26 or later (required for the serving API and storefront tests).
 
 ## Install and run the UI
 
@@ -86,7 +86,7 @@ To build the production NGINX container image, run this command from `src/applic
 
 ```bash
 docker build \
-  --build-arg REACT_APP_API_URL="https://your-serving-url.run.app" \
+  --build-arg REACT_APP_API_URL="<SERVICE_URL>" \
   --build-arg REACT_APP_PROJECT_ID="<PROJECT_ID>" \
   -t psearch-ui:latest .
 ```
@@ -100,10 +100,10 @@ docker build \
 | [`src/App.js`](src/App.js) | Main storefront view, search request orchestration, product grid, pagination, and analytics drawer |
 | [`src/config.js`](src/config.js) | Environment variable loader for API and service endpoints |
 | [`src/setupProxy.js`](src/setupProxy.js) | Development proxy middleware for `/search` requests |
-| [`src/components/SearchInput.js`](src/components/SearchInput.js) | Search bar, autocomplete dropdown, sort selector, page-size selector, and experiment selector |
+| [`src/components/SearchInput.js`](src/components/SearchInput.js) | Search bar, autocomplete dropdown, price table selector, sort selector, page-size selector, and experiment selector |
 | [`src/components/Filters.js`](src/components/Filters.js) | Disjunctive multi-select checkbox facets, price range filters, and dynamic attribute facet groups |
 | [`src/components/ProductDetails.js`](src/components/ProductDetails.js) | Product detail view, purchase trigger, and similar or co-viewed recommendation carousels |
-| [`src/components/RuleManager.js`](src/components/RuleManager.js) | Merchandising rule editor for boost, bury, pin, and filter actions |
+| [`src/components/RuleManager.js`](src/components/RuleManager.js) | Merchandising rule editor for boost, bury, and pin actions |
 | [`src/components/AdCampaignManager.js`](src/components/AdCampaignManager.js) | Sponsored product campaign manager and bid configuration dialog |
 | [`src/components/SessionPanel.js`](src/components/SessionPanel.js) | Real-time shopper session drawer showing click history and category or brand affinities |
 | [`src/services/`](src/services/) | HTTP client modules for rules, ad campaigns, sessions, ingestion, and generative AI |
@@ -117,15 +117,15 @@ Both the React application and `defaultStorefrontHTML` implement these capabilit
 | Feature area | UI elements | Backend API contract |
 |---|---|---|
 | **Hybrid search and vector index badge** | Search bar, typeahead suggestions (`GET /api/autocomplete`), and the `ScaNN ANN` / `Exact KNN` badge (`vector_index_used`) | `POST /api/search`, `GET /api/search`, `GET /api/autocomplete` |
-| **Pagination and sort modes (#40)** | `Showing X–Y of Z` counter, `Prev` / `Next` and numbered page buttons, page size selector (`12`, `24`, `48`), and five sort modes (`relevance`, `price_asc`, `price_desc`, `best_selling`, `top_rated`). Resets `page` to `1` when the query or filters change | `page`, `page_size`, `offset`, `limit`, `sort_by`, `total_count` |
+| **Pagination and sort modes (#40)** | `Showing X–Y of Z` counter, `Prev` / `Next` and numbered page buttons, page size selector (`12`, `24`, `48`), and five sort modes (`relevance`, `price_asc`, `price_desc`, `popularity`, `rating_desc`). Resets `page` to `1` when the query or filters change | Request: `page`, `offset`, `limit`, `sort_by`; Response: `total_found`, `page`, `page_size`, `offset`, `total_pages`, `has_next` |
 | **Multi-select facets and filter pills (#41)** | Disjunctive checkbox groups for `brands`, `categories`, `colors`, `sizes`, and `price_ranges`, plus removable active filter pills and a `Clear all` button | `brands[]`, `categories[]`, `colors[]`, `sizes[]`, `price_ranges[]`, `facets` |
-| **Dynamic attribute facets and spec badges (#42)** | Collapsible facet groups rendered automatically from `facets.attributes`, and up to three `key: value` specification badges on each product card | `attrs` map on `POST /api/search`, `attr.<name>` on `GET /api/search`, `facets.attributes` |
-| **Recommendations and in-stock alternatives (#44)** | **Similar Products** (`mode=similar&limit=6`) and **Frequently Viewed Together** (`mode=co_viewed&limit=6`) carousels in product details, plus **See In-Stock Alternatives** (`mode=substitutes&limit=4`) on out-of-stock cards | `GET /api/products/{id}/similar?mode=similar\|co_viewed\|substitutes` |
-| **Search telemetry and A/B experiments (#43)** | Experiment selector (`control`, `ltr_v2`, `ltr_boost`), click/cart/purchase attribution beacons with `query_id` and 1-based `position`, and the **Search Analytics** drawer showing CTR, `MRR@10`, Top Zero-Result Queries, and A/B comparison | `POST /api/analytics/events`, `GET /api/analytics/summary` |
-| **Sponsored products and retail media** | `Sponsored` badge on promoted product cards and the **Ad Campaigns** management dialog | `GET /api/campaigns`, `POST /api/campaigns`, `DELETE /api/campaigns/{id}` |
-| **Merchandising rules** | **Search Rules** dialog for creating query-scoped or global boost, bury, pin, and filter rules | `GET /api/rules`, `POST /api/rules`, `DELETE /api/rules/{id}` |
-| **Session personalization** | **Session Panel** showing live category, brand, and price affinities from shopper interactions | `POST /api/sessions/{id}/events`, `GET /api/sessions/{id}` |
-| **B2B tenant pricing** | Tenant switcher (`default`, `acme-corp`, `globex-inc`) displaying contract prices, discount badges, and volume tiers | `tenant_id` parameter and `b2b_price` response fields |
+| **Dynamic attribute facets and spec badges (#42)** | Collapsible facet groups rendered automatically from `facets.attributes`, and up to three `key: value` specification badges on each product card (`dynamic_attributes`) | `attrs` map on `POST /api/search`, `attr.<name>` on `GET /api/search`, `PUT /api/products/:id/attributes`, `facets.attributes` |
+| **Recommendations and in-stock alternatives (#44)** | **Similar Products** (`mode=similar&limit=6`) and **Frequently Viewed Together** (`mode=co_viewed&limit=6`) carousels in product details, plus **See In-Stock Alternatives** (`mode=substitutes&limit=4`) on out-of-stock cards | `GET /api/products/:id/similar?mode=similar\|co_viewed\|substitutes` |
+| **Search telemetry and A/B experiments (#43)** | Experiment selector (`control`, `ltr_v2`, `ltr_boost`), click/cart/purchase attribution beacons with `query_id` and 1-based `position`, and the **Search Analytics** drawer showing CTR, `MRR@10`, Top Zero-Result Queries, and A/B comparison | `POST /api/analytics/events`, `GET /api/analytics/summary`, `POST /api/analytics/rollup` |
+| **Sponsored products and retail media** | `Sponsored` badge on promoted product cards (`sponsored`, `ad_campaign_id`, `ad_click_id`) and the **Ad Campaigns** management dialog | `GET /api/ads/campaigns`, `POST /api/ads/campaigns`, `PUT /api/ads/campaigns/:id`, `DELETE /api/ads/campaigns/:id`, `POST /api/ads/click` |
+| **Merchandising rules** | **Search Rules** dialog for creating query-scoped or global boost, bury, and pin rules | `GET /api/rules`, `POST /api/rules`, `PUT /api/rules/:id`, `DELETE /api/rules/:id` |
+| **Session personalization** | **Session Panel** showing live shopper click events, demo personas, and in-session affinities | `POST /api/session/events`, `GET /api/session/events?session_id=<id>` |
+| **B2B contract pricing** | Price table selector (`b2b-corporate`, `b2b-gold`, `vip-club`) displaying contract prices and strike-through list prices | Request: `price_table_id`; Response: `price_table_id` and `priceInfo` (`price`, `originalPrice`, `basePrice`, `priceTableId`) |
 
 ## Run storefront tests
 
