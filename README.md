@@ -1,346 +1,252 @@
-# PSearch: AI-Powered Enterprise Product Search Platform (Biggy Search / IS 2.0 on Cloud Spanner & Vertex AI)
+# PSearch enterprise product search platform
+
+PSearch is an enterprise product search platform built on Google Cloud.
+This document follows the Google Developer documentation style and the ASD-STE100 Simplified Technical English standard.
+
+> [!IMPORTANT]
+> Do not commit real project IDs, service URLs, or secret tokens to this repository.
+> Replace placeholders such as `PROJECT_ID`, `SERVICE_URL`, and `ADMIN_TOKEN` with your environment values.
 
 ## Overview
 
-PSearch is an enterprise product search platform built on Google Cloud. It runs **hybrid retrieval natively in Cloud Spanner** — vector similarity and full-text search fused with Reciprocal Rank Fusion (RRF) in a single SQL statement — and uses **Gemini models on Vertex AI (`global`)** for query embeddings, conversational query understanding and content generation. On top of retrieval it layers merchandising rules, business-signal boosts, learning to rank, session personalization, delivery promises by postal code (CEP) and B2B contract pricing, all exposed through one `/api/search` endpoint.
+PSearch executes hybrid vector and full-text product search directly in Cloud Spanner.
+It combines Reciprocal Rank Fusion (RRF), ScaNN approximate nearest neighbor (ANN) search, and Vertex AI Gemini models in a single serving pipeline.
 
-> **Live hosted endpoints**
-> - Search API and embedded storefront: Cloud Run service `psearch-serving`, revision **`psearch-serving-00025-5mx`** — open `<SERVICE_URL>/` for the storefront, `<SERVICE_URL>/api/info` for the running configuration.
-> - Evaluation dashboard: Cloud Run service `psearch-eval-dashboard`.
-> - Find the URLs with `gcloud run services describe psearch-serving --region us-central1 --format='value(status.url)'`. Real project IDs and URLs are intentionally not committed to this repository.
+Key platform capabilities include:
 
-**Core features**
+- **Cloud Spanner hybrid search:** Fuses vector similarity and full-text `SEARCH()` scores with RRF in one SQL query.
+- **ScaNN vector index:** Uses `APPROX_COSINE_DISTANCE` on 1024-dimension `gemini-embedding-2` vectors with automatic fallback to exact cosine distance.
+- **Multi-stage ranking:** Applies merchandising rules, 8 business signals, Stage-2 Learning to Rank (LTR), and session centroid personalization.
+- **Disjunctive and dynamic facets:** Computes exclude-own-dimension facet counts and auto-discovers vertical-specific attributes from an interleaved table.
+- **Commerce and retail media:** Supports B2B contract price tables, postal code (CEP) delivery promises, item substitutes, and CPC sponsored products.
+- **Closed-loop telemetry:** Tracks search impressions (`query_id`), click and purchase attribution, A/B experiment KPIs, and Bayesian signal rollups.
 
-* **Spanner hybrid search** — vector + full-text legs fused with RRF, tunable with `alpha`, filters applied inside both legs.
-* **1024-d semantic vectors** — `gemini-embedding-2` with Blue/Green `v1`/`v2` columns and a two-tier embedding cache.
-* **Conversational queries** — "tênis de corrida até 200 reais" becomes a clean query plus price/brand filters; optional Gemini fallback.
-* **Typo recovery** — "sansung" → "samsung", "geladera" → "geladeira", AND → OR relaxation when nothing matches.
-* **Ranking controls** — merchandising rules (pin/bury/boost), 8 business signals, synonyms at reduced weight, two-stage learning to rank, session personalization.
-* **Commerce context** — stock/visibility/channels, multi-tenant multi-language catalogs, delivery promises by CEP, B2B contract price tables.
-* **Two front ends** — a React application and a zero-dependency storefront embedded in the serving binary.
-* **Built by AI agents** — delivered and operated by the Scion autonomous software factory (see [Autonomous Software Factory](#autonomous-software-factory-scion)).
+The live production revision on Cloud Run is **`psearch-serving-00038-mpb`**.
+To find your deployed service URL, run the following command:
 
-## Project Status & Capabilities Matrix (Waves 1–5 · 14/14 Complete)
-
-| Component | Status | Notes |
-|---|---|---|
-| Search API (`src/psearch/serving`) | ✅ Live | `psearch-serving-00025-5mx`, all 14 requirements |
-| React UI (`src/application/ui`) | ✅ Complete | Search, facets, rules manager, session panel, B2B pricing |
-| Embedded storefront (`GET /`) | ✅ Live | Catalog browse, "Show All Catalog", all search controls |
-| Spanner schema | ✅ Applied | Base schema + migrations 011–021 |
-| Gen AI service (`src/psearch/gen_ai`) | ✅ Complete | Enrichment, marketing, images, conversational search, SQL agent |
-| Ingestion (`src/psearch/ingestion_source`, BigQuery scripts) | ✅ Complete | Reverse ETL to Spanner, v2 embedding backfill |
-| Query/click analytics in BigQuery | 🔄 Follow-up | Needed for analytics-driven autocomplete and trained LTR weights |
-
-| Req. | Capability | Issue | Wave |
-|---|---|---|---|
-| 4.1.1 | Hybrid search with parametrized `alpha` (RRF) | #1 | 1 |
-| 4.1.2 | Vector search: 1024-d, Blue/Green, embedding cache | #2 | 1 |
-| 4.1.3 | Availability, visibility, channels; out-of-stock last | #3 | 1 |
-| 4.1.4 | Multi-language, multi-tenant catalog; accent folding | #4 | 2 |
-| 4.1.5 | Server-side concurrent facets | #5 | 2 |
-| 4.1.6 | Merchandising rules + 8 boost signals | #6 | 3 |
-| 4.1.7 | Low-relevance synonyms | #7 | 3 |
-| 4.1.8 | Delivery promises by CEP (interleaved inventory) | #8 | 3 |
-| 4.1.9 | N-gram autocomplete | #9 | 4 |
-| 4.1.10 | Two-stage learning to rank | #10 | 4 |
-| 4.1.11 | Conversational query understanding | #19 | 5 |
-| 4.1.12 | Session-aware personalization | #20 | 5 |
-| 4.1.13 | Zero-results recovery & spell check | #21 | 5 |
-| 4.1.14 | B2B contract pricing & assortment | #22 | 5 |
-| Platform | `gemini-embedding-2` 1024-d via the Gen AI SDK | #11 | — |
-| Platform | `gemini-3.8-flash` (text) & `gemini-4-argon` (pro) | #23 | — |
-
-Further reading: [PRODUCT.md](PRODUCT.md) (requirements) · [DESIGN.md](DESIGN.md) (architecture, full API reference) · [DEPLOYMENT.md](DEPLOYMENT.md) (deployment guide and release log) · [REVIEW.md](REVIEW.md) (review log) · [knowledge-plane/INDEX.md](knowledge-plane/INDEX.md) (ADRs) · [docs/scion/verification-and-eval.md](docs/scion/verification-and-eval.md) (evaluation methodology).
+```bash
+gcloud run services describe psearch-serving \
+  --project=PROJECT_ID \
+  --region=us-central1 \
+  --format='value(status.url)'
+```
 
 ## Architecture
 
+PSearch consists of four runtime components and three data stores on Google Cloud:
+
 ```mermaid
 graph TD
-    Client[React UI] --> SearchAPI[Search API<br/>psearch-serving · Go/Gin · Cloud Run]
-    Store[Embedded storefront GET /] --> SearchAPI
-    Client --> GenAI[Gen AI service<br/>Python · Cloud Run]
+    UI[React UI<br/>src/application/ui] --> API[Search API<br/>psearch-serving · Go/Gin · Cloud Run]
+    Storefront[Embedded storefront<br/>GET /] --> API
+    UI --> GenAI[Gen AI service<br/>Python/FastAPI · Cloud Run]
 
-    SearchAPI --> Spanner[(Cloud Spanner<br/>catalog · vectors · rules · inventory · prices · sessions)]
-    SearchAPI --> VertexAI[Vertex AI global<br/>gemini-embedding-2 · gemini-3.8-flash]
+    API --> Spanner[(Cloud Spanner<br/>psearch-instance / psearch-db)]
+    API --> VertexAI[Vertex AI global<br/>gemini-embedding-2 · gemini-3.8-flash]
     GenAI --> VertexAI
-    GenAI --> GCS[(Cloud Storage<br/>images)]
+    GenAI --> GCS[(Cloud Storage<br/>product images)]
 
-    Ingestion[Ingestion service / BigQuery jobs] --> Spanner
+    Ingestion[BigQuery & CLI backfill] --> Spanner
     Ingestion --> BigQuery[(BigQuery<br/>psearch_dataset)]
     Ingestion --> VertexAI
-    Tooling[tooling/enrichment] --> Firestore[(Firestore<br/>enrichment state)]
 ```
 
-### Core Services
+### Core components
 
-* **Search API (Go/Gin, `src/psearch/serving/`)** — validates requests, decomposes conversational queries, runs the hybrid Spanner statement, recovers zero-result queries, aggregates facets, attaches delivery promises, re-ranks (LTR, session) and serves the embedded storefront. Entrypoints: `cmd/server` (API), `cmd/sqlcheck` (pre-deploy SQL gate), `cmd/backfill-embeddings` (v2 vectors).
-* **React UI (`src/application/ui/`)** — search with all controls, server facets, rules manager (`/manage`), session panel, product details with Gen AI enrichment, source ingestion.
-* **Gen AI service (Python/FastAPI, `src/psearch/gen_ai/`)** — content enrichment, marketing copy, image generation, conversational search, SQL generation/fix agent (`google-genai`, `gemini-3.8-flash` / `gemini-4-argon` / `gemini-3.1-flash-image`).
-* **Ingestion (`src/psearch/ingestion_source/`, `src/iac/bigquery_scripts/`)** — loads catalog data and embeddings from BigQuery into Spanner.
+- **Search API (`src/psearch/serving/`):** A Go and Gin service that serves `/api/search` and the embedded storefront at `GET /`. It includes three CLI entrypoints: `cmd/server`, `cmd/sqlcheck`, and `cmd/backfill-embeddings`.
+- **React UI (`src/application/ui/`):** A React 19 storefront and administration console. For setup instructions, see [`src/application/ui/README.md`](src/application/ui/README.md).
+- **Gen AI service (`src/psearch/gen_ai/`):** A FastAPI service that generates product descriptions, marketing copy, enhanced product images, and SQL fixes.
+- **Cloud Spanner (`psearch-db`):** The primary database that stores products, ScaNN vector indexes, full-text tokenlists, interleaved SKUs, prices, attributes, campaigns, and telemetry.
 
-### Datastores
+### Features by wave and ADR reference
 
-* **Cloud Spanner (`psearch-instance` / `psearch-db`)** — system of record:
-  * `products` with full-text tokenlists (plus accent-folded variants), 768-d `embedding` (v1) and 1024-d `embedding_v2` (v2), availability, visibility, channels, tenant/locale and 8 business signals.
-  * Interleaved hierarchies: `products` → `skus` → `regional_inventory` (delivery promises) and `products` → `product_prices` (B2B pricing).
-  * `merchandising_rules`, `search_synonyms`, `autocomplete_suggestions` (n-gram index), `embedding_cache`, `query_intent_cache`, `user_session_events`.
-* **BigQuery (`psearch_dataset`)** — ingestion source and analytics (autocomplete export, LTR training scripts).
-* **Firestore** — enrichment job state used by `tooling/enrichment`.
-* **Cloud Storage** — generated and enhanced product images.
+All capabilities across Waves 1 through 6 (Issues `#1`–`#47`) and schema migrations `011`–`027` are active in production.
+For full architectural decisions, see [`knowledge-plane/INDEX.md`](knowledge-plane/INDEX.md).
 
-## Technology Stack
+| Wave | Issues | Capability | Migrations | ADR |
+|---|---|---|---|---|
+| 1 | `#1`, `#2`, `#11`, `#23` | Hybrid RRF search (`alpha`), 1024-d `gemini-embedding-2` Blue/Green columns, two-tier embedding cache | `011`, `013` | [ADR-001](knowledge-plane/adr/ADR-001-hybrid-and-vector-1024.md) |
+| 1–2 | `#3`, `#4`, `#30` | Availability, visibility, sales channels, out-of-stock last ordering, multi-tenant locale filter, accent folding | `012`, `014`, `014b` | [ADR-002](knowledge-plane/adr/ADR-002-catalog-locale-avail.md) |
+| 2–3 | `#5`, `#7`, `#34` | Concurrent server-side facet counts and low-weight synonym expansion | `015`, `015b` | [ADR-003](knowledge-plane/adr/ADR-003-facets-and-synonyms.md) |
+| 3 | `#6` | Merchandising rules (pin, bury, brand/category boost) and 8 business-signal boosts | `016`, `016b` | [ADR-004](knowledge-plane/adr/ADR-004-merchandising-boosts.md) |
+| 3 | `#8` | Regional CEP delivery promises over interleaved `skus` and `regional_inventory` | `017`, `017b`, `017c` | [ADR-005](knowledge-plane/adr/ADR-005-delivery-promises.md) |
+| 4 | `#9`, `#10` | `SEARCH_NGRAMS` autocomplete suggestions and Stage-2 in-memory Learning to Rank (LTR) | `018`, `018b` | [ADR-006](knowledge-plane/adr/ADR-006-autocomplete-and-ltr.md) |
+| 5 | `#19`, `#20` | Conversational query intent parser with Gemini Flash fallback and session centroid personalization | `020`, `021` | [ADR-007](knowledge-plane/adr/ADR-007-conversational-query-and-session.md) |
+| 5 | `#21`, `#22` | N-gram spell check, query OR-relaxation, and interleaved B2B contract price tables | `019`, `019b` | [ADR-008](knowledge-plane/adr/ADR-008-zero-results-and-b2b-pricing.md) |
+| 5 | `#32` | Parent-SKU variant collapse with child color and size `EXISTS` filtering | `022`, `022b`, `022c` | [ADR-009](knowledge-plane/adr/ADR-009-variant-grouping.md) |
+| 5 | `#33` | Visual and multimodal image search (`image_base64` + text refinement) in `embedding_v2` space | — | [ADR-010](knowledge-plane/adr/ADR-010-visual-multimodal-search.md) |
+| 5 | `#35` | Sponsored products auction with ACID CPC budget burn and click idempotency | `023`, `023b` | [ADR-011](knowledge-plane/adr/ADR-011-sponsored-products.md) |
+| 6 | `#39`, `#40`, `#45`, `#46` | ScaNN `VECTOR INDEX`, concurrent chunked backfill, fixed-window pagination, and extended sort modes | `024` | [ADR-012](knowledge-plane/adr/ADR-012-scann-ann-and-pagination.md) |
+| 6 | `#41` | Disjunctive multi-select faceting (`OR` within dimension, `AND` across dimensions, exclude-own-dimension counts) | — | [ADR-013](knowledge-plane/adr/ADR-013-disjunctive-facets.md) |
+| 6 | `#42` | Schema-free dynamic product attributes (`product_attributes` interleaved table) and auto-discovered facets | `025`, `025b` | [ADR-014](knowledge-plane/adr/ADR-014-dynamic-product-attributes.md) |
+| 6 | `#43`, `#47` | Closed-loop search telemetry (`query_id`), click/conversion attribution, A/B KPIs, and idempotent Bayesian rollup | `026`, `027` | [ADR-015](knowledge-plane/adr/ADR-015-search-telemetry-and-attribution.md) |
+| 6 | `#44` | Item-to-item vector similarity, in-stock substitutes, and session co-visitation recommendations | — | [ADR-016](knowledge-plane/adr/ADR-016-similar-items-and-substitutes.md) |
 
-* **Frontend:** React 19, Material UI, Axios; embedded HTML/JS storefront.
-* **Backend:** Go 1.26 with Gin (Search API); Python with FastAPI (Gen AI service, ingestion).
-* **Databases:** Cloud Spanner (GoogleSQL, full-text `SEARCH`/`SCORE`, `SEARCH_NGRAMS`, vector `COSINE_DISTANCE`, interleaved tables); BigQuery; Firestore.
-* **AI/ML (Vertex AI, location `global`, Google Gen AI SDK):** `gemini-embedding-2` (1024-d embeddings), `gemini-3.8-flash` (text/flash, intent fallback), `gemini-4-argon` (pro reasoning), `gemini-3.1-flash-image` (images); in-process Go LTR model; BigQuery ML for LTR training.
-* **Infrastructure:** Cloud Run, Cloud Build, Artifact Registry, Terraform (`src/iac`), Docker.
-* **Orchestration:** Scion software factory (self-hosted Scion Hub, agents on Claude, Gemini 4 Argon harnesses).
+## Before you begin
 
-## Repository Structure
+Install the following tools on your workstation:
 
-```
-├── README.md                          # This file
-├── PRODUCT.md                         # Product requirements (4.1.1–4.1.14)
-├── DESIGN.md                          # Architecture, SQL design, scoring, API reference, configuration
-├── DEPLOYMENT.md                      # Deployment guide, migrations, release log
-├── REVIEW.md                          # Code review log
-├── Dockerfile                         # Search API container (multi-stage Go build)
-├── LICENSE                            # Apache 2.0
-├── docs/
-│   ├── USAGE.md, contributing.md      # Usage and contribution guides
-│   ├── issues/                        # Issue acceptance records
-│   └── scion/                         # Software-factory playbook, runbooks, verification & evaluation
-├── knowledge-plane/
-│   ├── INDEX.md                       # Knowledge plane index
-│   ├── adr/                           # ADR-001 … ADR-008
-│   ├── contracts/                     # biggy-search-openapi.yaml
-│   └── playbooks/                     # Issue workflow, Spanner DDL migration guide
-├── src/
-│   ├── application/ui/                # React UI (src/components, src/services)
-│   ├── iac/
-│   │   ├── main.tf, variables.tf      # Terraform root
-│   │   ├── modules/                   # iam, spanner, ingestion_spanner, search_api, ui, gen_ai, ingestion_source
-│   │   ├── migrations/                # Spanner migrations 011–021 (DDL + seed DML)
-│   │   └── bigquery_scripts/          # Embedding model, Spanner export, autocomplete export, LTR training
-│   └── psearch/
-│       ├── serving/                   # Go Search API
-│       │   ├── cmd/                   # server, sqlcheck, backfill-embeddings
-│       │   └── internal/              # api (routes, handlers, storefront), config, models, services
-│       ├── gen_ai/                    # Python Gen AI service
-│       └── ingestion_source/          # Source ingestion service
-└── tooling/
-    ├── enrichment/                    # Batch image/description enrichment
-    └── loadtest/                      # Load-test tooling
-```
+1. Install Go 1.26 or later.
+2. Install Node.js 20 or later and npm (for the React UI).
+3. Install Python 3.11 or later (for the Gen AI service and tooling).
+4. Install the Google Cloud CLI (`gcloud`) and Terraform (for cloud deployments).
 
-## Hybrid Search & Multi-Stage Ranking Implementation
+## Quickstart
 
-PSearch runs retrieval, fusion and most ranking in **one Spanner statement**, then refines in Go. Full details and formulas: [DESIGN.md](DESIGN.md).
+You can run the Search API and embedded storefront locally in memory mode without a Google Cloud project.
 
-1. **Vector similarity** — the query embedding (`gemini-embedding-2`, `RETRIEVAL_QUERY`, 1024-d, cached) is compared with `COSINE_DISTANCE` against `embedding_v2` (or the 768-d `embedding` in `v1`). Exact KNN is used at the current catalog size; a ScaNN index with `APPROX_COSINE_DISTANCE` is a scaling follow-up.
-2. **Full-text search** — `SEARCH()` / `SCORE()` over title and description tokenlists (accent-folded with `TEXT_FOLDING=true`), with synonym expansion at reduced weight and exact matches ordered first.
-3. **Reciprocal Rank Fusion** — `rrf = α · 1/(60 + rank_vector) + (1 − α) · 1/(60 + rank_text)`; `final_score = rrf · rule_multiplier + boost`, with pins first, buries last and unavailable products always last.
-4. **Conversational query understanding** — a deterministic parser extracts price ranges, brands and categories (pt-BR/en/es) before retrieval; Gemini (`gemini-3.8-flash`) is an optional fallback with a two-tier cache.
-5. **Two-stage learning to rank** — Spanner returns the top 100 candidates; an in-memory Go model scores 12 normalized features (rrf, vector, text, 8 business signals, delivery SLA) in microseconds (`ltr=true`).
-6. **Session centroid personalization** — the weighted, recency-decayed mean of the session's product vectors boosts similar products: `session_boost = w · max(0, cos(centroid, product))`.
-7. **Zero-results recovery** — when the text leg finds nothing, an n-gram spell checker (`SEARCH_NGRAMS` over the autocomplete index plus catalog vocabulary) suggests and applies corrections; otherwise the query is relaxed from AND to OR.
-8. **Interleaved B2B pricing & regional CEP SLA** — split-local lookups into `product_prices` resolve the buyer's effective price for results, filters, facets and price sorting; `regional_inventory` restricts results to products deliverable to the buyer's CEP within the requested SLA and attaches the fastest promise.
-9. **Catalog browse** — an empty or `*` query lists the catalog (with all filters) instead of running retrieval; the storefront uses it on load and for "Show All Catalog".
+1. Go to the serving directory:
 
-## Product Evaluation Methodology (5-Layer Pyramid)
-
-Search quality is governed by a 5-layer evaluation pyramid of **76 scenarios**; **100 % must pass** before a release is declared production-ready. Details: [docs/scion/verification-and-eval.md](docs/scion/verification-and-eval.md).
-
-| Layer | Focus | Scenarios |
-|---|---|---|
-| L1 | Trajectory & state sequence | 12 |
-| L2 | Policy & business guardrails | 15 |
-| L3 | Adversarial & red-team robustness | 16 |
-| L4 | Multi-mode routing & engine parity | 28 |
-| L5 | Live Vertex AI & factory telemetry | 5 |
-
-Every rollout additionally passes `go vet`, `go test -race`, the UI build, an independent review, and `cmd/sqlcheck` against the real database.
-
-## Setup and Deployment
-
-### Prerequisites
-
-* Google Cloud SDK (`gcloud`) installed and authenticated.
-* Terraform, Docker, Go 1.26+, Python 3.11+, Node.js 20+ with npm.
-* A Google Cloud project with billing and the Spanner, Cloud Run, Cloud Build, Artifact Registry, Vertex AI, BigQuery and IAM APIs enabled.
-
-### Clone Repository
-
-```bash
-git clone https://github.com/duboc/scion-experiment.git
-cd scion-experiment
-```
-
-### Configure Infrastructure
-
-1. Go to the Terraform root: `cd src/iac`.
-2. Provide the Terraform variables — at least `project_id`, `project_number` and `region` — via a `terraform.tfvars` file or `-var` flags (see `src/iac/variables.tf`).
-3. The Spanner module (`src/iac/modules/spanner`) defines the base schema; the instance requires **at least 1000 processing units** (enforced by a validation rule).
-
-### Provision Infrastructure
-
-```bash
-terraform init
-terraform apply
-```
-
-Then apply the numbered schema migrations in order (`src/iac/migrations/011` … `021`) as described in [DEPLOYMENT.md §3](DEPLOYMENT.md#3-spanner-schema-migrations).
-
-### Deploy Application Services
-
-Each service has a Cloud Build pipeline: `src/psearch/serving/cloudbuild.yaml`, `src/psearch/gen_ai/cloudbuild.yaml`, `src/psearch/ingestion_source/cloudbuild.yaml`, `src/application/ui/cloudbuild.yaml`. The Search API runs as a dedicated runtime service account with `roles/aiplatform.user` and `roles/spanner.databaseUser`. Production settings (`ACTIVE_EMBEDDING_VERSION=v2`, `GENAI_LOCATION=global`, `TEXT_FOLDING=true`, …) and the release procedure (clean `git archive`, `cmd/sqlcheck`, `update-traffic --to-latest`) are documented in [DEPLOYMENT.md](DEPLOYMENT.md).
-
-### Local Development
-
-1. **Search API (no GCP required):**
    ```bash
    cd src/psearch/serving
-   USE_MEMORY_STORE=true go run ./cmd/server     # http://localhost:8080 (storefront at /)
+   ```
+
+2. Start the server in memory mode:
+
+   ```bash
+   USE_MEMORY_STORE=true go run ./cmd/server
+   ```
+
+3. Open `http://localhost:8080/` in your browser to use the embedded storefront, or query the API:
+
+   ```bash
+   curl -s "http://localhost:8080/api/search?q=running+shoes&limit=5" | jq .
+   ```
+
+4. Run the unit and race test suite:
+
+   ```bash
    go vet ./... && go test -race ./...
    ```
-2. **React UI:**
-   ```bash
-   cd src/application/ui
-   npm install --legacy-peer-deps
-   REACT_APP_API_URL=http://localhost:8080 npm start   # http://localhost:3000
-   ```
-3. **Gen AI service:**
-   ```bash
-   cd src/psearch/gen_ai
-   python -m pip install -r requirements.txt
-   python main.py
-   ```
 
-Against real Spanner and Vertex AI, set `PROJECT_ID`, `SPANNER_INSTANCE_ID`, `SPANNER_DATABASE_ID`, `ACTIVE_EMBEDDING_VERSION=v2`, `GENAI_LOCATION=global` and Application Default Credentials. All variables: [DESIGN.md §16](DESIGN.md#16-configuration-environment).
+To start the React UI locally, follow the instructions in [`src/application/ui/README.md`](src/application/ui/README.md).
 
-### Google Cloud Costs
+## Configure the service
 
-Estimated with the [Google Cloud pricing calculator](https://cloud.google.com/products/calculator) for **500k SKUs** and **70k queries/day**:
+The Search API reads its configuration from environment variables (`src/psearch/serving/internal/config/config.go`).
 
-| Service | GCP Product | Cost (monthly) |
+| Variable | Default | Description |
 |---|---|---|
-| Catalog | Cloud Spanner | $987.90 |
-| Search API | Cloud Run | $115.63 |
-| UI | Cloud Run | $115.63 |
-| Gen AI API | Cloud Run | $115.63 |
-| Embeddings — Search API | Vertex AI | $10.65 |
-| Embeddings — Ingestion | Vertex AI | $121.67 |
-| **Total** | — | **$1,491.06** |
+| `PORT` | `8080` | HTTP listen port for the server. |
+| `ENVIRONMENT` | `production` | Deployment environment name. |
+| `PROJECT_ID` | `psearch-sandbox` | Google Cloud project ID (falls back to `GCP_SANDBOX_PROJECT` or `CLOUDSDK_CORE_PROJECT`). |
+| `REGION` | `us-central1` | Google Cloud region for Cloud Run and Spanner. |
+| `SPANNER_INSTANCE_ID` | `psearch-instance` | Cloud Spanner instance ID. |
+| `SPANNER_DATABASE_ID` | `psearch-db` | Cloud Spanner database ID. |
+| `USE_MEMORY_STORE` | `false` | When `true`, serves all endpoints from the in-memory seed catalog without Spanner. |
+| `STATIC_DIR` | `/app/static` | Directory for static storefront assets. |
+| `GENAI_LOCATION` | `global` | Vertex AI location for Gemini 3.x/4 and `gemini-embedding-2` calls. |
+| `EMBEDDING_MODEL_NAME` | `gemini-embedding-2` | Embedding model ID (falls back to `GEMINI_MODEL_NAME`). |
+| `EMBEDDING_DIMENSION` | `1024` | Output dimensionality for `v2` embeddings (`768` is used automatically when `v1` is active). |
+| `ACTIVE_EMBEDDING_VERSION` | `v1` | Initial vector column version (`v1` for 768-d `embedding`, `v2` for 1024-d `embedding_v2`). |
+| `USE_VECTOR_INDEX` | `true` (when `v2`) | Enables ScaNN `VECTOR INDEX` (`APPROX_COSINE_DISTANCE`) when `ACTIVE_EMBEDDING_VERSION=v2`. |
+| `ANN_NUM_LEAVES_TO_SEARCH` | `20` | Number of ScaNN leaves searched per vector query (`1`–`1000`). |
+| `TEXT_FOLDING` | `false` | Uses accent-folded tokenlists (`title_tokens_folded`, `description_tokens_folded`). |
+| `DEFAULT_HYBRID_ALPHA` | `0.5` | Default `alpha` weight (`0.0` = pure lexical, `1.0` = pure vector). |
+| `DEFAULT_LIMIT` | `20` | Default page size when `limit` is omitted. |
+| `MIN_SCORE_VALUE` | `0.0` | Minimum hybrid score threshold. |
+| `BOOST_WEIGHT` | `0.002` | Weight applied to the 8 normalized business signals (`0`–`0.05`). |
+| `SESSION_BOOST_WEIGHT` | `0.003` | Weight applied to the session centroid cosine similarity boost (`0`–`0.05`). |
+| `LTR_MODEL_JSON` | `""` | Optional JSON weights for Stage-2 Learning to Rank; empty uses the baseline model. |
+| `INTENT_LLM_FALLBACK` | `false` | Enables Gemini Flash fallback when the deterministic query parser extracts no filters. |
+| `GEMINI_TEXT_MODEL` | `gemini-3.8-flash` | Gemini model for text and query intent fallback (falls back to `GEMINI_LITE_MODEL`). |
+| `GEMINI_PRO_MODEL` | `gemini-4-argon` | Gemini Pro model ID (`gemini-4-pro` aliases normalize to `gemini-4-argon`). |
+| `AD_SLOTS` | `1,4,8` | Comma-separated 1-based rank positions for sponsored product injection on page 1. |
+| `AD_MAX` | `3` | Maximum sponsored products injected per search response (`1`–`10`). |
+| `AD_MIN_SIMILARITY` | `0.55` | Minimum cosine similarity required for vector-matched sponsored ads (`0, 1]`). |
+| `ADMIN_TOKEN` | `""` | Secret token required in the `X-Admin-Token` header for admin write endpoints. |
 
-⚠️ **Disclaimer:** this estimate excludes Gemini text/pro model usage (query understanding fallback, Gen AI service) and BigQuery; calculate those for your own volume.
+## Use the API
 
-## Data Ingestion
+The OpenAPI 3.0 contract is in [`knowledge-plane/contracts/biggy-search-openapi.yaml`](knowledge-plane/contracts/biggy-search-openapi.yaml).
+For step-by-step curl examples, see [`docs/USAGE.md`](docs/USAGE.md).
 
-1. **BigQuery → Spanner (reverse ETL):** `src/iac/bigquery_scripts/create_embedding_model.sql` registers the `gemini-embedding-2` remote model; `transform_embed_export_to_spanner.sql` transforms products, generates 1024-d `RETRIEVAL_DOCUMENT` embeddings with `ML.GENERATE_EMBEDDING` and exports them to Spanner (`embedding_v2`).
-2. **v2 embedding backfill:** for rows already in Spanner, run
+### Endpoint summary
+
+| Method and path | Auth | Purpose |
+|---|---|---|
+| `GET /health`, `GET /healthz`, `GET /api/health` | Public | Returns service health and `backend_mode` (`spanner` or `memory`). |
+| `GET /api/info` | Public | Returns service metadata, active embedding version, `vector_index_used`, and cache stats. |
+| `GET /api/search`, `POST /api/search` (also `/search`) | Public | Executes hybrid RRF search, disjunctive and dynamic faceting, pagination, LTR, session boost, and ad injection. |
+| `GET /api/autocomplete` | Public | Returns n-gram (`SEARCH_NGRAMS`) and prefix autocomplete suggestions. |
+| `GET /api/products/:id/similar` (also `/products/:id/similar`) | Public | Returns item-to-item `similar`, in-stock `substitutes`, or `co_viewed` recommendations ([ADR-016](knowledge-plane/adr/ADR-016-similar-items-and-substitutes.md)). |
+| `PUT /api/products/:id/attributes` (also `/products/:id/attributes`) | `X-Admin-Token` | Atomically upserts `products.attributes` JSON and interleaved `product_attributes` rows ([ADR-014](knowledge-plane/adr/ADR-014-dynamic-product-attributes.md)). |
+| `POST /api/analytics/events` (also `/analytics/events`) | Public | Records idempotent `click`, `add_to_cart`, or `purchase` attribution events linked to `query_id` ([ADR-015](knowledge-plane/adr/ADR-015-search-telemetry-and-attribution.md)). |
+| `GET /api/analytics/summary` (also `/analytics/summary`) | Public | Returns tenant search KPIs: total searches, zero-result queries, CTR, `mrr_at_10`, conversions, and A/B `experiments`. |
+| `POST /api/analytics/rollup` (also `/analytics/rollup`) | `X-Admin-Token` | Runs idempotent Bayesian prior-blended signal rollup over a frozen baseline (`dry_run` supported; [ADR-015](knowledge-plane/adr/ADR-015-search-telemetry-and-attribution.md)). |
+| `POST /api/session/events`, `GET /api/session/events` | Public | Records or lists session `click` and `purchase` events for real-time session personalization ([ADR-007](knowledge-plane/adr/ADR-007-conversational-query-and-session.md)). |
+| `GET /api/rules`, `POST /api/rules`, `PUT /api/rules/:id`, `DELETE /api/rules/:id` | Public read / Admin write | Lists, creates, updates, or deletes merchandising rules ([ADR-004](knowledge-plane/adr/ADR-004-merchandising-boosts.md)). |
+| `GET /api/synonyms`, `POST /api/synonyms` | Public read / Admin write | Lists or upserts tenant and locale synonym groups ([ADR-003](knowledge-plane/adr/ADR-003-facets-and-synonyms.md)). |
+| `GET /api/ads/campaigns`, `POST /api/ads/campaigns`, `PUT /api/ads/campaigns/:id`, `DELETE /api/ads/campaigns/:id` | Public read / Admin write | Lists, creates, updates, or deletes sponsored ad campaigns ([ADR-011](knowledge-plane/adr/ADR-011-sponsored-products.md)). |
+| `POST /api/ads/click` | Public | Records an idempotent CPC ad click and deducts campaign budget in a Spanner transaction. |
+| `GET /api/config/embedding-version`, `POST /api/config/embedding-version` | Public read / Admin write | Reads or switches the per-instance embedding version (`v1` or `v2`). |
+
+> [!NOTE]
+> Every admin write endpoint requires the `X-Admin-Token` HTTP header to match `ADMIN_TOKEN`.
+> When `ADMIN_TOKEN` is unset on the server, all admin write endpoints return `HTTP 403 Forbidden`.
+
+### Key `/api/search` parameters
+
+- **Query and hybrid weight:** `q` (use `*` or empty for catalog browse), `alpha` (`0.0`–`1.0`), `min_score`.
+- **Pagination and sorting:** `limit` (`1`–`100`), `page` (`>= 1`), `offset` (`0`–`1000`), `sort_by` (`relevance`, `price_asc`, `price_desc`, `popularity`, `rating_desc`).
+- **Disjunctive catalog filters:** `category` / `categories`, `brand` / `brands`, `color` / `colors`, `size` / `sizes`, `price_ranges` (`0-100`, `100-500`, `500-1500`, `1500+`), `min_price`, `max_price`, `only_in_stock`, `channel` (`web`, `mobile`, `store`), `tenant_id`, `locale`.
+- **Dynamic attributes:** `attr.<name>=val1,val2` on `GET` (for example, `attr.ram=16GB,32GB`) or `"attrs": {"ram": ["16GB", "32GB"]}` on `POST`.
+- **Commerce and AI features:** `price_table_id`, `cep`, `max_sla_hours`, `ltr`, `parse_intent`, `session_id`, `session_product_ids`, `ads`, `experiment_id`, and `image_base64` / `image_mime_type` / `image_weight` (`POST`).
+
+## Deploy and verify
+
+Before you deploy a new revision to Cloud Run, you must run the mandatory verification gates.
+For complete Terraform, DDL migration (`011`–`027`), and rollout steps, see [`DEPLOYMENT.md`](DEPLOYMENT.md) and [`knowledge-plane/playbooks/SPANNER-DDL-MIGRATION-GUIDE.md`](knowledge-plane/playbooks/SPANNER-DDL-MIGRATION-GUIDE.md).
+
+1. Run static analysis and the race-enabled unit test suite:
+
    ```bash
    cd src/psearch/serving
-   PROJECT_ID=<PROJECT_ID> GENAI_LOCATION=global EMBEDDING_MODEL_NAME=gemini-embedding-2 \
-     EMBEDDING_DIMENSION=1024 go run ./cmd/backfill-embeddings -dry-run   # then without -dry-run
+   go vet ./... && go test -race -count=1 ./...
    ```
-3. **Analytics exports:** `autocomplete_export_to_spanner.sql` (top queries → `autocomplete_suggestions`) and `ltr_train.sql` (BigQuery ML LTR weights → `LTR_MODEL_JSON`) run once query/click logs exist in `psearch_dataset`.
 
-## API Usage
+2. Run the live Cloud Spanner SQL gate (`cmd/sqlcheck`) against your database before every rollout:
 
-```bash
-BASE=<SERVICE_URL>   # or http://localhost:8080
-```
+   ```bash
+   cd src/psearch/serving
+   PROJECT_ID=PROJECT_ID \
+   SPANNER_INSTANCE_ID=psearch-instance \
+   SPANNER_DATABASE_ID=psearch-db \
+   ACTIVE_EMBEDDING_VERSION=v2 \
+   GENAI_LOCATION=global \
+   TEXT_FOLDING=true \
+   go run ./cmd/sqlcheck
+   ```
 
-**Search** (`GET` or `POST /api/search`; every parameter is documented in [DESIGN.md §15](DESIGN.md#15-api-reference)):
+3. To backfill `embedding_v2` vectors in concurrent 200-row chunks without exceeding Spanner mutation limits, run:
 
-```bash
-# Hybrid search, tuned toward semantics
-curl "$BASE/api/search?q=running+shoes&alpha=0.7&limit=10"
+   ```bash
+   cd src/psearch/serving
+   PROJECT_ID=PROJECT_ID GENAI_LOCATION=global \
+   go run ./cmd/backfill-embeddings -workers=8 -embed-batch=32 -write-chunk=200
+   ```
 
-# Conversational query (parsing is on by default): clean_query "tenis de corrida", max_price 200
-curl "$BASE/api/search?q=tenis+de+corrida+ate+200+reais"
+## Troubleshoot common issues
 
-# B2B contract prices, cheapest first
-curl "$BASE/api/search?q=laptop&price_table_id=b2b-corporate&sort_by=price_asc"
+| Symptom | Cause | Solution |
+|---|---|---|
+| `retrieval_mode` is `lexical_only_degraded` | Query embedding call failed or Vertex AI permissions are missing. | Grant `roles/aiplatform.user` to the service account and keep `GENAI_LOCATION=global`. |
+| `vector_index_used` is `false` when `v2` is active | `products_embedding_v2_idx` is absent, still building, or in its 60s cooldown window. | Apply migration `024_products_vector_index.sql` and verify with `go run ./cmd/sqlcheck`. |
+| `backend_mode` is `memory` on Cloud Run | Spanner client initialization failed or `USE_MEMORY_STORE=true` is set. | Set `USE_MEMORY_STORE=false` and grant `roles/spanner.databaseUser` on `psearch-db`. |
+| Admin endpoints return `HTTP 403 Forbidden` | `ADMIN_TOKEN` is unset or the `X-Admin-Token` header does not match. | Configure `ADMIN_TOKEN` on the service and pass `-H "X-Admin-Token: ADMIN_TOKEN"`. |
 
-# Delivery promise for a CEP, next-day only
-curl "$BASE/api/search?q=shoes&cep=01310-100&max_sla_hours=24"
+## Autonomous software factory (Scion)
 
-# Two-stage LTR + session personalization
-curl "$BASE/api/search?q=shoes&ltr=true&session_id=sess-demo-0001"
+PSearch is developed, reviewed, deployed, and evaluated by coordinated AI agents running on the Scion multi-agent orchestrator.
+For the agent topology, commit-slot protocol, 5-layer evaluation pyramid, and OpenTelemetry trace pipeline, see [`docs/scion/README.md`](docs/scion/README.md) and [`docs/telemetry/README.md`](docs/telemetry/README.md).
 
-# Full catalog browse
-curl "$BASE/api/search?q=*&limit=100"
+## What's next
 
-# POST form
-curl -X POST "$BASE/api/search" -H 'Content-Type: application/json' \
-     -d '{"query":"geladeira","locale":"pt-BR","tenant_id":"default","only_in_stock":true}'
-```
-
-**Sessions, autocomplete, rules, synonyms, system:**
-
-```bash
-curl -X POST "$BASE/api/session/events" -H 'Content-Type: application/json' \
-     -d '{"session_id":"sess-demo-0001","product_id":"prod-003","event_type":"purchase"}'
-curl "$BASE/api/session/events?session_id=sess-demo-0001"
-curl "$BASE/api/autocomplete?q=gel&locale=pt-BR&limit=8"
-curl "$BASE/api/rules?tenant_id=default"
-curl -X POST "$BASE/api/rules" -H "X-Admin-Token: $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-     -d '{"name":"Pin Pegasus","query_pattern":"shoes","pin_product_ids":["prod-003"],"active":true}'
-curl "$BASE/api/synonyms?locale=pt-BR"
-curl "$BASE/api/config/embedding-version"
-curl "$BASE/api/info"
-curl "$BASE/health"
-```
-
-Admin writes (`POST/PUT/DELETE /api/rules`, `POST /api/synonyms`, `POST /api/config/embedding-version`) require `X-Admin-Token` equal to `ADMIN_TOKEN` and are disabled when it is unset.
-
-**Gen AI service** (`src/psearch/gen_ai/main.py`, base URL `$GENAI_URL`):
-
-```bash
-curl "$GENAI_URL/health"
-curl -X POST "$GENAI_URL/conversational-search" -H 'Content-Type: application/json' -d '{"query":"presente para corredor"}'
-curl -X POST "$GENAI_URL/enrichment" -H 'Content-Type: application/json' \
-     -d '{"product_id":"prod-001","product_data":{"title":"UltraBoost Pro Running Shoes"},"fields_to_enrich":["description"]}'
-curl -X POST "$GENAI_URL/marketing" -H 'Content-Type: application/json' \
-     -d '{"product_id":"prod-001","product_data":{"title":"UltraBoost Pro Running Shoes"},"content_type":"social_post","tone":"energetic"}'
-curl -X POST "$GENAI_URL/generate-enhanced-image" -H 'Content-Type: application/json' \
-     -d '{"product_id":"prod-001","product_data":{},"image_base64":"<BASE64>","background_prompt":"city running track at sunrise"}'
-```
-
-Request models (`ConversationalSearchRequest`, `EnrichmentRequest`, `MarketingRequest`, `EnhancedImageRequest`, SQL agent models) are defined in `src/psearch/gen_ai/main.py`.
-
-## Autonomous Software Factory (Scion)
-
-PSearch is built and operated by two Scion projects on a self-hosted Scion Hub ([docs/scion/README.md](docs/scion/README.md), [architecture](docs/scion/architecture.md)):
-
-* **Build factory** — `lead` (orchestration), `backend` (Go/Spanner), `frontend` (React + storefront), `reviewer` (independent review in private worktrees), `deployer` (Spanner migrations, Cloud Run rollouts, verification). It turns GitHub issues into deployed revisions following the [issue workflow](knowledge-plane/playbooks/GITHUB-ISSUE-FACTORY-WORKFLOW.md): ADR-backed design, no commits during parallel edits, serialized commit slots, review before deploy, `cmd/sqlcheck` against the real database, deploys from clean `git archive` snapshots, live evidence posted on each issue.
-* **Eval factory** — `eval-lead`, `factory-analyst`, `search-evaluator`, `ui-craftsman`, `eval-deployer`. It measures the build factory and the service (5-layer pyramid) and publishes the evaluation dashboard.
-
-A human product owner steers both through GitHub issues and the Scion web UI; a watchdog restarts stalled agents and a 15-minute heartbeat keeps the leads moving.
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Spanner permissions** — the runtime service account needs `roles/spanner.databaseUser` on `psearch-db`; `PermissionDenied` on client metrics export can be silenced with `SPANNER_DISABLE_BUILTIN_METRICS=true`.
-2. **Vector search capacity** — the Spanner instance must have at least 1000 processing units (Terraform validation).
-3. **Embedding generation** — `retrieval_mode=lexical_only_degraded` means the query embedding failed; check that the runtime service account has `roles/aiplatform.user`, that `EMBEDDING_DIMENSION` matches the column (1024 for v2), and that `embedding_v2` is backfilled.
-4. **Vertex AI `global` endpoint** — Gemini 3.x/4 and `gemini-embedding-2` are served from `global` (or the `us`/`eu` multi-regions), not from `us-central1`; keep `GENAI_LOCATION=global` independent of the Cloud Run region.
-5. **`memory_fallback` in responses** — the Spanner query failed (or no client is configured); run `go run ./cmd/sqlcheck` with the production environment to see the SQL error.
-6. **API connectivity from the UI** — set `REACT_APP_API_URL` (the dev proxy in `src/application/ui/src/setupProxy.js` forwards `/search`); for the storefront, open `GET /` on the Search API directly.
-7. **Storefront stuck on "Loading catalog..."** — the inline storefront script failed to parse; `go test ./internal/api` runs `node --check` on it (`TestStorefrontInlineJSParses`).
-
-## Contributing
-
-See [docs/contributing.md](docs/contributing.md). Changes to the Search API must keep Spanner/memory parity, use bound SQL parameters, add a `cmd/sqlcheck` case for new SQL, and pass `go vet`, `go test -race` and `npm run build`.
+- Read the API usage guide in [`docs/USAGE.md`](docs/USAGE.md).
+- Explore the React UI documentation in [`src/application/ui/README.md`](src/application/ui/README.md).
+- Run load tests with [`tooling/loadtest/README.md`](tooling/loadtest/README.md) or batch enrichment with [`tooling/enrichment/README.md`](tooling/enrichment/README.md).
+- Review the architecture and ADRs in [`DESIGN.md`](DESIGN.md) and [`knowledge-plane/INDEX.md`](knowledge-plane/INDEX.md).
 
 ## License
 
-This project is licensed under the Apache License 2.0 — see [LICENSE](LICENSE).
-
-## Disclaimer
-
-This is not an officially supported Google product. This project is not eligible for the [Google Open Source Software Vulnerability Rewards Program](https://bughunters.google.com/open-source-security).
+This project is licensed under the Apache License 2.0. See [`LICENSE`](LICENSE) for details.

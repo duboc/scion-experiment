@@ -1,158 +1,100 @@
-# Product Enrichment Tool
+# Enrich catalog products with Vertex AI
 
-This tool enriches product data by generating AI-powered product images and descriptions using Google Cloud's Vertex AI services. It processes products from BigQuery, generates images using Imagen, creates descriptions using Gemini, and stores the results in both Cloud Storage and Firestore.
+This directory contains a batch enrichment tool that generates product images and descriptions from BigQuery catalog rows using Vertex AI Gemini models, Cloud Storage, and Firestore.
+This document follows the Google Developer documentation style and the ASD-STE100 Simplified Technical English standard.
 
-## Features
+> [!IMPORTANT]
+> Do not commit real project IDs, bucket names, or service account emails to version control.
+> Replace placeholders such as `PROJECT_ID` and `BUCKET_NAME` in your local `.env` file.
 
-- **Image Generation**: Uses Vertex AI Imagen to create product images based on product details
-- **Description Generation**: Uses Vertex AI Gemini to generate detailed product descriptions from the generated images
-- **State Management**: Uses Firestore to track processing status and handle retries
-- **Fault Tolerance**: Includes retry mechanism for failed products (up to 3 attempts)
-- **Progress Tracking**: Maintains processing state and can resume from interruptions
-- **Batch Processing**: Processes products in configurable batch sizes
-- **Export Capability**: Exports results to CSV and uploads to Cloud Storage
-- **Result Consolidation**: Separate script to consolidate results from BigQuery and Firestore
+## Overview
 
-## Prerequisites
+The enrichment pipeline (`main.py`) reads product records from BigQuery and runs a fault-tolerant batch workflow:
 
-- Google Cloud Project with the following APIs enabled:
-  - Vertex AI API
-  - BigQuery API
-  - Firestore API
-  - Cloud Storage API
-- Python 3.11+
-- Required IAM permissions:
-  - BigQuery Data Viewer
-  - Firestore User
-  - Storage Object Creator
-  - Vertex AI User
+1. **Image generation (`imagen_client.py`):** Generates product images with `gemini-3.1-flash-image` via the Google Gen AI SDK.
+2. **Description generation (`gemini_client.py`):** Generates detailed product descriptions with `gemini-3.8-flash` (`GENAI_LOCATION=global`).
+3. **Asset upload:** Uploads generated images to a Cloud Storage bucket.
+4. **State checkpointing (`firestore_client.py`):** Records per-product status in Firestore and retries failed items up to 3 times.
+5. **Report consolidation (`consolidate_results.py`):** Merges BigQuery source rows with Firestore status documents into a consolidated CSV report in Cloud Storage.
 
-## Setup
+## Before you begin
 
-1. Clone the repository and navigate to the enrichment directory:
-```bash
-cd tooling/enrichment
-```
+1. Enable the Vertex AI, BigQuery, Firestore, Cloud Storage, and Cloud Run APIs in your Google Cloud project.
+2. Install Python 3.11 or later and `pip`.
+3. Grant the following IAM roles to the runtime service account:
+   - `roles/bigquery.dataViewer`
+   - `roles/datastore.user` (Firestore User)
+   - `roles/storage.objectCreator`
+   - `roles/aiplatform.user`
 
-2. Create and configure your `.env` file:
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
+You can run `./setup_permissions.sh` to grant these roles to your service account.
 
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+## Configure the tool
 
-## Configuration
+1. Open a terminal in `tooling/enrichment`:
 
-Configure the following environment variables in your `.env` file:
+   ```bash
+   cd tooling/enrichment
+   ```
 
-```env
-project_id=your-project-id
-bq_dataset=your_dataset
-bq_table=your_table
-psearch_img_bucket=your-bucket-name
-firestore_collection=your_collection
-firestore_database=(default)
-```
+2. Copy `.env.example` to `.env`:
 
-## Usage
+   ```bash
+   cp .env.example .env
+   ```
 
-### Local Development
+3. Set the required variables in `.env`:
 
-Run the enrichment process:
-```bash
-python main.py
-```
+   | Variable | Example placeholder | Description |
+   |---|---|---|
+   | `project_id` | `PROJECT_ID` | Google Cloud project ID. |
+   | `bq_dataset` | `psearch_dataset` | Source BigQuery dataset ID. |
+   | `bq_table` | `products_raw` | Source BigQuery table name. |
+   | `psearch_img_bucket` | `BUCKET_NAME` | Cloud Storage bucket for generated images and CSV reports. |
+   | `firestore_collection` | `product_enrichment` | Firestore collection that stores per-product job state. |
+   | `firestore_database` | `(default)` | Firestore database ID. |
+   | `service_account` | `SA_NAME@PROJECT_ID.iam.gserviceaccount.com` | Service account used by the Cloud Run Job. |
 
-Generate consolidated report:
-```bash
-python consolidate_results.py
-```
+4. Install the Python dependencies:
 
-### Cloud Run Deployment
+   ```bash
+   python3 -m pip install -r requirements.txt
+   ```
 
-Deploy the enrichment job to Cloud Run:
+## Run the enrichment workflow
+
+### Run locally
+
+1. Execute the batch enrichment script:
+
+   ```bash
+   python3 main.py
+   ```
+
+2. Generate and upload the consolidated CSV status report:
+
+   ```bash
+   python3 consolidate_results.py
+   ```
+
+### Deploy as a Cloud Run Job
+
+Run `deploy.sh` to build the container image and deploy the Cloud Run Job (configured with 2 CPU cores, 2 GiB RAM, 1-hour timeout, and 3 retries):
+
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-## Architecture
+## Troubleshoot common issues
 
-The tool consists of several components:
+| Symptom | Cause | Solution |
+|---|---|---|
+| Vertex AI returns `429 RESOURCE_EXHAUSTED` | Batch concurrency exceeds model quota. | Re-run `python3 main.py`; Firestore state skips completed items and retries failed items up to 3 times. |
+| Product status is `permanently_failed` | A product failed 3 times during image or text generation. | Inspect the error field on the Firestore document for that `product_id` and delete or reset the document to retry. |
+| `404 Not Found` on Gemini model calls | Vertex AI region does not serve Gemini 3.x models. | Set `GENAI_LOCATION=global` in the environment. |
 
-- **main.py**: Orchestrates the enrichment process
-- **imagen_client.py**: Handles product image generation with Gemini image models (`gemini-3.1-flash-image`) via the Google Gen AI SDK
-- **gemini_client.py**: Generates descriptions with Gemini (`gemini-3.8-flash`) via the Google Gen AI SDK (`GENAI_LOCATION=global`)
-- **firestore_client.py**: Manages state and progress tracking
-- **consolidate_results.py**: Consolidates results from BigQuery and Firestore
+## What's next
 
-### Process Flow
-
-1. Enrichment Process (main.py):
-   - Fetches products from BigQuery in batches
-   - Generates product image using Imagen
-   - Generates description using Gemini
-   - Uploads image to Cloud Storage
-   - Updates processing status in Firestore
-   - Handles failures and retries automatically
-
-2. Result Consolidation (consolidate_results.py):
-   - Fetches all products from BigQuery
-   - Retrieves processed products from Firestore
-   - Retrieves failed products from Firestore
-   - Merges data and adds processing status
-   - Generates comprehensive CSV report
-   - Uploads report to Cloud Storage
-
-### Error Handling
-
-- Tracks processing status in Firestore
-- Automatically retries failed products up to 3 times
-- Marks products as permanently failed after 3 failed attempts
-- Stores detailed error messages for debugging
-- Consolidation script includes failed products in final report
-
-## Monitoring
-
-Monitor processing progress through:
-- Console output with detailed status updates
-- Firestore documents containing processing status
-- Generated CSV reports in Cloud Storage
-- Consolidated reports showing overall progress
-
-## Output
-
-The tool generates:
-- Product images in Cloud Storage
-- Product descriptions in Firestore
-- Incremental CSV exports with processed products
-- Consolidated CSV reports including:
-  - Original product data
-  - Generated image URIs
-  - Generated descriptions
-  - Processing status
-  - Error messages for failed items
-  - Processing timestamps
-
-## Troubleshooting
-
-Common issues and solutions:
-
-1. **Rate Limiting**: The tool includes built-in delays to handle API rate limits
-2. **Failed Products**: Check Firestore for detailed error messages
-3. **Interrupted Processing**: The tool can safely resume from the last processed ID
-4. **Permanent Failures**: Products that fail 3 times are marked as 'permanently_failed'
-5. **Missing Data**: Run consolidate_results.py to get a complete view of processing status
-
-## Cloud Run Jobs
-
-The tool is configured to run as a Cloud Run job with:
-- 2GB memory
-- 2 CPU cores
-- 1-hour timeout
-- 3 retry attempts
-- Automatic environment variable configuration 
+- Export enriched products and 1024-dimension embeddings to Cloud Spanner using [`../../src/iac/bigquery_scripts/transform_embed_export_to_spanner.sql`](../../src/iac/bigquery_scripts/transform_embed_export_to_spanner.sql).
+- Backfill missing `embedding_v2` vectors in Cloud Spanner with `cmd/backfill-embeddings` (see [`../../README.md`](../../README.md)).

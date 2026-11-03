@@ -1,113 +1,116 @@
-# PSearch API Load Testing
+# Load test the PSearch Serving API
 
-This directory contains Locust load tests for the PSearch Serving API as defined in the OpenAPI specification.
+This directory contains Locust load tests for the PSearch Serving API (`psearch-serving`).
+This document follows the Google Developer documentation style and the ASD-STE100 Simplified Technical English standard.
+
+> [!IMPORTANT]
+> Do not commit real Cloud Run URLs or project IDs to tracked files.
+> Replace `SERVICE_URL` with your target endpoint (for example, `http://localhost:8080`).
 
 ## Overview
 
-The load testing setup simulates users performing various operations on the PSearch API:
-- Health check requests
-- Product search requests with various query parameters
-- Tests with invalid parameters to verify error handling
+The Locust test suite (`locustfile.py`) simulates concurrent shoppers calling the PSearch Serving API:
 
-## Setup
+- **Health probe task (`weight=1`):** Sends `GET /health` requests and verifies that `"status": "healthy"` is returned.
+- **Product search task (`weight=5`):** Sends `POST /search` requests with realistic queries and limits from `search_queries.py` and validates that `results` and `total_found` exist in every `HTTP 200` response.
 
-### Prerequisites
+## Before you begin
 
-- Python 3.8+
-- pip (Python package manager)
+1. Install Python 3.11 or later and `pip`.
+2. Start a local `psearch-serving` instance (`USE_MEMORY_STORE=true go run ./cmd/server`) or obtain the URL of your deployed Cloud Run service.
 
-### Installation
+## Quickstart
 
-1. Install dependencies:
+1. Open a terminal in `tooling/loadtest`:
+
    ```bash
-   pip install -r requirements.txt
+   cd tooling/loadtest
    ```
 
-2. Configure environment variables:
+2. Install the Python dependencies:
+
    ```bash
-   # Copy the example env file and modify as needed
+   python3 -m pip install -r requirements.txt
+   ```
+
+3. Run a 1-minute headless smoke load test against a local server:
+
+   ```bash
+   locust -f locustfile.py --headless -u 20 -r 5 --run-time 1m --host=http://localhost:8080
+   ```
+
+## Configure the load test
+
+You can configure the target host and user wait time in a `.env` file or with environment variables (`config.py`).
+
+1. Copy `.env.example` to `.env`:
+
+   ```bash
    cp .env.example .env
-   
-   # Edit the .env file with your preferred settings
    ```
 
-   Or set environment variables directly in your shell:
+2. Set the environment variables in `.env` or export them in your shell:
+
+   | Variable | Default | Description |
+   |---|---|---|
+   | `API_HOST` | `https://product-search-api-1234567890.us-central1.run.app` | Default target URL when `--host` is not passed on the command line. |
+   | `LOCAL_API_HOST` | `http://localhost:8080` | Local development target URL. |
+   | `MIN_WAIT_TIME` | `1000` | Minimum wait time between requests per simulated user (milliseconds). |
+   | `MAX_WAIT_TIME` | `5000` | Maximum wait time between requests per simulated user (milliseconds). |
+
+## Run interactive and headless tests
+
+### Use the Locust web UI
+
+1. Start Locust from `tooling/loadtest`:
+
    ```bash
-   export API_HOST=https://product-search-api-739124572941.us-central1.run.app
-   export MIN_WAIT_TIME=1000
-   export MAX_WAIT_TIME=5000
+   locust -f locustfile.py --host="$SERVICE_URL"
    ```
 
-## Running the Load Tests
+2. Open `http://localhost:8089` in your browser.
+3. Enter the number of concurrent users and the spawn rate (users per second), then click **Start swarming**.
 
-### Starting Locust
+### Export CSV and HTML reports in headless mode
 
-Run Locust with:
+Run Locust with `--headless`, `--csv`, and `--html` for automated CI benchmarks:
+
 ```bash
-# From the loadtest directory:
-locust -f locustfile.py
-
-# Or from the project root:
-locust -f src/loadtest/locustfile.py
+locust -f locustfile.py \
+  --headless \
+  -u 100 \
+  -r 10 \
+  --run-time 5m \
+  --host="$SERVICE_URL" \
+  --csv=results \
+  --html=report.html
 ```
 
-Override the host from command line (takes precedence over env vars):
-```bash
-locust -f locustfile.py --host=http://localhost:8080
-```
+This command writes four output files:
 
-### Web UI
+- `results_stats.csv`: Request counts, latency percentiles (`p50`, `p95`, `p99`), and throughput.
+- `results_failures.csv`: Failed HTTP requests and status codes.
+- `results_exceptions.csv`: Unhandled Python exceptions during the run.
+- `report.html`: Standalone HTML summary report.
 
-Once Locust is running, open the web interface at http://localhost:8089 to:
-1. Configure the number of users to simulate
-2. Set the spawn rate (users per second)
-3. Start the test
-4. Monitor real-time results including response times, failure rates, and statistics
+## Customize queries and task weights
 
-### Headless Mode
+1. To add search payloads, append entries to `SEARCH_QUERIES` in `search_queries.py`:
 
-For CI/CD pipelines or automated testing, run Locust in headless mode:
-```bash
-locust -f locustfile.py --headless -u 100 -r 10 --run-time 5m --host=https://product-search-api-739124572941.us-central1.run.app
-```
+   ```python
+   SEARCH_QUERIES.append({"query": "running shoes", "limit": 12, "alpha": 0.5})
+   ```
 
-Where:
-- `-u 100`: Simulates 100 users
-- `-r 10`: Spawns 10 users per second
-- `--run-time 5m`: Runs the test for 5 minutes
+2. To adjust the ratio of search requests to health checks, change the `@task(N)` decorator weights in `locustfile.py`.
 
-## Customizing Tests
+## Troubleshoot common issues
 
-### Adding New Search Queries
+| Symptom | Cause | Solution |
+|---|---|---|
+| High `HTTP 429` or `HTTP 503` rate on Cloud Run | Concurrency exceeds the Cloud Run max-instances setting or Vertex AI quota on uncached queries. | Enable the two-tier `EmbeddingCache` on `psearch-serving` or increase Cloud Run max instances. |
+| Connection refused on `localhost:8080` | The local `psearch-serving` process is not running. | Start the server in `src/psearch/serving` with `USE_MEMORY_STORE=true go run ./cmd/server`. |
 
-To add new search queries, edit the `search_queries.py` file:
-```python
-SEARCH_QUERIES.append({"query": "new product type", "limit": 15})
-```
+## What's next
 
-### Modifying User Behavior
-
-To change how the simulated users behave, edit the task weights in `locustfile.py`. Higher weights mean the task is executed more frequently:
-```python
-@task(5)  # 5 times more frequent than tasks with weight 1
-def search_products(self):
-    # ...
-```
-
-## Output and Reporting
-
-Locust provides several reporting options:
-
-- CSV reports: `--csv=results`
-- HTML reports: `--html=report.html`
-
-Example:
-```bash
-locust -f locustfile.py --csv=results --html=report.html --headless -u 100 -r 10 --run-time 5m
-```
-
-This will generate:
-- results_stats.csv (summary statistics)
-- results_failures.csv (details of failures)
-- results_exceptions.csv (Python exceptions during the test)
-- report.html (HTML report)
+- Review the API endpoints and parameters in [`../../docs/USAGE.md`](../../docs/USAGE.md).
+- Check the production deployment guide in [`../../DEPLOYMENT.md`](../../DEPLOYMENT.md).
