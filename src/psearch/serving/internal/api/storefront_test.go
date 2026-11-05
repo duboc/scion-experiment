@@ -538,14 +538,22 @@ func TestArchitectureDiagramRoute(t *testing.T) {
 		name string
 		re   *regexp.Regexp
 	}{
-		{"real sandbox project ID", regexp.MustCompile(`(?i)riojucu`)},
-		{"real hub project ID", regexp.MustCompile(`(?i)scion-hub-[a-z0-9-]+`)},
+		{"Sandbox project ID label", regexp.MustCompile(`(?i)Sandbox:\s*[a-z0-9-]+`)},
 		{"Cloud Run .run.app URL", regexp.MustCompile(`(?i)[a-z0-9-]+\.run\.app`)},
 		{"service account email", regexp.MustCompile(`(?i)[a-z0-9._-]+@[a-z0-9.-]+\.iam\.gserviceaccount\.com`)},
 	}
 	for _, fp := range forbiddenPatterns {
 		if m := fp.re.FindString(body); m != "" {
 			t.Errorf("GET /diagram contains forbidden %s: %q", fp.name, m)
+		}
+	}
+	if rawPat := strings.TrimSpace(os.Getenv("FORBIDDEN_ID_PATTERN")); rawPat != "" {
+		re, err := regexp.Compile(rawPat)
+		if err != nil {
+			t.Fatalf("invalid FORBIDDEN_ID_PATTERN %q: %v", rawPat, err)
+		}
+		if m := re.FindString(body); m != "" {
+			t.Errorf("GET /diagram matches FORBIDDEN_ID_PATTERN: %q", m)
 		}
 	}
 
@@ -570,4 +578,50 @@ func TestArchitectureDiagramRoute(t *testing.T) {
 		}
 	}
 }
+
+// TestStorefrontRepoBadgeRedaction verifies Issue #52:
+//   - The storefront header badge (data-testid="repo-badge") shows "Repo: duboc/scion-experiment"
+//   - No "Sandbox: <id>" project identifier is exposed in the badge or storefront HTML
+//   - Optional FORBIDDEN_ID_PATTERN env regex is checked when set
+func TestStorefrontRepoBadgeRedaction(t *testing.T) {
+	router := newTestRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+
+	badgeRe := regexp.MustCompile(`<span[^>]*data-testid="repo-badge"[^>]*>(.*?)</span>`)
+	m := badgeRe.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatalf("missing data-testid=\"repo-badge\" in GET / storefront")
+	}
+	badgeText := strings.TrimSpace(m[1])
+	if !strings.Contains(badgeText, "Repo: duboc/scion-experiment") {
+		t.Errorf("repo-badge text = %q, want to contain %q", badgeText, "Repo: duboc/scion-experiment")
+	}
+
+	sandboxIDRe := regexp.MustCompile(`(?i)Sandbox:\s*\S+`)
+	if sm := sandboxIDRe.FindString(badgeText); sm != "" {
+		t.Errorf("repo-badge must not expose a Sandbox project ID, found %q in %q", sm, badgeText)
+	}
+	if sm := sandboxIDRe.FindString(body); sm != "" {
+		t.Errorf("storefront HTML must not expose a Sandbox project ID, found %q", sm)
+	}
+
+	if rawPat := strings.TrimSpace(os.Getenv("FORBIDDEN_ID_PATTERN")); rawPat != "" {
+		re, err := regexp.Compile(rawPat)
+		if err != nil {
+			t.Fatalf("invalid FORBIDDEN_ID_PATTERN %q: %v", rawPat, err)
+		}
+		if fm := re.FindString(body); fm != "" {
+			t.Errorf("GET / matches FORBIDDEN_ID_PATTERN: %q", fm)
+		}
+	}
+}
+
 

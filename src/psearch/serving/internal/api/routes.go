@@ -232,7 +232,7 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
           </optgroup>
         </select>
       </label>
-      <span class="badge" data-testid="repo-badge">Repo: duboc/scion-experiment | Sandbox: riojucu-sandbox</span>
+      <span class="badge" data-testid="repo-badge">Repo: duboc/scion-experiment</span>
       <span class="badge" id="backend-badge">Spanner</span>
       <span class="badge" id="retrieval-badge">Retrieval: -</span>
       <span class="badge" id="ann-badge" style="display:none;background:#065f46;border:1px solid #10b981;color:#d1fae5;"></span>
