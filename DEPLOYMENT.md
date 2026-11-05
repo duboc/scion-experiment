@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00040-r2j`** (100% traffic, follows latest): #50 world country flag-colour themes (storefront only), deployed from a clean `git archive` of `3de4d36`. Rollback target: `psearch-serving-00039-x8j`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00041-x6r`** (100% traffic, follows latest): #51 architecture diagram at `GET /diagram`, deployed from a clean `git archive` of `8a25c90`. Rollback target: `psearch-serving-00040-r2j`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -120,7 +120,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00037-g74`** | `739c62e` | #43, #40 fix-3, #45 | search telemetry (`query_id`, impressions/conversions, A/B summary, rollup) (ADR-015); page-independent candidate set W; relevance-ranked window with OOS-last applied after it. ✅ #40, #43, #45 |
 | **`00038-mpb`** | `8b28300` | #46, #47 | capped critical-path count + concurrent exact count, Go-side SQL specialization (no `IF` inside the SEARCH `WHERE`), scoped enrichment, ANN over-fetch only when needed; rollup over a frozen baseline (027) with strict params / dry-run. **p50 400/185/152 ms.** ✅ #46, #47 |
 | **`00039-x8j`** | `ff5f8eb` | #49 (+ #48 docs) | storefront theme picker (Padrão + 15 Brasileirão clubs), `?theme=` param, localStorage persistence; serving code otherwise identical to 00038 |
-| **`00040-r2j`** | `3de4d36` | #50 | theme picker gains a "Países" optgroup (27 `pais-*` flag-colour themes) next to "Times do Brasileirão" (15); storefront only. **current** |
+| **`00040-r2j`** | `3de4d36` | #50 | theme picker gains a "Países" optgroup (27 `pais-*` flag-colour themes) next to "Times do Brasileirão" (15); storefront only |
+| **`00041-x6r`** | `8a25c90` | #51 | embedded `diagram.html` + `GET /diagram` route (8-view stepped Google Cloud architecture diagram); API unchanged. **current** |
 
 ---
 
@@ -947,3 +948,29 @@ Source: clean `git archive` of **`3de4d36`** in `/tmp/deploy-3de` (feature `d482
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00039-x8j=100` (storefront only).
 
 **Status:** #50 **closed**.
+
+## #51 Architecture diagram at `/diagram`: DEPLOYED 2026-11-05
+
+Source: clean `git archive` of **`8a25c90`** in `/tmp/deploy-8a2` (feature `28cdac1`; `8a25c90` adds REVIEW.md). Serving changes since `3de4d36`: new `internal/api/diagram.html` (embedded), `routes.go` (+8 lines, `/diagram` route), `storefront_test.go`. **No DDL. Env unchanged.** The diagram was built from the deployer's verified, placeholder-only infrastructure inventory.
+
+| Step | Result |
+|---|---|
+| sqlcheck gate (real Spanner) | ✅ **63 OK / 0 FAIL**; `go test ./internal/api` ok |
+| Deploy → **`psearch-serving-00041-x6r`** | ✅ 100%, follows latest |
+
+| Check | Result |
+|---|---|
+| `GET /diagram` | ✅ 200 `text/html; charset=utf-8`, 61,862 B |
+| No identifiers in the served page (`curl` + grep for project ID/number, `*.run.app`, `*@*.iam.gserviceaccount.com`, GitHub/API-key token patterns) | ✅ **0 matches**. Only external resources: `fonts.googleapis.com` / `fonts.gstatic.com` |
+| Stepped views (jsdom against the live page; `scrollIntoView` stubbed because jsdom lacks it) | ✅ **8 views**: System Context → Request Entry & Query Understanding (steps 1–3) → Spanner Hybrid RRF (FTS + ScaNN ANN) (4–5) → Personalization/Sponsored/Facets (6–9) → Data, Enrichment & Backfill → Closed-Loop Telemetry & Bayesian Rollup → Operations, Observability & Pre-Deploy Verification → Complete Architecture & Evidence Summary. Next advances through all 8 and wraps to 0; Prev and ArrowRight work; each view highlights a different subset (lit 13–25 nodes / dimmed 77–89) |
+| Icons | ✅ 10 Google Cloud product icons defined inline; all 17 cards resolve to a defined icon; 112 icon paths rendered in the SVG (331 nodes, 22 edges, 79 labels) |
+| Google Fonts blocked | ✅ jsdom loads no external resources, so this run is the "blocked" case: 0 JS errors, full render. CSS fallbacks: `--body` "Google Sans Text" → Roboto, Helvetica Neue, Arial, sans-serif; `--mono` "Roboto Mono" → ui-monospace, SF Mono, Menlo, monospace |
+| JS errors | ✅ **0** (after stubbing jsdom's missing `scrollIntoView` and sending key events to `body`; both were harness artifacts, not page defects) |
+| Storefront `/` | ✅ 200. Theme suite (pais-brasil/japao/alemanha, flamengo, malicious fallbacks, persistence) unchanged; pagination, facets and analytics drawer OK; 0 JS errors |
+| `/api/search` p50 | Sequential run on 00041: 611/291/213 ms, higher than the 00040 runs of 2026-11-03 (425/195/194). **Interleaved A/B** (no-traffic tag `ab40` → 00040, n=30 each, alternating): `po` **564 vs 608**, `protetor` **275 vs 308**, `running shoes` **189 vs 214** ms: 00041 equal or faster, so **no deploy-attributable change**. Both revisions are slower than on 2026-11-03 (environmental drift; flagged to lead). Tag removed; 100% on 00041 |
+
+Note: the storefront `/` (not `/diagram`) still shows the sandbox project ID in its existing "Repo / Sandbox" header badge, which has been present since before #49. It is out of scope for #51 and was reported to lead.
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00040-r2j=100` (no schema changes).
+
+**Status:** #51 **closed**.
