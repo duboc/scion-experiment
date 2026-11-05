@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00042-mbh`** (100% traffic, follows latest): #52 project-identifier removal, deployed from a clean `git archive` of `4f6d4a7`. Rollback target: `psearch-serving-00041-x6r`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00043-p87`** (100% traffic, follows latest): #53 demo theme picker removed (storefront back to the default dark theme), deployed from a clean `git archive` of `014b6df`. Rollback target: `psearch-serving-00042-mbh`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -122,7 +122,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00039-x8j`** | `ff5f8eb` | #49 (+ #48 docs) | storefront theme picker (Padrão + 15 Brasileirão clubs), `?theme=` param, localStorage persistence; serving code otherwise identical to 00038 |
 | **`00040-r2j`** | `3de4d36` | #50 | theme picker gains a "Países" optgroup (27 `pais-*` flag-colour themes) next to "Times do Brasileirão" (15); storefront only |
 | **`00041-x6r`** | `8a25c90` | #51 | embedded `diagram.html` + `GET /diagram` route (8-view stepped Google Cloud architecture diagram); API unchanged |
-| **`00042-mbh`** | `4f6d4a7` | #52 | real project identifiers removed from tracked files, the storefront badge and `/api/info`; config fails fast without `PROJECT_ID` in Spanner mode; Dockerfile no longer sets `PROJECT_ID`. **current** |
+| **`00042-mbh`** | `4f6d4a7` | #52 | real project identifiers removed from tracked files, the storefront badge and `/api/info`; config fails fast without `PROJECT_ID` in Spanner mode; Dockerfile no longer sets `PROJECT_ID` |
+| **`00043-p87`** | `014b6df` | #53 (+ #54 docs, #52 test guard) | storefront theme picker, `?theme=` handling and theme CSS removed (#49/#50 reverted in the UI); default dark storefront. **current** |
 
 ---
 
@@ -1005,3 +1006,31 @@ Source: clean `git archive` of **`4f6d4a7`** in `/tmp/deploy-4f6` (`3eb8d7a` sto
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00041-x6r=100` (00041 still has the Dockerfile `PROJECT_ID`, and the service env sets it too).
 
 **Status:** #52 **closed**.
+
+## #53 Remove the demo theme picker + #54 docs feature matrix: DEPLOYED 2026-11-05
+
+Source: clean `git archive` of **`014b6df`** in `/tmp/deploy-014` (#53 `ed578f3`; #54 docs `fdcfdc3` + `e7b5015`; also `f4730ea`, the #52 forbidden-ID test now scanning from the git toplevel; `014b6df` adds REVIEW.md). Serving changes since `4f6d4a7`: `routes.go` (−199 lines: theme picker, theme CSS and `?theme=` logic), `storefront_test.go`, `config_test.go`. #54 touches only `README.md`, `docs/USAGE.md` and `src/application/ui/README.md`. **No DDL. Env unchanged.**
+
+| Step | Result |
+|---|---|
+| Identifier scan of the whole snapshot | ✅ 0 files |
+| sqlcheck gate (real Spanner) | ✅ **63 OK / 0 FAIL** |
+| `go test ./...` (with `PROJECT_ID` unset) | ✅ api, config, services ok |
+| Forbidden-ID guard with `FORBIDDEN_ID_PATTERN` (scratch git repo of the snapshot) | ✅ clean tree passes. **Root-level negative control now FAILS as intended** (`forbidden ID pattern matched in PLANTED-ROOT.txt:1`), confirming the #52 coverage gap is fixed by `f4730ea` |
+| Deploy → **`psearch-serving-00043-p87`** | ✅ 100%, follows latest |
+
+| Check | Result |
+|---|---|
+| `GET /` | ✅ 200, 92,942 B (about 20 KB smaller); `#theme-select` absent, 0 `data-theme` CSS blocks, no theme storage key; default dark `:root` (`--bg: #0f172a`, `--accent: #38bdf8`); badge `Repo: duboc/scion-experiment` |
+| `?theme=` has no effect (jsdom) | ✅ `/`, `/?theme=flamengo`, `/?theme=pais-japao`, and `/` with a leftover stored `flamengo` from earlier visits: all `data-theme=null`, `--bg #0f172a`, 24 cards, 0 errors |
+| Storefront regressions (0 JS errors in every run) | ✅ pagination 1-24 → 25-48 of 100 + 5 sorts; multi-select facets/pills; In-Stock Alternatives + Similar/Co-viewed carousels; experiment selector + analytics drawer; attribute facets + 7 spec badges; **2 sponsored badges** on `running shoes` |
+| `/diagram` | ✅ byte-identical to 00041/00042 (same MD5) |
+| `/api/info` | ✅ unchanged shape (21 keys): `spanner`, `psearch-instance` / `psearch-db`, 20535 products, `sandbox=production`, `repo=duboc/scion-experiment` |
+| Identifier grep (ID, number, URL hash, SA emails, `run.app`) on `/`, `/?theme=flamengo`, `/api/info`, `/diagram` | ✅ **0 matches** each |
+| `/api/search` p50, interleaved A/B vs 00042 (no-traffic tag, n=30 each) | ✅ in line: `po` 553 vs 546 ms, `protetor` 304 vs 263, `running shoes` 224 vs 252 (both directions). Tag removed; 100% on 00043 |
+
+**#54:** docs only (feature matrix for #1–#52 in README/USAGE, UI README updated for the removed themes, `/diagram` and the repo badge). No deploy needed beyond riding this image; identifier scan clean.
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00042-mbh=100` (would bring the theme picker back).
+
+**Status:** #53 **closed** (deployed), #54 **closed** (docs).
