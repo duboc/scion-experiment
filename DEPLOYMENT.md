@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00041-x6r`** (100% traffic, follows latest): #51 architecture diagram at `GET /diagram`, deployed from a clean `git archive` of `8a25c90`. Rollback target: `psearch-serving-00040-r2j`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00042-mbh`** (100% traffic, follows latest): #52 project-identifier removal, deployed from a clean `git archive` of `4f6d4a7`. Rollback target: `psearch-serving-00041-x6r`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -121,7 +121,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00038-mpb`** | `8b28300` | #46, #47 | capped critical-path count + concurrent exact count, Go-side SQL specialization (no `IF` inside the SEARCH `WHERE`), scoped enrichment, ANN over-fetch only when needed; rollup over a frozen baseline (027) with strict params / dry-run. **p50 400/185/152 ms.** ✅ #46, #47 |
 | **`00039-x8j`** | `ff5f8eb` | #49 (+ #48 docs) | storefront theme picker (Padrão + 15 Brasileirão clubs), `?theme=` param, localStorage persistence; serving code otherwise identical to 00038 |
 | **`00040-r2j`** | `3de4d36` | #50 | theme picker gains a "Países" optgroup (27 `pais-*` flag-colour themes) next to "Times do Brasileirão" (15); storefront only |
-| **`00041-x6r`** | `8a25c90` | #51 | embedded `diagram.html` + `GET /diagram` route (8-view stepped Google Cloud architecture diagram); API unchanged. **current** |
+| **`00041-x6r`** | `8a25c90` | #51 | embedded `diagram.html` + `GET /diagram` route (8-view stepped Google Cloud architecture diagram); API unchanged |
+| **`00042-mbh`** | `4f6d4a7` | #52 | real project identifiers removed from tracked files, the storefront badge and `/api/info`; config fails fast without `PROJECT_ID` in Spanner mode; Dockerfile no longer sets `PROJECT_ID`. **current** |
 
 ---
 
@@ -969,8 +970,38 @@ Source: clean `git archive` of **`8a25c90`** in `/tmp/deploy-8a2` (feature `28cd
 | Storefront `/` | ✅ 200. Theme suite (pais-brasil/japao/alemanha, flamengo, malicious fallbacks, persistence) unchanged; pagination, facets and analytics drawer OK; 0 JS errors |
 | `/api/search` p50 | Sequential run on 00041: 611/291/213 ms, higher than the 00040 runs of 2026-11-03 (425/195/194). **Interleaved A/B** (no-traffic tag `ab40` → 00040, n=30 each, alternating): `po` **564 vs 608**, `protetor` **275 vs 308**, `running shoes` **189 vs 214** ms: 00041 equal or faster, so **no deploy-attributable change**. Both revisions are slower than on 2026-11-03 (environmental drift; flagged to lead). Tag removed; 100% on 00041 |
 
-Note: the storefront `/` (not `/diagram`) still shows the sandbox project ID in its existing "Repo / Sandbox" header badge, which has been present since before #49. It is out of scope for #51 and was reported to lead.
+Note: at the time, the storefront `/` (not `/diagram`) still showed the sandbox project ID in its existing "Repo / Sandbox" header badge (present since before #49). Reported to lead; fixed in #52 (`00042-mbh`).
 
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00040-r2j=100` (no schema changes).
 
 **Status:** #51 **closed**.
+
+## #52 Remove real project identifiers: DEPLOYED 2026-11-05
+
+Source: clean `git archive` of **`4f6d4a7`** in `/tmp/deploy-4f6` (`3eb8d7a` storefront badge + redaction tests, `28f121a` tracked files + `/api/info` + config fail-fast; `4f6d4a7` adds REVIEW.md). **No DDL.** The Dockerfile no longer sets `ENV PROJECT_ID` (it keeps `PORT`, `ENVIRONMENT`, `REGION`, `SPANNER_INSTANCE_ID`, `SPANNER_DATABASE_ID`). `config.Validate()` now returns `PROJECT_ID is required when USE_MEMORY_STORE is false` instead of falling back to a hardcoded default project.
+
+| Step | Result |
+|---|---|
+| Pre-step (before the code change) | ✅ `psearch-serving` already sets `PROJECT_ID` (and `GCP_PROJECT_ID`, `SPANNER_INSTANCE_ID`, `SPANNER_DATABASE_ID`) as Cloud Run service env vars, which override the Dockerfile, so no env change was needed. Re-checked right before deploying: all set, correct values. `psearch-eval-dashboard` uses its own image and sets its project explicitly; no Cloud Run Jobs exist |
+| Identifier scan of the whole snapshot (all files, root docs included; project ID, project number, service-URL hash, `*@<project>.iam.gserviceaccount.com`) | ✅ **0 files** |
+| sqlcheck gate (real Spanner) | ✅ **63 OK / 0 FAIL** |
+| `go test ./...` with `PROJECT_ID` / `GCP_SANDBOX_PROJECT` unset | ✅ api, config, services ok |
+| `TestTrackedSourceContainsNoForbiddenIDPattern` with `FORBIDDEN_ID_PATTERN` = ID, number, URL hash, SA pattern (snapshot copied to a scratch git repo) | ✅ PASS (299 tracked files). ⚠️ **Coverage gap:** `repoRoot` resolves 4 levels up from `internal/config`, which is `src/`, not the repo root, so the test scans only `src/**`. Negative control: an ID planted in `src/PLANTED.txt` fails the test as expected, but one planted at the repo root goes undetected. The independent whole-snapshot scan above covers that gap for this deploy. Reported for a follow-up fix (5 levels up, or `git rev-parse --show-toplevel`) |
+| Deploy → **`psearch-serving-00042-mbh`** | ✅ started normally (fail-fast satisfied by the service env); 100%, follows latest; no WARNING+ logs |
+
+| Check | Result |
+|---|---|
+| `GET /api/health` | ✅ 200 |
+| `GET /api/info` | ✅ `backend_mode=spanner`, `psearch-instance` / `psearch-db`, `product_count=20535`, `repo=duboc/scion-experiment`; the `sandbox` field now carries the environment name (`production`), not the project ID. `vector_index_used` reads `false` on a cold instance until the first ANN search, then `true` (reflects real execution) |
+| Identifier grep (ID, number, URL hash, SA emails, `run.app`) on the served `/`, `/?theme=pais-brasil`, `/api/info`, `/diagram`, `/api/health` | ✅ **0 matches** on every page |
+| Storefront badge | ✅ `Repo: duboc/scion-experiment` (no sandbox ID) |
+| `GET /diagram` | ✅ byte-identical to 00041 (same MD5) |
+| Search | ✅ `protetor` and `running shoes`: `hybrid_v2`, 20 results, total 100, `vector_index_used=true`; `running shoes` has 2 sponsored |
+| Storefront regressions | ✅ pagination (1-24 → 25-48 of 100), facets/pills, analytics drawer, themes (including malicious fallback); 0 JS errors |
+| `/api/search` p50, interleaved A/B vs 00041 (no-traffic tag, n=30 each, alternating) | ✅ in line: `po` 530 vs 477 ms, `protetor` 294 vs 297, `running shoes` 219 vs 234 (differences in both directions). Tag removed; 100% on 00042 |
+
+**Git history:** the removed values are **still present in git history** (earlier commits of the 9 files and the playbooks). Rewriting history (for example with `git filter-repo`, then a force-push) is a **maintainer decision** and was not done.
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00041-x6r=100` (00041 still has the Dockerfile `PROJECT_ID`, and the service env sets it too).
+
+**Status:** #52 **closed**.
