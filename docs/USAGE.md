@@ -1,6 +1,6 @@
 # Use the PSearch storefront and API
 
-This guide shows you how to search products, filter by facets, fetch recommendations, and manage rules and telemetry in PSearch.
+This guide shows you how to search products, filter by facets, fetch recommendations, view the architecture diagram, and manage rules and telemetry in PSearch.
 This document follows the Google Developer documentation style and the ASD-STE100 Simplified Technical English standard.
 
 > [!IMPORTANT]
@@ -9,12 +9,14 @@ This document follows the Google Developer documentation style and the ASD-STE10
 
 ## Overview
 
-PSearch exposes all search, faceting, recommendation, merchandising, retail media, and analytics features through the `psearch-serving` REST API (`psearch-serving-00038-mpb`).
-You can interact with PSearch through the embedded storefront (`GET /`), the React UI (`src/application/ui`), or direct HTTP requests.
+PSearch exposes all search, faceting, recommendation, merchandising, retail media, and analytics features through the `psearch-serving` REST API.
+See [`../DEPLOYMENT.md`](../DEPLOYMENT.md) for the current Cloud Run revision, and see [`../README.md`](../README.md) for the complete feature matrix across Issues `#1`–`#54`.
+
+You can interact with PSearch through the embedded storefront (`GET /`), the interactive architecture diagram (`GET /diagram`), the React UI (`src/application/ui`), or direct HTTP requests.
 
 ## Before you begin
 
-1. Start `psearch-serving` locally (`USE_MEMORY_STORE=true go run ./cmd/server`) or get your Cloud Run URL:
+1. Start `psearch-serving` locally (`USE_MEMORY_STORE=true go run ./cmd/server`) or set your Cloud Run URL:
 
    ```bash
    export SERVICE_URL="http://localhost:8080"
@@ -26,25 +28,28 @@ You can interact with PSearch through the embedded storefront (`GET /`), the Rea
    curl -s "$SERVICE_URL/api/health" | jq .
    ```
 
-3. Inspect the active configuration, embedding model, and ScaNN vector index state:
+3. Inspect the active configuration, embedding model, and ScaNN vector index state (`sandbox` reports the environment name; `#52`):
 
    ```bash
    curl -s "$SERVICE_URL/api/info" | jq .
    ```
 
-## Open the storefront
+## Open the storefront and architecture diagram
 
 1. Open `$SERVICE_URL/` in your web browser to use the zero-dependency embedded storefront.
 2. Type a query in the search bar, or click **Show All Catalog** (`q=*`).
 3. Select brands, categories, colors, sizes, price buckets, or dynamic attributes in the left sidebar.
 4. Select a sort mode, page size, B2B price table, or postal code in the toolbar.
 5. Click **See In-Stock Alternatives** on any out-of-stock card to load in-stock substitutes.
+6. Open `$SERVICE_URL/diagram` in your browser to inspect the interactive cloud architecture diagram (`#51`).
 
 For the full React administration UI, see [`../src/application/ui/README.md`](../src/application/ui/README.md).
 
 ## Run hybrid search and pagination queries
 
 Use `GET /api/search` or `POST /api/search` to query the catalog.
+PSearch computes a fixed candidate window `W = min(max(capped_count, 100), 500)` from a capped `LIMIT 501` count (`#40`, `#46`).
+Stage-1 selects candidates by relevance and places out-of-stock items last over `W` (`#45`).
 
 1. Run a hybrid vector and full-text search with `alpha=0.5`:
 
@@ -125,9 +130,11 @@ Call `GET /api/products/:id/similar` with `mode=similar`, `mode=substitutes`, or
    curl -s "$SERVICE_URL/api/products/prod-001/similar?mode=co_viewed&limit=6" | jq .
    ```
 
-## Track search telemetry and run signal rollup
+## Track search telemetry and run idempotent signal rollup
 
 Every `/api/search` response returns a unique `query_id` ([ADR-015](../knowledge-plane/adr/ADR-015-search-telemetry-and-attribution.md)).
+The signal rollup (`POST /api/analytics/rollup`) snapshots a frozen baseline on its first live run (`027_products_signal_baseline.sql`, `#47`).
+It blends window events with `prior_weight` (`k` in `(0, 10000]`) and skips zero-impression products.
 
 1. Record an idempotent click or purchase event linked to `query_id`:
 
@@ -151,7 +158,7 @@ Every `/api/search` response returns a unique `query_id` ([ADR-015](../knowledge
    curl -s "$SERVICE_URL/api/analytics/summary?tenant_id=default&window_hours=168" | jq .
    ```
 
-3. Preview the Bayesian prior-blended signal rollup in dry-run mode (requires `X-Admin-Token`):
+3. Preview the signal rollup in dry-run mode (requires `X-Admin-Token` and writes nothing):
 
    ```bash
    curl -s -X POST "$SERVICE_URL/api/analytics/rollup?dry_run=true" \
@@ -214,7 +221,7 @@ If `ADMIN_TOKEN` is unset on the server, admin writes return `HTTP 403 Forbidden
 
 | HTTP status | Common cause | Resolution |
 |---|---|---|
-| `400 Bad Request` | Invalid `sort_by`, `offset > 1000`, `limit > 100`, invalid CEP, or out-of-range `prior_weight` (`k`). | Check parameter bounds against [`biggy-search-openapi.yaml`](../knowledge-plane/contracts/biggy-search-openapi.yaml). |
+| `400 Bad Request` | Invalid `sort_by`, `offset > 1000`, `limit > 100`, invalid CEP, or out-of-range `prior_weight` (`k`) or `window_days`. | Check parameter bounds against [`biggy-search-openapi.yaml`](../knowledge-plane/contracts/biggy-search-openapi.yaml). |
 | `403 Forbidden` | Missing or invalid `X-Admin-Token` header, or `ADMIN_TOKEN` is unset on the server. | Set `ADMIN_TOKEN` on the server and pass `-H "X-Admin-Token: $ADMIN_TOKEN"`. |
 | `404 Not Found` | Seed `product_id` on `/api/products/:id/similar` or `/attributes` does not exist in `tenant_id`. | Verify that the `product_id` exists and is visible in the requested `tenant_id`. |
 | `413 Payload Too Large` | Request body on `POST /api/search` exceeds 8 MB. | Resize the query image to 4 MB or smaller before base64 encoding. |

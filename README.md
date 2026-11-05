@@ -19,9 +19,9 @@ Key platform capabilities include:
 - **Multi-stage ranking:** Applies merchandising rules, 8 business signals, Stage-2 Learning to Rank (LTR), and session centroid personalization.
 - **Disjunctive and dynamic facets:** Computes exclude-own-dimension facet counts and auto-discovers vertical-specific attributes from an interleaved table.
 - **Commerce and retail media:** Supports B2B contract price tables, postal code (CEP) delivery promises, item substitutes, and CPC sponsored products.
-- **Closed-loop telemetry:** Tracks search impressions (`query_id`), click and purchase attribution, A/B experiment KPIs, and Bayesian signal rollups.
+- **Closed-loop telemetry:** Tracks search impressions (`query_id`), click and purchase attribution, A/B experiment KPIs, and idempotent Bayesian signal rollups.
 
-The live production revision on Cloud Run is **`psearch-serving-00038-mpb`**.
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) for the current Cloud Run revision.
 To find your deployed service URL, run the following command:
 
 ```bash
@@ -38,7 +38,7 @@ PSearch consists of four runtime components and three data stores on Google Clou
 ```mermaid
 graph TD
     UI[React UI<br/>src/application/ui] --> API[Search API<br/>psearch-serving · Go/Gin · Cloud Run]
-    Storefront[Embedded storefront<br/>GET /] --> API
+    Storefront[Embedded storefront<br/>GET / & GET /diagram] --> API
     UI --> GenAI[Gen AI service<br/>Python/FastAPI · Cloud Run]
 
     API --> Spanner[(Cloud Spanner<br/>psearch-instance / psearch-db)]
@@ -53,34 +53,49 @@ graph TD
 
 ### Core components
 
-- **Search API (`src/psearch/serving/`):** A Go and Gin service that serves `/api/search` and the embedded storefront at `GET /`. It includes three CLI entrypoints: `cmd/server`, `cmd/sqlcheck`, and `cmd/backfill-embeddings`.
+- **Search API (`src/psearch/serving/`):** A Go and Gin service that serves `/api/search`, the embedded storefront (`GET /`), and the interactive architecture diagram (`GET /diagram`). It includes three CLI entrypoints: `cmd/server`, `cmd/sqlcheck`, and `cmd/backfill-embeddings`.
 - **React UI (`src/application/ui/`):** A React 19 storefront and administration console. For setup instructions, see [`src/application/ui/README.md`](src/application/ui/README.md).
 - **Gen AI service (`src/psearch/gen_ai/`):** A FastAPI service that generates product descriptions, marketing copy, enhanced product images, and SQL fixes.
 - **Cloud Spanner (`psearch-db`):** The primary database that stores products, ScaNN vector indexes, full-text tokenlists, interleaved SKUs, prices, attributes, campaigns, and telemetry.
 
-### Features by wave and ADR reference
+### Complete feature matrix
 
-All capabilities across Waves 1 through 6 (Issues `#1`–`#47`) and schema migrations `011`–`027` are active in production.
+All capabilities across Waves 1 through 6 and recent platform updates (`#1`–`#48`, `#51`–`#52`, and `#54`, plus migrations `011`–`027`) are active.
 For full architectural decisions, see [`knowledge-plane/INDEX.md`](knowledge-plane/INDEX.md).
 
-| Wave | Issues | Capability | Migrations | ADR |
-|---|---|---|---|---|
-| 1 | `#1`, `#2`, `#11`, `#23` | Hybrid RRF search (`alpha`), 1024-d `gemini-embedding-2` Blue/Green columns, two-tier embedding cache | `011`, `013` | [ADR-001](knowledge-plane/adr/ADR-001-hybrid-and-vector-1024.md) |
-| 1–2 | `#3`, `#4`, `#30` | Availability, visibility, sales channels, out-of-stock last ordering, multi-tenant locale filter, accent folding | `012`, `014`, `014b` | [ADR-002](knowledge-plane/adr/ADR-002-catalog-locale-avail.md) |
-| 2–3 | `#5`, `#7`, `#34` | Concurrent server-side facet counts and low-weight synonym expansion | `015`, `015b` | [ADR-003](knowledge-plane/adr/ADR-003-facets-and-synonyms.md) |
-| 3 | `#6` | Merchandising rules (pin, bury, brand/category boost) and 8 business-signal boosts | `016`, `016b` | [ADR-004](knowledge-plane/adr/ADR-004-merchandising-boosts.md) |
-| 3 | `#8` | Regional CEP delivery promises over interleaved `skus` and `regional_inventory` | `017`, `017b`, `017c` | [ADR-005](knowledge-plane/adr/ADR-005-delivery-promises.md) |
-| 4 | `#9`, `#10` | `SEARCH_NGRAMS` autocomplete suggestions and Stage-2 in-memory Learning to Rank (LTR) | `018`, `018b` | [ADR-006](knowledge-plane/adr/ADR-006-autocomplete-and-ltr.md) |
-| 5 | `#19`, `#20` | Conversational query intent parser with Gemini Flash fallback and session centroid personalization | `020`, `021` | [ADR-007](knowledge-plane/adr/ADR-007-conversational-query-and-session.md) |
-| 5 | `#21`, `#22` | N-gram spell check, query OR-relaxation, and interleaved B2B contract price tables | `019`, `019b` | [ADR-008](knowledge-plane/adr/ADR-008-zero-results-and-b2b-pricing.md) |
-| 5 | `#32` | Parent-SKU variant collapse with child color and size `EXISTS` filtering | `022`, `022b`, `022c` | [ADR-009](knowledge-plane/adr/ADR-009-variant-grouping.md) |
-| 5 | `#33` | Visual and multimodal image search (`image_base64` + text refinement) in `embedding_v2` space | — | [ADR-010](knowledge-plane/adr/ADR-010-visual-multimodal-search.md) |
-| 5 | `#35` | Sponsored products auction with ACID CPC budget burn and click idempotency | `023`, `023b` | [ADR-011](knowledge-plane/adr/ADR-011-sponsored-products.md) |
-| 6 | `#39`, `#40`, `#45`, `#46` | ScaNN `VECTOR INDEX`, concurrent chunked backfill, fixed-window pagination, and extended sort modes | `024` | [ADR-012](knowledge-plane/adr/ADR-012-scann-ann-and-pagination.md) |
-| 6 | `#41` | Disjunctive multi-select faceting (`OR` within dimension, `AND` across dimensions, exclude-own-dimension counts) | — | [ADR-013](knowledge-plane/adr/ADR-013-disjunctive-facets.md) |
-| 6 | `#42` | Schema-free dynamic product attributes (`product_attributes` interleaved table) and auto-discovered facets | `025`, `025b` | [ADR-014](knowledge-plane/adr/ADR-014-dynamic-product-attributes.md) |
-| 6 | `#43`, `#47` | Closed-loop search telemetry (`query_id`), click/conversion attribution, A/B KPIs, and idempotent Bayesian rollup | `026`, `027` | [ADR-015](knowledge-plane/adr/ADR-015-search-telemetry-and-attribution.md) |
-| 6 | `#44` | Item-to-item vector similarity, in-stock substitutes, and session co-visitation recommendations | — | [ADR-016](knowledge-plane/adr/ADR-016-similar-items-and-substitutes.md) |
+| Feature | Issue(s) | ADR | Endpoint / parameter |
+|---|---|---|---|
+| Hybrid RRF search with tunable `alpha` | `#1` | [ADR-001](knowledge-plane/adr/ADR-001-hybrid-and-vector-1024.md) | `GET/POST /api/search` (`q`, `alpha`, `min_score`) |
+| 1024-d `gemini-embedding-2` vectors, Blue/Green switch, and 2-tier embedding cache (`011`, `013`) | `#2`, `#11`, `#23` | [ADR-001](knowledge-plane/adr/ADR-001-hybrid-and-vector-1024.md) | `GET/POST /api/config/embedding-version`, `ACTIVE_EMBEDDING_VERSION` |
+| Availability, visibility, sales channels, and out-of-stock last ordering (`012`) | `#3` | [ADR-002](knowledge-plane/adr/ADR-002-catalog-locale-avail.md) | `/api/search` (`only_in_stock`, `channel`) |
+| Multi-tenant, multi-language catalog (`pt-BR`, `en-US`, `es-MX`) and accent folding (`014`, `014b`) | `#4` | [ADR-002](knowledge-plane/adr/ADR-002-catalog-locale-avail.md) | `/api/search` (`tenant_id`, `locale`), `TEXT_FOLDING` |
+| Catalog browse (`q=*` or empty query) and embedded storefront | `#30` | [ADR-002](knowledge-plane/adr/ADR-002-catalog-locale-avail.md) | `GET /`, `GET /api/search?q=*` |
+| Concurrent server-side facet counts and clickable storefront facets | `#5`, `#34`, `#38` | [ADR-003](knowledge-plane/adr/ADR-003-facets-and-synonyms.md) | `/api/search` (`facets` response, `category`, `brand`) |
+| Low-weight synonym expansion and admin synonym upsert (`015`, `015b`) | `#7` | [ADR-003](knowledge-plane/adr/ADR-003-facets-and-synonyms.md) | `GET/POST /api/synonyms` |
+| Merchandising rules (pin, bury, brand/category boost) and 8 business-signal boosts (`016`, `016b`) | `#6` | [ADR-004](knowledge-plane/adr/ADR-004-merchandising-boosts.md) | `GET/POST/PUT/DELETE /api/rules`, `BOOST_WEIGHT` |
+| Regional CEP delivery promises over interleaved `skus` and `regional_inventory` (`017`–`017c`) | `#8` | [ADR-005](knowledge-plane/adr/ADR-005-delivery-promises.md) | `/api/search` (`cep`, `max_sla_hours`, `deliveryPromise`) |
+| `SEARCH_NGRAMS` and prefix autocomplete suggestions (`018`, `018b`) | `#9` | [ADR-006](knowledge-plane/adr/ADR-006-autocomplete-and-ltr.md) | `GET /api/autocomplete` (`q`, `locale`, `tenant_id`, `limit`) |
+| Two-stage in-memory Learning to Rank (LTR) over top candidates | `#10` | [ADR-006](knowledge-plane/adr/ADR-006-autocomplete-and-ltr.md) | `/api/search` (`ltr=true`), `LTR_MODEL_JSON` |
+| Conversational query intent parser with Gemini Flash fallback (`020`) | `#19` | [ADR-007](knowledge-plane/adr/ADR-007-conversational-query-and-session.md) | `/api/search` (`parse_intent`, `parsed_query`), `INTENT_LLM_FALLBACK` |
+| Session-aware centroid personalization (`021`) | `#20` | [ADR-007](knowledge-plane/adr/ADR-007-conversational-query-and-session.md) | `GET/POST /api/session/events`, `/api/search` (`session_id`, `session_product_ids`) |
+| Zero-results recovery with `SEARCH_NGRAMS` spell check and `OR` relaxation | `#21` | [ADR-008](knowledge-plane/adr/ADR-008-zero-results-and-b2b-pricing.md) | `/api/search` (`did_you_mean`, `auto_corrected`, `query_relaxed`) |
+| Interleaved B2B contract price tables and exclusive assortment (`019`, `019b`) | `#22` | [ADR-008](knowledge-plane/adr/ADR-008-zero-results-and-b2b-pricing.md) | `/api/search` (`price_table_id`, `min_price`, `max_price`) |
+| Parent-SKU variant collapse with child color and size `EXISTS` filtering (`022`–`022c`) | `#32` | [ADR-009](knowledge-plane/adr/ADR-009-variant-grouping.md) | `/api/search` (`color`, `size`, `variants`, `available_colors`, `available_sizes`) |
+| Visual and multimodal search (inline query photo + text refinement) | `#33` | [ADR-010](knowledge-plane/adr/ADR-010-visual-multimodal-search.md) | `POST /api/search` (`image_base64`, `image_mime_type`, `image_weight`) |
+| Sponsored products auction with ACID CPC budget burn and click idempotency (`023`, `023b`) | `#35` | [ADR-011](knowledge-plane/adr/ADR-011-sponsored-products.md) | `GET/POST/PUT/DELETE /api/ads/campaigns`, `POST /api/ads/click`, `/api/search` (`ads`) |
+| ScaNN ANN `VECTOR INDEX` (`APPROX_COSINE_DISTANCE`), exact fallback, and chunked backfill (`024`) | `#39` | [ADR-012](knowledge-plane/adr/ADR-012-scann-ann-and-pagination.md) | `/api/search` & `/api/info` (`vector_index_used`), `cmd/backfill-embeddings` |
+| Fixed-window pagination (`W`), accurate `total_found`, and 5 `sort_by` modes | `#40` | [ADR-012](knowledge-plane/adr/ADR-012-scann-ann-and-pagination.md) | `/api/search` (`page`, `offset`, `limit`, `sort_by=relevance\|price_asc\|price_desc\|popularity\|rating_desc`) |
+| Disjunctive multi-select faceting (`OR` within dimension, exclude-own-dimension counts) | `#41` | [ADR-013](knowledge-plane/adr/ADR-013-disjunctive-facets.md) | `/api/search` (`categories`, `brands`, `colors`, `sizes`, `price_ranges`) |
+| Dynamic schema-free product attributes (`product_attributes`) and auto-discovered facets (`025`, `025b`) | `#42` | [ADR-014](knowledge-plane/adr/ADR-014-dynamic-product-attributes.md) | `/api/search` (`attr.<name>`, `attrs`, `facets.attributes`), `PUT /api/products/:id/attributes` |
+| Closed-loop search telemetry (`query_id`), click/conversion attribution, and A/B KPIs (`026`) | `#43` | [ADR-015](knowledge-plane/adr/ADR-015-search-telemetry-and-attribution.md) | `/api/search` (`experiment_id`, `query_id`), `POST /api/analytics/events`, `GET /api/analytics/summary` |
+| Item-to-item vector similarity, in-stock substitutes, and session co-visitation | `#44` | [ADR-016](knowledge-plane/adr/ADR-016-similar-items-and-substitutes.md) | `GET /api/products/:id/similar` (`mode=similar\|substitutes\|co_viewed`, `limit`) |
+| Out-of-stock reachability in unfiltered hybrid search (relevance before `LIMIT`, OOS-last over `W`) | `#45` | [ADR-002](knowledge-plane/adr/ADR-002-catalog-locale-avail.md), [ADR-012](knowledge-plane/adr/ADR-012-scann-ann-and-pagination.md) | `GET/POST /api/search` |
+| Two-stage count latency optimization (`LIMIT 501` capped count, canonical count cache, Go SQL specialization) | `#46` | [ADR-012](knowledge-plane/adr/ADR-012-scann-ann-and-pagination.md) | `GET/POST /api/search`, `cmd/sqlcheck` |
+| Idempotent Bayesian prior-blended signal rollup over a frozen baseline (`027`) | `#47` | [ADR-015](knowledge-plane/adr/ADR-015-search-telemetry-and-attribution.md) | `POST /api/analytics/rollup` (`dry_run`, `prior_weight` / `k`, `window_days`) |
+| Google Developer style and ASD-STE100 documentation | `#28`, `#29`, `#31`, `#48`, `#54` | — | `README.md`, `docs/USAGE.md`, `src/application/ui/README.md`, `tooling/*/README.md` |
+| Interactive cloud architecture diagram | `#51` | — | `GET /diagram` |
+| Public-repo identifier redaction, Spanner `PROJECT_ID` fail-fast validation, and `FORBIDDEN_ID_PATTERN` guard | `#52` | — | `GET /api/info` (`sandbox` = environment name), `PROJECT_ID`, `FORBIDDEN_ID_PATTERN` |
+| 5-layer evaluation pyramid (`L1`–`L5`) and FinOps observability workbench (`psearch-eval-dashboard`) | `#18`, `#26`, `#36`, `#37` | — | [`docs/scion/verification-and-eval.md`](docs/scion/verification-and-eval.md) |
 
 ## Before you begin
 
@@ -107,7 +122,7 @@ You can run the Search API and embedded storefront locally in memory mode withou
    USE_MEMORY_STORE=true go run ./cmd/server
    ```
 
-3. Open `http://localhost:8080/` in your browser to use the embedded storefront, or query the API:
+3. Open `http://localhost:8080/` in your browser for the storefront, `http://localhost:8080/diagram` for the architecture diagram, or query the API:
 
    ```bash
    curl -s "http://localhost:8080/api/search?q=running+shoes&limit=5" | jq .
@@ -128,7 +143,7 @@ The Search API reads its configuration from environment variables (`src/psearch/
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `8080` | HTTP listen port for the server. |
-| `ENVIRONMENT` | `production` | Deployment environment name. |
+| `ENVIRONMENT` | `production` | Deployment environment name (also reported in `/api/info` `sandbox`). |
 | `PROJECT_ID` | `""` | Google Cloud project ID (falls back to `GCP_SANDBOX_PROJECT` or `CLOUDSDK_CORE_PROJECT`; required when `USE_MEMORY_STORE=false`). |
 | `REGION` | `us-central1` | Google Cloud region for Cloud Run and Spanner. |
 | `SPANNER_INSTANCE_ID` | `psearch-instance` | Cloud Spanner instance ID. |
@@ -165,15 +180,17 @@ For step-by-step curl examples, see [`docs/USAGE.md`](docs/USAGE.md).
 
 | Method and path | Auth | Purpose |
 |---|---|---|
+| `GET /` | Public | Serves the zero-dependency embedded storefront. |
+| `GET /diagram` | Public | Serves the interactive cloud architecture diagram (`#51`). |
 | `GET /health`, `GET /healthz`, `GET /api/health` | Public | Returns service health and `backend_mode` (`spanner` or `memory`). |
-| `GET /api/info` | Public | Returns service metadata, active embedding version, `vector_index_used`, and cache stats. |
+| `GET /api/info` | Public | Returns service metadata (`sandbox` = environment name, `#52`), active embedding version, `vector_index_used`, and cache stats. |
 | `GET /api/search`, `POST /api/search` (also `/search`) | Public | Executes hybrid RRF search, disjunctive and dynamic faceting, pagination, LTR, session boost, and ad injection. |
 | `GET /api/autocomplete` | Public | Returns n-gram (`SEARCH_NGRAMS`) and prefix autocomplete suggestions. |
 | `GET /api/products/:id/similar` (also `/products/:id/similar`) | Public | Returns item-to-item `similar`, in-stock `substitutes`, or `co_viewed` recommendations ([ADR-016](knowledge-plane/adr/ADR-016-similar-items-and-substitutes.md)). |
 | `PUT /api/products/:id/attributes` (also `/products/:id/attributes`) | `X-Admin-Token` | Atomically upserts `products.attributes` JSON and interleaved `product_attributes` rows ([ADR-014](knowledge-plane/adr/ADR-014-dynamic-product-attributes.md)). |
 | `POST /api/analytics/events` (also `/analytics/events`) | Public | Records idempotent `click`, `add_to_cart`, or `purchase` attribution events linked to `query_id` ([ADR-015](knowledge-plane/adr/ADR-015-search-telemetry-and-attribution.md)). |
 | `GET /api/analytics/summary` (also `/analytics/summary`) | Public | Returns tenant search KPIs: total searches, zero-result queries, CTR, `mrr_at_10`, conversions, and A/B `experiments`. |
-| `POST /api/analytics/rollup` (also `/analytics/rollup`) | `X-Admin-Token` | Runs idempotent Bayesian prior-blended signal rollup over a frozen baseline (`dry_run` supported; [ADR-015](knowledge-plane/adr/ADR-015-search-telemetry-and-attribution.md)). |
+| `POST /api/analytics/rollup` (also `/analytics/rollup`) | `X-Admin-Token` | Runs idempotent Bayesian prior-blended signal rollup over a frozen baseline (`dry_run`, `prior_weight` / `k`, `window_days`; [ADR-015](knowledge-plane/adr/ADR-015-search-telemetry-and-attribution.md), `#47`). |
 | `POST /api/session/events`, `GET /api/session/events` | Public | Records or lists session `click` and `purchase` events for real-time session personalization ([ADR-007](knowledge-plane/adr/ADR-007-conversational-query-and-session.md)). |
 | `GET /api/rules`, `POST /api/rules`, `PUT /api/rules/:id`, `DELETE /api/rules/:id` | Public read / Admin write | Lists, creates, updates, or deletes merchandising rules ([ADR-004](knowledge-plane/adr/ADR-004-merchandising-boosts.md)). |
 | `GET /api/synonyms`, `POST /api/synonyms` | Public read / Admin write | Lists or upserts tenant and locale synonym groups ([ADR-003](knowledge-plane/adr/ADR-003-facets-and-synonyms.md)). |
@@ -198,11 +215,11 @@ For step-by-step curl examples, see [`docs/USAGE.md`](docs/USAGE.md).
 Before you deploy a new revision to Cloud Run, you must run the mandatory verification gates.
 For complete Terraform, DDL migration (`011`–`027`), and rollout steps, see [`DEPLOYMENT.md`](DEPLOYMENT.md) and [`knowledge-plane/playbooks/SPANNER-DDL-MIGRATION-GUIDE.md`](knowledge-plane/playbooks/SPANNER-DDL-MIGRATION-GUIDE.md).
 
-1. Run static analysis and the race-enabled unit test suite:
+1. Run static analysis, the race-enabled unit test suite, and the repository-wide forbidden-identifier guard (`#52`):
 
    ```bash
    cd src/psearch/serving
-   go vet ./... && go test -race -count=1 ./...
+   go vet ./... && FORBIDDEN_ID_PATTERN="YOUR_PRIVATE_PROJECT_REGEX" go test -race -count=1 ./...
    ```
 
 2. Run the live Cloud Spanner SQL gate (`cmd/sqlcheck`) against your database before every rollout:
@@ -230,9 +247,9 @@ For complete Terraform, DDL migration (`011`–`027`), and rollout steps, see [`
 
 | Symptom | Cause | Solution |
 |---|---|---|
+| Startup fails with `PROJECT_ID is required when USE_MEMORY_STORE is false` | `PROJECT_ID` is unset in Spanner mode (`#52`). | Set `PROJECT_ID` on the Cloud Run service or set `USE_MEMORY_STORE=true` for local memory mode. |
 | `retrieval_mode` is `lexical_only_degraded` | Query embedding call failed or Vertex AI permissions are missing. | Grant `roles/aiplatform.user` to the service account and keep `GENAI_LOCATION=global`. |
 | `vector_index_used` is `false` when `v2` is active | `products_embedding_v2_idx` is absent, still building, or in its 60s cooldown window. | Apply migration `024_products_vector_index.sql` and verify with `go run ./cmd/sqlcheck`. |
-| `backend_mode` is `memory` on Cloud Run | Spanner client initialization failed or `USE_MEMORY_STORE=true` is set. | Set `USE_MEMORY_STORE=false` and grant `roles/spanner.databaseUser` on `psearch-db`. |
 | Admin endpoints return `HTTP 403 Forbidden` | `ADMIN_TOKEN` is unset or the `X-Admin-Token` header does not match. | Configure `ADMIN_TOKEN` on the service and pass `-H "X-Admin-Token: ADMIN_TOKEN"`. |
 
 ## Autonomous software factory (Scion)
