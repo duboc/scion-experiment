@@ -88,57 +88,10 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
   <title>psearch — Hybrid Vector & Full-Text Search (Cloud Spanner)</title>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; --muted: #94a3b8; --green: #22c55e; --btn-text: #0f172a; --border: #334155; --chip-bg: #0c4a6e; --chip-text: #e0f2fe; --oos: #f87171; }
-    [data-theme="padrao"] { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; --muted: #94a3b8; --green: #22c55e; --btn-text: #0f172a; --border: #334155; --chip-bg: #0c4a6e; --chip-text: #e0f2fe; --oos: #f87171; }
-    [data-theme="flamengo"] { --bg: #140708; --card: #230d10; --accent: #ff4d5a; --text: #fff5f5; --muted: #e2b2b6; --green: #34d399; --btn-text: #140708; --border: #5c1920; --chip-bg: #450a0a; --chip-text: #ffe4e6; --oos: #fda4af; }
-    [data-theme="palmeiras"] { --bg: #061e12; --card: #0c2e1d; --accent: #4ade80; --text: #f0fdf4; --muted: #a7f3d0; --green: #4ade80; --btn-text: #061e12; --border: #166534; --chip-bg: #14532d; --chip-text: #dcfce7; --oos: #fda4af; }
-    [data-theme="corinthians"] { --bg: #0b0b0d; --card: #18181c; --accent: #f4f4f6; --text: #fafafa; --muted: #b4b4be; --green: #4ade80; --btn-text: #0b0b0d; --border: #3f3f46; --chip-bg: #27272a; --chip-text: #fafafa; --oos: #fca5a5; }
-    [data-theme="sao-paulo"] { --bg: #17090b; --card: #261014; --accent: #ff5c6c; --text: #ffffff; --muted: #e5b8be; --green: #34d399; --btn-text: #17090b; --border: #6b1d27; --chip-bg: #4c0519; --chip-text: #ffe4e6; --oos: #fda4af; }
-    [data-theme="santos"] { --bg: #0d1117; --card: #161b22; --accent: #facc15; --text: #f8fafc; --muted: #b8c4d0; --green: #4ade80; --btn-text: #0d1117; --border: #374151; --chip-bg: #1f2937; --chip-text: #fef9c3; --oos: #fca5a5; }
-    [data-theme="vasco"] { --bg: #101216; --card: #1b1f26; --accent: #f59e0b; --text: #f8fafc; --muted: #c2c8d1; --green: #34d399; --btn-text: #101216; --border: #4b5563; --chip-bg: #27272a; --chip-text: #fef3c7; --oos: #fca5a5; }
-    [data-theme="fluminense"] { --bg: #1b0810; --card: #2b101b; --accent: #34d399; --text: #fdf2f6; --muted: #dfb5c4; --green: #34d399; --btn-text: #1b0810; --border: #681d38; --chip-bg: #064e3b; --chip-text: #ecfdf5; --oos: #fda4af; }
-    [data-theme="botafogo"] { --bg: #0a0c10; --card: #151921; --accent: #e2e8f0; --text: #f8fafc; --muted: #b0bac9; --green: #4ade80; --btn-text: #0a0c10; --border: #334155; --chip-bg: #1e293b; --chip-text: #f8fafc; --oos: #fca5a5; }
-    [data-theme="gremio"] { --bg: #071829; --card: #0e253d; --accent: #38bdf8; --text: #f0f9ff; --muted: #9bd5f5; --green: #4ade80; --btn-text: #071829; --border: #1e4e79; --chip-bg: #0c4a6e; --chip-text: #e0f2fe; --oos: #fda4af; }
-    [data-theme="internacional"] { --bg: #1c0608; --card: #2d0c10; --accent: #ff6b78; --text: #fff5f5; --muted: #ebb5ba; --green: #4ade80; --btn-text: #1c0608; --border: #731b24; --chip-bg: #450a0a; --chip-text: #ffe4e6; --oos: #fecdd3; }
-    [data-theme="atletico-mg"] { --bg: #0c0d10; --card: #171920; --accent: #fbbf24; --text: #f9fafb; --muted: #bcc2ce; --green: #4ade80; --btn-text: #0c0d10; --border: #374151; --chip-bg: #27272a; --chip-text: #fef3c7; --oos: #fca5a5; }
-    [data-theme="cruzeiro"] { --bg: #061433; --card: #0d214f; --accent: #60a5fa; --text: #f0f7ff; --muted: #a8ccf7; --green: #4ade80; --btn-text: #061433; --border: #1d4ed8; --chip-bg: #1e3a8a; --chip-text: #eff6ff; --oos: #fda4af; }
-    [data-theme="bahia"] { --bg: #07162c; --card: #102444; --accent: #ff5c6c; --text: #f8fafc; --muted: #a9c5e8; --green: #4ade80; --btn-text: #07162c; --border: #1e40af; --chip-bg: #1e3a8a; --chip-text: #f8fafc; --oos: #fda4af; }
-    [data-theme="fortaleza"] { --bg: #09152b; --card: #132342; --accent: #ff6675; --text: #f8fafc; --muted: #adc4e6; --green: #4ade80; --btn-text: #09152b; --border: #254682; --chip-bg: #1e3a8a; --chip-text: #f8fafc; --oos: #fda4af; }
-    [data-theme="athletico-pr"] { --bg: #170709; --card: #260d11; --accent: #ff5260; --text: #fff5f6; --muted: #e0b0b5; --green: #34d399; --btn-text: #170709; --border: #611821; --chip-bg: #450a0a; --chip-text: #ffe4e6; --oos: #fda4af; }
-    [data-theme="pais-brasil"] { --bg: #051c10; --card: #0b2e1b; --accent: #facc15; --text: #f0fdf4; --muted: #a7f3d0; --green: #4ade80; --btn-text: #051c10; --border: #15803d; --chip-bg: #1e3a8a; --chip-text: #fef9c3; --oos: #fda4af; }
-    [data-theme="pais-argentina"] { --bg: #061826; --card: #0d263b; --accent: #7dd3fc; --text: #f0f9ff; --muted: #bae6fd; --green: #4ade80; --btn-text: #061826; --border: #0284c7; --chip-bg: #0c4a6e; --chip-text: #fef3c7; --oos: #fda4af; }
-    [data-theme="pais-estados-unidos"] { --bg: #081226; --card: #111f3d; --accent: #ff6b78; --text: #f8fafc; --muted: #b8c7e0; --green: #4ade80; --btn-text: #081226; --border: #1e3a8a; --chip-bg: #1e3a8a; --chip-text: #f8fafc; --oos: #fda4af; }
-    [data-theme="pais-mexico"] { --bg: #061c14; --card: #0d2b20; --accent: #ff6675; --text: #f0fdf4; --muted: #a7f3d0; --green: #4ade80; --btn-text: #061c14; --border: #166534; --chip-bg: #14532d; --chip-text: #ffe4e6; --oos: #fda4af; }
-    [data-theme="pais-canada"] { --bg: #190709; --card: #290d11; --accent: #ff5c6c; --text: #fff5f5; --muted: #e5b8be; --green: #4ade80; --btn-text: #190709; --border: #7f1d1d; --chip-bg: #450a0a; --chip-text: #ffffff; --oos: #fecdd3; }
-    [data-theme="pais-reino-unido"] { --bg: #071329; --card: #102142; --accent: #ff6675; --text: #f8fafc; --muted: #b3c7e6; --green: #4ade80; --btn-text: #071329; --border: #1d4ed8; --chip-bg: #1e3a8a; --chip-text: #ffffff; --oos: #fda4af; }
-    [data-theme="pais-franca"] { --bg: #07142b; --card: #102244; --accent: #60a5fa; --text: #f8fafc; --muted: #b5c9eb; --green: #4ade80; --btn-text: #07142b; --border: #1d4ed8; --chip-bg: #1e3a8a; --chip-text: #ffe4e6; --oos: #fda4af; }
-    [data-theme="pais-alemanha"] { --bg: #12100e; --card: #211d18; --accent: #fbbf24; --text: #fafaf9; --muted: #d6cfc7; --green: #4ade80; --btn-text: #12100e; --border: #78350f; --chip-bg: #450a0a; --chip-text: #fef3c7; --oos: #fca5a5; }
-    [data-theme="pais-italia"] { --bg: #061d14; --card: #0d2e20; --accent: #4ade80; --text: #f8fafc; --muted: #b2ebd1; --green: #4ade80; --btn-text: #061d14; --border: #15803d; --chip-bg: #14532d; --chip-text: #ffe4e6; --oos: #fda4af; }
-    [data-theme="pais-espanha"] { --bg: #1c0809; --card: #2e0e11; --accent: #facc15; --text: #fffbeb; --muted: #f3c6b6; --green: #4ade80; --btn-text: #1c0809; --border: #991b1b; --chip-bg: #450a0a; --chip-text: #fef08a; --oos: #fecdd3; }
-    [data-theme="pais-portugal"] { --bg: #17080a; --card: #260f13; --accent: #34d399; --text: #fdf2f4; --muted: #e2b6be; --green: #4ade80; --btn-text: #17080a; --border: #065f46; --chip-bg: #064e3b; --chip-text: #fef08a; --oos: #fda4af; }
-    [data-theme="pais-holanda"] { --bg: #091529; --card: #122342; --accent: #fb923c; --text: #f8fafc; --muted: #b8cae8; --green: #4ade80; --btn-text: #091529; --border: #c2410c; --chip-bg: #431407; --chip-text: #ffedd5; --oos: #fda4af; }
-    [data-theme="pais-belgica"] { --bg: #14110f; --card: #241e1a; --accent: #facc15; --text: #fafaf9; --muted: #d6ccc2; --green: #4ade80; --btn-text: #14110f; --border: #854d0e; --chip-bg: #450a0a; --chip-text: #fef08a; --oos: #fca5a5; }
-    [data-theme="pais-japao"] { --bg: #14090c; --card: #241116; --accent: #ff5c6c; --text: #ffffff; --muted: #e2bcc2; --green: #4ade80; --btn-text: #14090c; --border: #881337; --chip-bg: #4c0519; --chip-text: #ffe4e6; --oos: #fda4af; }
-    [data-theme="pais-coreia-do-sul"] { --bg: #081426; --card: #11223d; --accent: #ff6675; --text: #f8fafc; --muted: #b5c7e3; --green: #4ade80; --btn-text: #081426; --border: #1e40af; --chip-bg: #1e3a8a; --chip-text: #ffe4e6; --oos: #fda4af; }
-    [data-theme="pais-china"] { --bg: #1f0708; --card: #300d0f; --accent: #facc15; --text: #fffbeb; --muted: #f0b9b9; --green: #4ade80; --btn-text: #1f0708; --border: #991b1b; --chip-bg: #450a0a; --chip-text: #fef08a; --oos: #fecdd3; }
-    [data-theme="pais-india"] { --bg: #081729; --card: #112540; --accent: #fb923c; --text: #f8fafc; --muted: #b8cbe6; --green: #4ade80; --btn-text: #081729; --border: #15803d; --chip-bg: #14532d; --chip-text: #ffedd5; --oos: #fda4af; }
-    [data-theme="pais-australia"] { --bg: #061a14; --card: #0c2b22; --accent: #facc15; --text: #f0fdf4; --muted: #a7f3d0; --green: #4ade80; --btn-text: #061a14; --border: #15803d; --chip-bg: #14532d; --chip-text: #fef08a; --oos: #fda4af; }
-    [data-theme="pais-africa-do-sul"] { --bg: #061c14; --card: #0d2d21; --accent: #fbbf24; --text: #f0fdf4; --muted: #b0ebd0; --green: #4ade80; --btn-text: #061c14; --border: #15803d; --chip-bg: #1e3a8a; --chip-text: #fef3c7; --oos: #fda4af; }
-    [data-theme="pais-nigeria"] { --bg: #051e13; --card: #0b301f; --accent: #4ade80; --text: #f0fdf4; --muted: #bbf7d0; --green: #4ade80; --btn-text: #051e13; --border: #166534; --chip-bg: #14532d; --chip-text: #f0fdf4; --oos: #fda4af; }
-    [data-theme="pais-uruguai"] { --bg: #07182b; --card: #0f2744; --accent: #facc15; --text: #f0f9ff; --muted: #bae6fd; --green: #4ade80; --btn-text: #07182b; --border: #0369a1; --chip-bg: #0c4a6e; --chip-text: #fef9c3; --oos: #fda4af; }
-    [data-theme="pais-colombia"] { --bg: #08152b; --card: #112445; --accent: #facc15; --text: #fefce8; --muted: #bfdbfe; --green: #4ade80; --btn-text: #08152b; --border: #1d4ed8; --chip-bg: #1e3a8a; --chip-text: #fef08a; --oos: #fda4af; }
-    [data-theme="pais-chile"] { --bg: #081329; --card: #112142; --accent: #ff6170; --text: #f8fafc; --muted: #b8c9e6; --green: #4ade80; --btn-text: #081329; --border: #1e40af; --chip-bg: #1e3a8a; --chip-text: #ffe4e6; --oos: #fda4af; }
-    [data-theme="pais-croacia"] { --bg: #17080c; --card: #261017; --accent: #60a5fa; --text: #f8fafc; --muted: #e2b8c2; --green: #4ade80; --btn-text: #17080c; --border: #1d4ed8; --chip-bg: #1e3a8a; --chip-text: #ffffff; --oos: #fda4af; }
-    [data-theme="pais-marrocos"] { --bg: #1a0709; --card: #2b0d11; --accent: #34d399; --text: #fff5f5; --muted: #e5b5bc; --green: #4ade80; --btn-text: #1a0709; --border: #065f46; --chip-bg: #064e3b; --chip-text: #ecfdf5; --oos: #fecdd3; }
-    [data-theme="pais-egito"] { --bg: #140f0d; --card: #241b17; --accent: #fbbf24; --text: #fafaf9; --muted: #d6c7be; --green: #4ade80; --btn-text: #140f0d; --border: #991b1b; --chip-bg: #450a0a; --chip-text: #fef3c7; --oos: #fca5a5; }
-    [data-theme="pais-arabia-saudita"] { --bg: #051d11; --card: #0b2e1c; --accent: #4ade80; --text: #f0fdf4; --muted: #a7f3d0; --green: #4ade80; --btn-text: #051d11; --border: #15803d; --chip-bg: #14532d; --chip-text: #ecfdf5; --oos: #fda4af; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
     header { padding: 20px 32px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
     .badge { background: #0284c7; color: #fff; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
-    .theme-picker-wrap { display: inline-flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--text); }
-    .theme-picker-label { font-weight: 600; color: var(--muted); white-space: nowrap; }
-    .theme-swatch { width: 14px; height: 14px; border-radius: 999px; border: 1px solid var(--text); display: inline-block; flex-shrink: 0; background: linear-gradient(135deg, var(--accent) 50%, var(--bg) 50%); }
-    .theme-picker-wrap select { padding: 4px 8px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-weight: 600; cursor: pointer; }
     main { max-width: 1200px; margin: 0 auto; padding: 24px 32px; }
     .search-bar { display: flex; gap: 12px; align-items: center; background: var(--card); padding: 16px; border-radius: 12px; border: 1px solid var(--border); flex-wrap: wrap; }
     input[type="text"] { flex: 1; min-width: 240px; padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 16px; }
@@ -179,59 +132,6 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       <div style="color:var(--muted);font-size:13px;">Powered by Cloud Spanner (RRF Vector + Full-Text Search) & Vertex AI</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <label for="theme-select" class="theme-picker-wrap" data-testid="theme-picker">
-        <span class="theme-picker-label">Tema / Time do coração:</span>
-        <span id="theme-swatch" class="theme-swatch" aria-hidden="true"></span>
-        <select id="theme-select" data-testid="theme-select" title="Tema / Time do coração" aria-label="Tema / Time do coração" onchange="applyClubTheme(this.value, true)">
-          <option value="padrao">Padrão</option>
-          <optgroup label="Times do Brasileirão" data-group="Times do Brasileirao">
-            <option value="flamengo">Flamengo</option>
-            <option value="palmeiras">Palmeiras</option>
-            <option value="corinthians">Corinthians</option>
-            <option value="sao-paulo">São Paulo</option>
-            <option value="santos">Santos</option>
-            <option value="vasco">Vasco</option>
-            <option value="fluminense">Fluminense</option>
-            <option value="botafogo">Botafogo</option>
-            <option value="gremio">Grêmio</option>
-            <option value="internacional">Internacional</option>
-            <option value="atletico-mg">Atlético-MG</option>
-            <option value="cruzeiro">Cruzeiro</option>
-            <option value="bahia">Bahia</option>
-            <option value="fortaleza">Fortaleza</option>
-            <option value="athletico-pr">Athletico-PR</option>
-          </optgroup>
-          <optgroup label="Países" data-group="Paises">
-            <option value="pais-brasil">Brasil</option>
-            <option value="pais-argentina">Argentina</option>
-            <option value="pais-estados-unidos">Estados Unidos</option>
-            <option value="pais-mexico">México</option>
-            <option value="pais-canada">Canadá</option>
-            <option value="pais-reino-unido">Reino Unido</option>
-            <option value="pais-franca">França</option>
-            <option value="pais-alemanha">Alemanha</option>
-            <option value="pais-italia">Itália</option>
-            <option value="pais-espanha">Espanha</option>
-            <option value="pais-portugal">Portugal</option>
-            <option value="pais-holanda">Holanda</option>
-            <option value="pais-belgica">Bélgica</option>
-            <option value="pais-japao">Japão</option>
-            <option value="pais-coreia-do-sul">Coreia do Sul</option>
-            <option value="pais-china">China</option>
-            <option value="pais-india">Índia</option>
-            <option value="pais-australia">Austrália</option>
-            <option value="pais-africa-do-sul">África do Sul</option>
-            <option value="pais-nigeria">Nigéria</option>
-            <option value="pais-uruguai">Uruguai</option>
-            <option value="pais-colombia">Colômbia</option>
-            <option value="pais-chile">Chile</option>
-            <option value="pais-croacia">Croácia</option>
-            <option value="pais-marrocos">Marrocos</option>
-            <option value="pais-egito">Egito</option>
-            <option value="pais-arabia-saudita">Arábia Saudita</option>
-          </optgroup>
-        </select>
-      </label>
       <span class="badge" data-testid="repo-badge">Repo: duboc/scion-experiment</span>
       <span class="badge" id="backend-badge">Spanner</span>
       <span class="badge" id="retrieval-badge">Retrieval: -</span>
@@ -1862,105 +1762,6 @@ const defaultStorefrontHTML = `<!DOCTYPE html>
       if (szEl) szEl.value = '';
       runSearch({ browseAll: true });
     }
-    const THEME_STORAGE_KEY = 'psearch_storefront_theme';
-    const CLUB_THEMES = {
-      'padrao': { name: 'Padrão', primary: '#38bdf8', secondary: '#0f172a' },
-      'flamengo': { name: 'Flamengo', primary: '#ff4d5a', secondary: '#140708' },
-      'palmeiras': { name: 'Palmeiras', primary: '#4ade80', secondary: '#061e12' },
-      'corinthians': { name: 'Corinthians', primary: '#f4f4f6', secondary: '#0b0b0d' },
-      'sao-paulo': { name: 'São Paulo', primary: '#ff5c6c', secondary: '#17090b', tertiary: '#ffffff' },
-      'santos': { name: 'Santos', primary: '#facc15', secondary: '#0d1117' },
-      'vasco': { name: 'Vasco', primary: '#f59e0b', secondary: '#101216' },
-      'fluminense': { name: 'Fluminense', primary: '#34d399', secondary: '#1b0810', tertiary: '#fdf2f6' },
-      'botafogo': { name: 'Botafogo', primary: '#e2e8f0', secondary: '#0a0c10' },
-      'gremio': { name: 'Grêmio', primary: '#38bdf8', secondary: '#071829', tertiary: '#f0f9ff' },
-      'internacional': { name: 'Internacional', primary: '#ff6b78', secondary: '#1c0608' },
-      'atletico-mg': { name: 'Atlético-MG', primary: '#fbbf24', secondary: '#0c0d10' },
-      'cruzeiro': { name: 'Cruzeiro', primary: '#60a5fa', secondary: '#061433' },
-      'bahia': { name: 'Bahia', primary: '#ff5c6c', secondary: '#07162c', tertiary: '#f8fafc' },
-      'fortaleza': { name: 'Fortaleza', primary: '#ff6675', secondary: '#09152b', tertiary: '#f8fafc' },
-      'athletico-pr': { name: 'Athletico-PR', primary: '#ff5260', secondary: '#170709' },
-      'pais-brasil': { name: 'Brasil', primary: '#15803d', secondary: '#facc15', tertiary: '#1e3a8a' },
-      'pais-argentina': { name: 'Argentina', primary: '#7dd3fc', secondary: '#f0f9ff', tertiary: '#facc15' },
-      'pais-estados-unidos': { name: 'Estados Unidos', primary: '#1e3a8a', secondary: '#f8fafc', tertiary: '#ff6b78' },
-      'pais-mexico': { name: 'México', primary: '#166534', secondary: '#f0fdf4', tertiary: '#ff6675' },
-      'pais-canada': { name: 'Canadá', primary: '#ff5c6c', secondary: '#fff5f5' },
-      'pais-reino-unido': { name: 'Reino Unido', primary: '#1d4ed8', secondary: '#f8fafc', tertiary: '#ff6675' },
-      'pais-franca': { name: 'França', primary: '#1d4ed8', secondary: '#f8fafc', tertiary: '#ff6675' },
-      'pais-alemanha': { name: 'Alemanha', primary: '#12100e', secondary: '#ef4444', tertiary: '#fbbf24' },
-      'pais-italia': { name: 'Itália', primary: '#15803d', secondary: '#f8fafc', tertiary: '#ff6675' },
-      'pais-espanha': { name: 'Espanha', primary: '#dc2626', secondary: '#facc15' },
-      'pais-portugal': { name: 'Portugal', primary: '#065f46', secondary: '#dc2626', tertiary: '#facc15' },
-      'pais-holanda': { name: 'Holanda', primary: '#ea580c', secondary: '#f8fafc', tertiary: '#1d4ed8' },
-      'pais-belgica': { name: 'Bélgica', primary: '#14110f', secondary: '#facc15', tertiary: '#ef4444' },
-      'pais-japao': { name: 'Japão', primary: '#ffffff', secondary: '#ff5c6c' },
-      'pais-coreia-do-sul': { name: 'Coreia do Sul', primary: '#f8fafc', secondary: '#ff6675', tertiary: '#1e40af' },
-      'pais-china': { name: 'China', primary: '#dc2626', secondary: '#facc15' },
-      'pais-india': { name: 'Índia', primary: '#fb923c', secondary: '#f8fafc', tertiary: '#15803d' },
-      'pais-australia': { name: 'Austrália', primary: '#15803d', secondary: '#facc15' },
-      'pais-africa-do-sul': { name: 'África do Sul', primary: '#15803d', secondary: '#fbbf24', tertiary: '#1e3a8a' },
-      'pais-nigeria': { name: 'Nigéria', primary: '#166534', secondary: '#f0fdf4' },
-      'pais-uruguai': { name: 'Uruguai', primary: '#38bdf8', secondary: '#f0f9ff', tertiary: '#facc15' },
-      'pais-colombia': { name: 'Colômbia', primary: '#facc15', secondary: '#1d4ed8', tertiary: '#ef4444' },
-      'pais-chile': { name: 'Chile', primary: '#1e40af', secondary: '#f8fafc', tertiary: '#ff6170' },
-      'pais-croacia': { name: 'Croácia', primary: '#ef4444', secondary: '#f8fafc', tertiary: '#60a5fa' },
-      'pais-marrocos': { name: 'Marrocos', primary: '#dc2626', secondary: '#34d399' },
-      'pais-egito': { name: 'Egito', primary: '#dc2626', secondary: '#fafaf9', tertiary: '#fbbf24' },
-      'pais-arabia-saudita': { name: 'Arábia Saudita', primary: '#15803d', secondary: '#f0fdf4' }
-    };
-    function applyClubTheme(slug, persist) {
-      const normalized = (slug || '').trim().toLowerCase();
-      const target = CLUB_THEMES[normalized] ? normalized : 'padrao';
-      if (target === 'padrao') {
-        document.documentElement.removeAttribute('data-theme');
-        document.body.removeAttribute('data-theme');
-      } else {
-        document.documentElement.setAttribute('data-theme', target);
-        document.body.setAttribute('data-theme', target);
-      }
-      const sel = document.getElementById('theme-select');
-      if (sel && sel.value !== target) {
-        sel.value = target;
-      }
-      const swatch = document.getElementById('theme-swatch');
-      if (swatch && CLUB_THEMES[target]) {
-        const t = CLUB_THEMES[target];
-        if (t.tertiary) {
-          swatch.style.background = 'linear-gradient(135deg, ' + t.primary + ' 0% 33%, ' + t.secondary + ' 33% 66%, ' + t.tertiary + ' 66% 100%)';
-        } else {
-          swatch.style.background = 'linear-gradient(135deg, ' + t.primary + ' 50%, ' + t.secondary + ' 50%)';
-        }
-        swatch.title = t.name;
-      }
-      if (persist) {
-        try {
-          localStorage.setItem(THEME_STORAGE_KEY, target);
-        } catch (e) {
-          // ignore storage errors
-        }
-      }
-    }
-    function initClubTheme() {
-      let chosen = 'padrao';
-      let fromUrl = false;
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const qTheme = (params.get('theme') || '').trim().toLowerCase();
-        if (qTheme && CLUB_THEMES[qTheme]) {
-          chosen = qTheme;
-          fromUrl = true;
-        } else {
-          const saved = (localStorage.getItem(THEME_STORAGE_KEY) || '').trim().toLowerCase();
-          if (saved && CLUB_THEMES[saved]) {
-            chosen = saved;
-          }
-        }
-      } catch (e) {
-        // ignore URL or localStorage access errors
-      }
-      applyClubTheme(chosen, fromUrl);
-    }
-    initClubTheme();
     const sidEl = document.getElementById('session_id');
     if (sidEl && !sidEl.value) {
       let storedSid = sessionStorage.getItem('psearch_storefront_session_id');
