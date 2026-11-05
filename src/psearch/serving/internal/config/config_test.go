@@ -2,6 +2,10 @@ package config
 
 import (
 	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -80,5 +84,67 @@ func TestConfigVectorIndexDefaultsAndEnv(t *testing.T) {
 	}
 	if cfg2.EffectiveANNNumLeaves() != 35 {
 		t.Errorf("EffectiveANNNumLeaves() = %d, want 35", cfg2.EffectiveANNNumLeaves())
+	}
+}
+
+func TestConfigProjectIDDefaultEmptyAndSpannerValidation(t *testing.T) {
+	os.Unsetenv("PROJECT_ID")
+	os.Unsetenv("GCP_SANDBOX_PROJECT")
+	os.Unsetenv("CLOUDSDK_CORE_PROJECT")
+	os.Unsetenv("USE_MEMORY_STORE")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.ProjectID != "" {
+		t.Fatalf("default ProjectID = %q, want empty string", cfg.ProjectID)
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() must fail fast when UseMemoryStore=false and ProjectID is empty")
+	}
+
+	cfg.UseMemoryStore = true
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() must succeed in memory mode without ProjectID: %v", err)
+	}
+}
+
+func TestTrackedSourceContainsNoForbiddenIDPattern(t *testing.T) {
+	pattern := strings.TrimSpace(os.Getenv("FORBIDDEN_ID_PATTERN"))
+	if pattern == "" {
+		t.Skip("FORBIDDEN_ID_PATTERN unset; skipping tracked-file scan")
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("invalid FORBIDDEN_ID_PATTERN %q: %v", pattern, err)
+	}
+
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+	cmd := exec.Command("git", "ls-files")
+	cmd.Dir = repoRoot
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git ls-files: %v", err)
+	}
+
+	for _, relPath := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		relPath = strings.TrimSpace(relPath)
+		if relPath == "" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(repoRoot, relPath))
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		for idx, line := range lines {
+			if re.MatchString(line) {
+				t.Errorf("forbidden ID pattern matched in %s:%d", relPath, idx+1)
+			}
+		}
 	}
 }

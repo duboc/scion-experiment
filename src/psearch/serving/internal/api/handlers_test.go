@@ -21,7 +21,7 @@ func newTestRouter() *gin.Engine {
 	cfg := &config.Config{
 		Port:                   8080,
 		Environment:            "test",
-		ProjectID:              "psearch-sandbox",
+		ProjectID:              "test-project",
 		Region:                 "us-central1",
 		SpannerInstanceID:      "psearch-instance",
 		SpannerDatabaseID:      "psearch-db",
@@ -72,6 +72,9 @@ func TestHealthAndInfoEndpoints(t *testing.T) {
 	}
 	if info["genai_location"] != "global" {
 		t.Errorf("genai_location = %v, want global", info["genai_location"])
+	}
+	if strings.Contains(w.Body.String(), "test-project") {
+		t.Errorf("/api/info must not expose ProjectID in response body: %s", w.Body.String())
 	}
 }
 
@@ -231,7 +234,7 @@ func TestChannelFilterGetAndPost(t *testing.T) {
 func newTokenRouter(token string) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	cfg := &config.Config{ProjectID: "riojucu-sandbox", ActiveEmbeddingVersion: "v1", GeminiEmbeddingDimension: 1024,
+	cfg := &config.Config{ProjectID: "test-project", ActiveEmbeddingVersion: "v1", GeminiEmbeddingDimension: 1024,
 		DefaultAlpha: 0.5, DefaultLimit: 10, UseMemoryStore: true, AdminToken: token}
 	SetupRouter(r, cfg)
 	return r
@@ -1291,6 +1294,21 @@ func TestSearchAnalyticsEventsSummaryAndRollupAPI(t *testing.T) {
 		if wBad := doPost(bad.path, "s3cret", bad.body); wBad.Code != http.StatusBadRequest {
 			t.Errorf("POST %s body=%s status = %d, want 400", bad.path, bad.body, wBad.Code)
 		}
+	}
+}
+
+// Issue #52: Spanner backend fails fast with a clear error when PROJECT_ID is unset,
+// while memory mode works without PROJECT_ID, and DefaultSeedProductsForProject uses the configured ProjectID.
+func TestSpannerModeRequiresProjectIDAndSeedUsesConfiguredProject(t *testing.T) {
+	if _, err := NewController(&config.Config{UseMemoryStore: false, ProjectID: ""}); err == nil {
+		t.Fatal("expected NewController with UseMemoryStore=false and empty ProjectID to fail fast")
+	}
+	if _, err := NewController(&config.Config{UseMemoryStore: true, ProjectID: ""}); err != nil {
+		t.Fatalf("expected NewController with UseMemoryStore=true and empty ProjectID to succeed, got %v", err)
+	}
+	seeds := services.DefaultSeedProductsForProject("my-custom-proj")
+	if len(seeds) == 0 || !strings.HasPrefix(seeds[0].Name, "projects/my-custom-proj/") {
+		t.Fatalf("expected seed product Name to use configured project, got %q", seeds[0].Name)
 	}
 }
 

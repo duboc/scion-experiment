@@ -60,7 +60,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Port:                     8080,
 		Environment:              getEnv("ENVIRONMENT", "production"),
-		ProjectID:                getEnv("PROJECT_ID", getEnv("GCP_SANDBOX_PROJECT", getEnv("CLOUDSDK_CORE_PROJECT", "psearch-sandbox"))),
+		ProjectID:                getEnv("PROJECT_ID", getEnv("GCP_SANDBOX_PROJECT", getEnv("CLOUDSDK_CORE_PROJECT", ""))),
 		Region:                   getEnv("REGION", "us-central1"),
 		SpannerInstanceID:        getEnv("SPANNER_INSTANCE_ID", "psearch-instance"),
 		SpannerDatabaseID:        getEnv("SPANNER_DATABASE_ID", "psearch-db"),
@@ -136,6 +136,17 @@ func Load() (*Config, error) {
 // LegacyEmbeddingDimension is the dimension of the v1 `embedding` column
 // (deterministic hash embeddings, ARRAY<FLOAT32>(vector_length=>768)).
 const LegacyEmbeddingDimension = 768
+
+// Validate checks that required settings are present when the Spanner backend is enabled (#52).
+func (c *Config) Validate() error {
+	if c == nil {
+		return fmt.Errorf("config is nil")
+	}
+	if !c.UseMemoryStore && strings.TrimSpace(c.ProjectID) == "" {
+		return fmt.Errorf("PROJECT_ID is required when USE_MEMORY_STORE is false")
+	}
+	return nil
+}
 
 // UseGeminiEmbeddings reports whether the v2 (Gemini, embedding_v2) vector column is active.
 func (c *Config) UseGeminiEmbeddings() bool { return c.ActiveVersion() == "v2" }

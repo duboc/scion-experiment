@@ -125,14 +125,24 @@ func nonNilStrings(v []string) []string {
 func (s *SpannerService) SetSynonyms(syn *SynonymService) { s.synonyms = syn }
 
 func NewSpannerService(ctx context.Context, cfg *config.Config, embeddings QueryEmbedder) (*SpannerService, error) {
+	var projID string
+	if cfg != nil {
+		projID = cfg.ProjectID
+	}
 	svc := &SpannerService{
 		config:       cfg,
 		embeddings:   embeddings,
-		seedProducts: DefaultSeedProducts(),
+		seedProducts: DefaultSeedProductsForProject(projID),
 		backendMode:  "memory",
 	}
 
-	if cfg.UseMemoryStore || cfg.ProjectID == "" || cfg.SpannerInstanceID == "" || cfg.SpannerDatabaseID == "" {
+	if cfg.UseMemoryStore {
+		return svc, nil
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	if cfg.SpannerInstanceID == "" || cfg.SpannerDatabaseID == "" {
 		return svc, nil
 	}
 

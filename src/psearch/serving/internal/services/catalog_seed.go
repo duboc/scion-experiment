@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
+	"os"
 	"strings"
 
 	"psearch/serving-go/internal/models"
@@ -95,6 +96,16 @@ func CosineSimilarity(a, b []float64) float64 {
 }
 
 func DefaultSeedProducts() []models.SearchResult {
+	return DefaultSeedProductsForProject(os.Getenv("PROJECT_ID"))
+}
+
+// DefaultSeedProductsForProject builds the 15 seed products using the configured
+// projectID in the resource name (falling back to "PROJECT_ID" when unset; #52).
+func DefaultSeedProductsForProject(projectID string) []models.SearchResult {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		projectID = "PROJECT_ID"
+	}
 	qty := func(v int) *int { return &v }
 	items := []struct {
 		id, title, desc, brand, cat string
@@ -129,7 +140,7 @@ func DefaultSeedProducts() []models.SearchResult {
 		reviews := sig.Orders*10 + sig.Clicks
 		sr := models.SearchResult{
 			ID:          it.id,
-			Name:        fmt.Sprintf("projects/riojucu-sandbox/locations/global/catalogs/default_catalog/branches/0/products/%s", it.id),
+			Name:        fmt.Sprintf("projects/%s/locations/global/catalogs/default_catalog/branches/0/products/%s", projectID, it.id),
 			Title:       it.title,
 			Description: it.desc,
 			Brands:      []string{it.brand},

@@ -10,7 +10,6 @@ WORKDIR /app
 COPY --from=builder /psearch-server /app/psearch-server
 ENV PORT=8080
 ENV ENVIRONMENT=production
-ENV PROJECT_ID=riojucu-sandbox
 ENV REGION=us-central1
 ENV SPANNER_INSTANCE_ID=psearch-instance
 ENV SPANNER_DATABASE_ID=psearch-db

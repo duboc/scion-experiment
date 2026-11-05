@@ -1,5 +1,5 @@
 -- Issue #3 data backfill (run AFTER 012_availability_visibility_channels.sql):
--- gcloud spanner databases execute-sql psearch-db --instance=psearch-instance --project=riojucu-sandbox --sql="$(cat 012b_backfill_visibility_channels.dml.sql | grep -v '^--')"
+-- gcloud spanner databases execute-sql psearch-db --instance=psearch-instance --project=PROJECT_ID --sql="$(cat 012b_backfill_visibility_channels.dml.sql | grep -v '^--')"
 UPDATE products SET
   is_visible = TRUE,
   channels = CASE product_id

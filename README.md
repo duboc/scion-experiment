@@ -129,7 +129,7 @@ The Search API reads its configuration from environment variables (`src/psearch/
 |---|---|---|
 | `PORT` | `8080` | HTTP listen port for the server. |
 | `ENVIRONMENT` | `production` | Deployment environment name. |
-| `PROJECT_ID` | `psearch-sandbox` | Google Cloud project ID (falls back to `GCP_SANDBOX_PROJECT` or `CLOUDSDK_CORE_PROJECT`). |
+| `PROJECT_ID` | `""` | Google Cloud project ID (falls back to `GCP_SANDBOX_PROJECT` or `CLOUDSDK_CORE_PROJECT`; required when `USE_MEMORY_STORE=false`). |
 | `REGION` | `us-central1` | Google Cloud region for Cloud Run and Spanner. |
 | `SPANNER_INSTANCE_ID` | `psearch-instance` | Cloud Spanner instance ID. |
 | `SPANNER_DATABASE_ID` | `psearch-db` | Cloud Spanner database ID. |

@@ -154,10 +154,14 @@ func (c *Controller) HealthCheck(ctx *gin.Context) {
 }
 
 func (c *Controller) Info(ctx *gin.Context) {
+	envName := c.config.Environment
+	if strings.TrimSpace(envName) == "" {
+		envName = "production"
+	}
 	ctx.JSON(http.StatusOK, gin.H{
 		"service":                  "psearch-serving",
 		"repo":                     "duboc/scion-experiment",
-		"sandbox":                  c.config.ProjectID,
+		"sandbox":                  envName,
 		"spanner_instance":         c.config.SpannerInstanceID,
 		"spanner_database":         c.config.SpannerDatabaseID,
 		"backend_mode":             c.spannerSvc.BackendMode(),

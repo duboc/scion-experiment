@@ -1,10 +1,10 @@
 # Playbook: Cloud Spanner DDL Migrations & SQL Validation (`psearch`)
 
-- **GCP Project:** `riojucu-sandbox` (`249096448072`)
+- **GCP Project:** `PROJECT_ID` (`PROJECT_NUMBER`)
 - **Spanner Instance:** `psearch-instance` (Enterprise Edition, `100 PU`, `regional-us-central1`)
 - **Spanner Database:** `psearch-db`
-- **Cloud Run Service Account:** `psearch-serving@riojucu-sandbox.iam.gserviceaccount.com`
-- **Deployer Service Account:** `agent-deployer@riojucu-sandbox.iam.gserviceaccount.com`
+- **Cloud Run Service Account:** `SA_NAME@PROJECT_ID.iam.gserviceaccount.com`
+- **Deployer Service Account:** `SA_NAME@PROJECT_ID.iam.gserviceaccount.com`
 
 ## 1. Applying DDL & DML Migrations (`@deployer`)
 
@@ -12,7 +12,7 @@
    ```bash
    gcloud spanner databases ddl update psearch-db \
      --instance=psearch-instance \
-     --project=riojucu-sandbox \
+     --project=PROJECT_ID \
      --ddl-file=/workspace/src/iac/migrations/<migration>.sql
    ```
    *(If a migration contains dependent DDL statements such as adding generated `TOKENLIST` columns and then altering a `SEARCH INDEX`, apply the table `ALTER`/`CREATE` first, then the `SEARCH INDEX` statement).*
@@ -20,7 +20,7 @@
    ```bash
    gcloud spanner databases execute-sql psearch-db \
      --instance=psearch-instance \
-     --project=riojucu-sandbox \
+     --project=PROJECT_ID \
      --sql="$(grep -v '^--' /workspace/src/iac/migrations/<seed>.dml.sql)"
    ```
 3. **Pre-Deploy Live SQL Gate (`cmd/sqlcheck`):**
