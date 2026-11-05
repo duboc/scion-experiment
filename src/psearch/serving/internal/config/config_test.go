@@ -111,27 +111,48 @@ func TestConfigProjectIDDefaultEmptyAndSpannerValidation(t *testing.T) {
 }
 
 func TestTrackedSourceContainsNoForbiddenIDPattern(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not available; skipping tracked-file scan")
+	}
+	topCmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	topOut, err := topCmd.Output()
+	if err != nil {
+		t.Skipf("not in a git working tree (%v); skipping tracked-file scan", err)
+	}
+	repoRoot := strings.TrimSpace(string(topOut))
+	for _, mustExist := range []string{"README.md", "Dockerfile"} {
+		if _, err := os.Stat(filepath.Join(repoRoot, mustExist)); err != nil {
+			t.Fatalf("resolved repoRoot %q missing top-level %s: %v", repoRoot, mustExist, err)
+		}
+	}
+
+	cmd := exec.Command("git", "ls-files")
+	cmd.Dir = repoRoot
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git ls-files in %s: %v", repoRoot, err)
+	}
+	files := strings.Split(strings.TrimSpace(string(out)), "\n")
+	seenTopLevel := map[string]bool{}
+	for _, relPath := range files {
+		seenTopLevel[strings.TrimSpace(relPath)] = true
+	}
+	for _, required := range []string{"README.md", "Dockerfile"} {
+		if !seenTopLevel[required] {
+			t.Fatalf("git ls-files from %q did not include top-level %s (scanned subtree instead of repo root)", repoRoot, required)
+		}
+	}
+
 	pattern := strings.TrimSpace(os.Getenv("FORBIDDEN_ID_PATTERN"))
 	if pattern == "" {
-		t.Skip("FORBIDDEN_ID_PATTERN unset; skipping tracked-file scan")
+		t.Skip("FORBIDDEN_ID_PATTERN unset; skipping tracked-file content scan (root and file-list checks passed)")
 	}
 	re, err := regexp.Compile(pattern)
 	if err != nil {
 		t.Fatalf("invalid FORBIDDEN_ID_PATTERN %q: %v", pattern, err)
 	}
 
-	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
-	if err != nil {
-		t.Fatalf("resolve repo root: %v", err)
-	}
-	cmd := exec.Command("git", "ls-files")
-	cmd.Dir = repoRoot
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("git ls-files: %v", err)
-	}
-
-	for _, relPath := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for _, relPath := range files {
 		relPath = strings.TrimSpace(relPath)
 		if relPath == "" {
 			continue
