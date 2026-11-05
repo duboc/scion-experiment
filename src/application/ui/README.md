@@ -13,10 +13,12 @@ Both interfaces use the same OpenAPI v2.6 search, merchandising, recommendation,
 The search platform provides two user interfaces that stay in feature parity:
 
 1. **React application (`src/application/ui/`)**: Full-featured Material UI storefront and merchandising console for local development and container deployments.
-2. **Embedded storefront (`defaultStorefrontHTML` in `routes.go`)**: Zero-dependency HTML and JavaScript storefront built into the Go serving binary.
+2. **Embedded storefront (`defaultStorefrontHTML` in `routes.go`)**: Zero-dependency HTML and JavaScript storefront built into the Go serving binary with a default dark theme.
 
 When you set `STATIC_DIR` on the Go serving binary, the server serves the compiled React bundle from that path.
 When `STATIC_DIR` is empty or the build directory does not exist, `GET /` serves `defaultStorefrontHTML`.
+The embedded storefront header displays a repository badge (`data-testid="repo-badge"`) with `Repo: duboc/scion-experiment` and omits Google Cloud project identifiers.
+The Go serving binary also embeds [`diagram.html`](../../psearch/serving/internal/api/diagram.html) with `//go:embed` and serves the interactive architecture diagram at `GET /diagram`.
 
 ## Prerequisites
 
@@ -54,6 +56,20 @@ Follow these steps to run the React application on your workstation:
    ```bash
    npm run start:dev
    ```
+
+### View the embedded storefront and architecture diagram locally
+
+Follow these steps to view `GET /` and `GET /diagram` without a Google Cloud project:
+
+1. Open a terminal in `src/psearch/serving/`.
+2. Start the Go server in memory mode on port `8080`:
+
+   ```bash
+   USE_MEMORY_STORE=true go run ./cmd/server
+   ```
+
+3. Open `http://localhost:8080/` in your browser to use the embedded storefront.
+4. Open `http://localhost:8080/diagram` in your browser to inspect the interactive cloud architecture diagram.
 
 ### Configure the API proxy and environment variables
 
@@ -107,8 +123,9 @@ docker build \
 | [`src/components/AdCampaignManager.js`](src/components/AdCampaignManager.js) | Sponsored product campaign manager and bid configuration dialog |
 | [`src/components/SessionPanel.js`](src/components/SessionPanel.js) | Real-time shopper session drawer showing click history and category or brand affinities |
 | [`src/services/`](src/services/) | HTTP client modules for rules, ad campaigns, sessions, ingestion, and generative AI |
-| [`../../psearch/serving/internal/api/routes.go`](../../psearch/serving/internal/api/routes.go) | HTTP router and the embedded `defaultStorefrontHTML` storefront |
-| [`../../psearch/serving/internal/api/storefront_test.go`](../../psearch/serving/internal/api/storefront_test.go) | Automated Go tests that verify `defaultStorefrontHTML` markup and API wiring |
+| [`../../psearch/serving/internal/api/routes.go`](../../psearch/serving/internal/api/routes.go) | HTTP router, embedded `defaultStorefrontHTML` storefront (`GET /`), and `GET /diagram` route |
+| [`../../psearch/serving/internal/api/diagram.html`](../../psearch/serving/internal/api/diagram.html) | Self-contained interactive cloud architecture diagram embedded via `//go:embed diagram.html` |
+| [`../../psearch/serving/internal/api/storefront_test.go`](../../psearch/serving/internal/api/storefront_test.go) | Automated Go tests that verify `defaultStorefrontHTML`, `GET /diagram`, and redaction rules |
 
 ## UI feature map
 
@@ -117,6 +134,8 @@ Both the React application and `defaultStorefrontHTML` implement these capabilit
 | Feature area | UI elements | Backend API contract |
 |---|---|---|
 | **Hybrid search and vector index badge** | Search bar, typeahead suggestions (`GET /api/autocomplete`), and the `ScaNN ANN` / `Exact KNN` badge (`vector_index_used`) | `POST /api/search`, `GET /api/search`, `GET /api/autocomplete` |
+| **Repository header badge (#52)** | Header badge (`data-testid="repo-badge"`) displaying `Repo: duboc/scion-experiment` with no sandbox project ID | `GET /` |
+| **Cloud architecture diagram (#51)** | Self-contained SVG and HTML slideshow (`diagram.html`) covering system context, `/api/search` steps `1–9`, ingestion, telemetry, and operations | `GET /diagram` |
 | **Pagination and sort modes (#40)** | `Showing X–Y of Z` counter, `Prev` / `Next` and numbered page buttons, page size selector (`12`, `24`, `48`), and five sort modes (`relevance`, `price_asc`, `price_desc`, `popularity`, `rating_desc`). Resets `page` to `1` when the query or filters change | Request: `page`, `offset`, `limit`, `sort_by`; Response: `total_found`, `page`, `page_size`, `offset`, `total_pages`, `has_next` |
 | **Multi-select facets and filter pills (#41)** | Disjunctive checkbox groups for `brands`, `categories`, `colors`, `sizes`, and `price_ranges`, plus removable active filter pills and a `Clear all` button | `brands[]`, `categories[]`, `colors[]`, `sizes[]`, `price_ranges[]`, `facets` |
 | **Dynamic attribute facets and spec badges (#42)** | Collapsible facet groups rendered automatically from `facets.attributes`, and up to three `key: value` specification badges on each product card (`dynamic_attributes`) | `attrs` map on `POST /api/search`, `attr.<name>` on `GET /api/search`, `PUT /api/products/:id/attributes`, `facets.attributes` |
@@ -138,10 +157,10 @@ Add matching assertions in [`storefront_test.go`](../../psearch/serving/internal
    npm run build
    ```
 
-2. Run the Go storefront and catalog browse tests from `src/psearch/serving/`:
+2. Run the Go storefront, diagram, and catalog browse tests from `src/psearch/serving/`:
 
    ```bash
-   go test -v ./internal/api -run "TestStorefront|TestCatalogBrowse"
+   go test -v ./internal/api -run "TestStorefront|TestCatalogBrowse|TestArchitectureDiagramRoute"
    ```
 
 ## Troubleshooting
