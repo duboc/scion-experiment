@@ -1,0 +1,1183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500;700&display=swap">
+
+<style>
+  /*
+   * The page chrome commits to one dark surface; the drawing keeps a white
+   * sheet, because the product icons are drawn for paper and a tinted
+   * group loses its meaning on a dark fill.
+   */
+  :root {
+    color-scheme: dark;
+
+    --blue: #4285F4; --red: #EA4335; --yellow: #FBBC04; --green: #34A853;
+
+    --ground: #0C0E12;
+    --panel: #171B22;
+    --panel-2: #1F242D;
+    --rim: #2C323C;
+
+    --ink: #EDEFF3; --ink-2: #A2A9B4; --ink-3: #6F7784;
+
+    --sheet: #FFFFFF;
+    --sheet-ink: #202124; --sheet-ink-2: #5F6368; --sheet-line: #C8CCD1;
+    --wire: #9AA0A6; --disc: #1A73E8;
+
+    --body: "Google Sans Text", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "Roboto Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --accent: #8AB4F8;        /* reads on the dark chrome */
+    --accent-paper: #1A73E8;  /* reads on the white sheet */
+  }
+
+  * { box-sizing: border-box; }
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --ground: #F5F7FA; --panel: #FFFFFF; --panel-2: #EAF0F8;
+    --rim: #DCE2EA; --ink: #202124; --ink-2: #526071; --ink-3: #657184;
+  }
+  :root:not([data-theme="dark"]) .sheet { box-shadow: 0 8px 32px #24334A0D; border: 1px solid var(--rim); }
+  .context { flex: none; font-size: 12px; color: var(--ink-2); padding-bottom: 8px; }
+  .context p { margin: 3px 0; }
+  .component-picker { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--rim); border-radius: 6px; max-width: 100%; padding: 7px; margin-top: 5px; }
+  .notes-toggle { color: var(--ink); background: var(--panel); border: 1px solid var(--rim); border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+  .notes { position: absolute; z-index: 8; inset: auto 16px 16px; padding: 16px; max-height: 40%; overflow: auto; color: var(--ink); background: var(--panel); border: 1px solid var(--rim); border-radius: 10px; white-space: pre-wrap; }
+  [data-mode="diagram"] .caption, [data-mode="diagram"] .rail { display: none; }
+  [data-mode="diagram"] .screen { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  @media print {
+    :root { color-scheme: light; }
+    body { background: white !important; color: #202124 !important; }
+    .caption, .rail, .tip, .notes, .notes-toggle, .component-picker { display: none !important; }
+    .screen { display: block !important; }
+    .stagewrap { height: 75vh; }
+    .sheet { box-shadow: none !important; }
+    #stage { transform: none !important; }
+    .dim { opacity: 1 !important; }
+    .sheet::after { display: none; }
+  }
+  /* .tip sets display:flex, and a class beats the user agent's
+     [hidden] rule — without this the tooltip never hides. */
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; overflow: hidden;
+    background: var(--ground); color: var(--ink);
+    font: 15px/1.55 var(--body);
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; border-radius: 4px; }
+
+  .shell { height: 100%; display: flex; flex-direction: column; padding: 0 clamp(14px, 2.4vw, 30px); }
+
+  .topbar { flex: none; display: flex; align-items: center; gap: 14px; padding-block: 14px 12px; }
+  .topbar h1 { margin: 0; font-size: 15px; font-weight: 500; }
+  .counter { margin-left: auto; font: 12px var(--mono); color: var(--ink-3); }
+
+  .screen {
+    flex: 1; min-height: 0;
+    display: grid; grid-template-columns: minmax(260px, 24vw) 1fr;
+    gap: clamp(14px, 2vw, 26px);
+    padding-block: clamp(14px, 2.4vh, 26px);
+  }
+
+  .caption { min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+  .stepno { font: 400 clamp(56px, 8vw, 104px)/.8 var(--mono); color: var(--accent); }
+  .caption h2 { margin: 0; font-size: clamp(24px, 2.6vw, 34px); font-weight: 500; line-height: 1.1; text-wrap: balance; }
+  .caption .line { margin: 0; color: var(--ink-2); font-size: clamp(14px, 1.15vw, 17px); max-width: 42ch; }
+
+  .chips { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 7px; }
+  .chips li {
+    display: flex; flex-direction: column; gap: 1px; min-width: 0;
+    padding: 7px 11px; background: var(--panel);
+    border: 1px solid var(--rim); border-left: 3px solid var(--accent);
+    border-radius: 3px 8px 8px 3px;
+  }
+  .chips b { font: 500 12.5px var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+  .chips span { font-size: 11px; color: var(--ink-3); }
+
+  .stagewrap { position: relative; min-width: 0; min-height: 0; }
+  .sheet {
+    position: absolute; inset: 0; padding: 14px;
+    background: var(--sheet); border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.5), 0 14px 40px rgba(0,0,0,.35);
+  }
+  /* a hard crop lands mid-word; fade instead, and only while zoomed */
+  .sheet::after {
+    content: ""; position: absolute; inset: 14px; border-radius: 10px;
+    pointer-events: none; opacity: 0; transition: opacity .35s;
+    background:
+      linear-gradient(to right, #FFF, rgba(255,255,255,0) 46px),
+      linear-gradient(to left, #FFF, rgba(255,255,255,0) 46px),
+      linear-gradient(to bottom, #FFF, rgba(255,255,255,0) 32px),
+      linear-gradient(to top, #FFF, rgba(255,255,255,0) 32px);
+  }
+  .sheet.zoomed::after { opacity: 1; }
+
+  .diagram { display: block; width: 100%; height: 100%; }
+  #stage { transition: transform .55s cubic-bezier(.22,.61,.36,1); }
+
+  .box { fill: var(--sheet); stroke: var(--sheet-line); stroke-width: 1.2; rx: 6; }
+  .box-title { fill: var(--sheet-ink); font-size: 13px; font-weight: 500; }
+  .box-sub { fill: var(--sheet-ink-2); font-size: 11px; font-family: var(--mono); }
+  .grp { fill: var(--tint); stroke: var(--edge); stroke-width: 1.2; rx: 8; }
+  .grp-title { fill: var(--sheet-ink); font-size: 12.5px; font-weight: 500; }
+  .card { fill: var(--sheet); stroke: var(--edge); stroke-width: 1.2; rx: 5; }
+  .card-title { fill: var(--sheet-ink); font-size: 12.5px; font-weight: 500; }
+  .card-sub { fill: var(--sheet-ink-2); font-size: 10.5px; font-family: var(--mono); }
+  .gc-frame { fill: none; stroke: var(--sheet-line); stroke-width: 1.2; rx: 8; }
+  .gc-label { fill: var(--sheet-ink-2); font-size: 12.5px; font-weight: 500; }
+  .zone-label { fill: var(--sheet-ink-2); font-size: 11px; font-family: var(--mono); letter-spacing: .05em; }
+
+  .wire { stroke: var(--wire); stroke-width: 1.3; fill: none; }
+  .wire.dash { stroke-dasharray: 5 4; }
+  .wire-head { fill: var(--wire); }
+  .wire-label {
+    fill: var(--sheet-ink-2); font-size: 10px; font-family: var(--mono);
+    paint-order: stroke; stroke: var(--sheet); stroke-width: 3.5px; stroke-linejoin: round;
+  }
+  .disc { fill: var(--disc); stroke: var(--sheet); stroke-width: 2; }
+  .disc-n { fill: #FFF; font: 700 10px var(--mono); }
+
+  .unit, .wirepart { transition: opacity .4s, stroke .2s, fill .2s; }
+  .unit { cursor: pointer; }
+  .dim { opacity: .14; }
+  .unit.lit rect, .unit:hover rect { stroke: var(--accent-paper); stroke-width: 2.4; }
+  .wire.lit { stroke: var(--accent-paper); stroke-width: 2.4; }
+  .wire-head.lit { fill: var(--accent-paper); }
+  .wire-label.lit { fill: var(--sheet-ink); }
+  .disc.lit { fill: var(--accent-paper); }
+  .unit:hover { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) { #stage, .unit, .wirepart, .sheet::after { transition: none; } }
+
+  .tip {
+    position: absolute; z-index: 6; width: 262px; max-width: calc(100% - 20px);
+    padding: 11px 13px 13px; background: var(--panel);
+    border: 1px solid var(--rim); border-left: 3px solid var(--accent);
+    border-radius: 9px; box-shadow: 0 8px 26px rgba(0,0,0,.55);
+    pointer-events: none; display: flex; flex-direction: column; gap: 2px;
+  }
+  .tip b { font-size: 13.5px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+  .tip .tip-sub { font: 11px var(--mono); color: var(--ink-3); overflow-wrap: anywhere; }
+  .tip p { margin: 5px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+
+  .rail { flex: none; display: flex; align-items: center; gap: 10px; padding-block: 10px 14px; }
+  .nav {
+    flex: none; width: 38px; height: 34px; display: grid; place-items: center;
+    background: var(--panel); border: 1px solid var(--rim); border-radius: 8px;
+    color: var(--ink-2); font: 15px var(--mono); cursor: pointer;
+  }
+  .nav:hover { background: var(--panel-2); color: var(--ink); }
+  .dots { flex: 1; min-width: 0; display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; }
+  .dots::-webkit-scrollbar { display: none; }
+  .dot {
+    flex: 1 1 0; min-width: 26px; height: 34px; display: grid; place-items: center;
+    background: var(--panel); border: 1px solid var(--rim); border-bottom: 3px solid var(--rim);
+    border-radius: 4px 4px 7px 7px; color: var(--ink-3);
+    font: 500 13px var(--mono); cursor: pointer;
+  }
+  .dot:hover { background: var(--panel-2); color: var(--ink); }
+  .dot[aria-current="true"] { color: var(--dot); border-bottom-color: var(--dot); background: var(--panel-2); }
+
+  @media (max-width: 900px), (max-height: 520px) {
+    .screen { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+    .caption { justify-content: flex-start; gap: 8px; }
+    .stepno { font-size: 48px; }
+    .caption h2 { font-size: 24px; }
+  }
+  @media (max-width: 560px) {
+    .chips li:nth-child(n + 3) { display: none; }
+    .dots { gap: 3px; }
+    .dot { min-width: 19px; font-size: 11px; }
+    .nav { width: 30px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <header class="topbar">
+    <h1 id="doc-title">Architecture</h1>
+    <span class="counter" id="counter"></span>
+    <button class="notes-toggle" id="notes-toggle" type="button" aria-expanded="false" aria-controls="notes" hidden>Notes</button>
+  </header>
+
+  <main class="screen">
+    <aside class="caption" aria-live="polite">
+      <span class="stepno" id="stepno" hidden></span>
+      <h2 id="title"></h2>
+      <p class="line" id="line"></p>
+      <ul class="chips" id="chips" hidden></ul>
+    </aside>
+
+    <div class="stagewrap" id="stagewrap">
+      <div class="sheet" id="sheet">
+        <svg class="diagram" id="diagram" viewBox="0 0 1025 745"
+             preserveAspectRatio="xMidYMid meet" role="img" aria-label="Architecture diagram">
+          <g id="stage">
+            <g id="layer-frames"></g>
+            <g id="layer-wires"></g>
+            <g id="layer-units"></g>
+          </g>
+        </svg>
+      </div>
+      <div class="tip" id="tip" hidden>
+        <b id="tip-title"></b>
+        <span class="tip-sub" id="tip-sub"></span>
+        <p id="tip-what"></p>
+        <p id="tip-why" hidden></p>
+      </div>
+      <div class="notes" id="notes" hidden></div>
+    </div>
+  </main>
+  <div class="context"><p id="notice" hidden></p><p id="legend" hidden></p><select class="component-picker" id="component-picker" aria-label="Explore a component"><option value="">Explore a component…</option></select></div>
+
+  <footer class="rail">
+    <button class="nav" id="prev" type="button" aria-label="Previous step">&#9664;</button>
+    <div class="dots" id="dots" role="group" aria-label="Steps"></div>
+    <button class="nav" id="next" type="button" aria-label="Next step">&#9654;</button>
+  </footer>
+</div>
+
+<script>
+/* Google Cloud product icons, from the Iconify gcp mirror. */
+/* The marks belong to Google. Follow cloud.google.com/icons when publishing. */
+const ICONS = {"cloud-run":{"vb":"0 0 24 24","d":"<g fill-rule=\"evenodd\"><path fill=\"#aecbfa\" d=\"M8.9 2.63L12.02 12h9.36z\"/><path fill=\"#4285f4\" d=\"M21.38 12h-9.36L8.9 21.38zM3.44 21.38l3.13-1.57L8.9 12H5.78z\"/><path fill=\"#aecbfa\" d=\"M3.44 2.63L5.78 12H8.9L6.57 4.19z\"/></g>"},"cloud-spanner":{"vb":"0 0 24 24","d":"<g fill-rule=\"evenodd\"><path fill=\"#669df6\" d=\"M13.34 12.76V8.4h-2.68v4.36l-3.77 2.18l1.34 2.32L12 15.08l3.77 2.18l1.34-2.32z\"/><path fill=\"#4285f4\" d=\"M13.34 12.76V8.4H12v5.12L7.56 16.1l.67 1.16L12 15.08l3.77 2.18l1.34-2.32z\"/><path fill=\"#aecbfa\" d=\"M10.65 2.77L8.62 3.99v3.73L12 9.55V6.44l-1.35-.62z\"/><path fill=\"#669df6\" d=\"M13.35 5.82L12 6.44v3.11l3.38-1.83V3.99l-2.03-1.22zm4.79 11.26l-.08 1.39l2.7 1.53l-2.18 1.2l-3.24-1.87l.11-3.83l3.27-2L22 15.38v2.49l-2.69-1.55Zm-12.28 0l-1.17-.76L2 17.87v-2.49l3.23-1.87l3.27 2l.11 3.83l-3.19 1.89L3.24 20l2.7-1.56Z\"/><path fill=\"#aecbfa\" d=\"m22 17.87l-.05-2.49l-3.23-1.86l-3.27 2.01l2.69 1.55l1.16-.76zm-20 0l2.7-1.55l1.16.76l2.69-1.55l-3.27-2.01l-3.23 1.86z\"/></g>"},"vertexai":{"vb":"0 0 24 24","d":"<path fill=\"#669df6\" d=\"M20 13.89a.77.77 0 0 0-1-.16l-7 5.14v.22a.72.72 0 1 1 0 1.43a.74.74 0 0 0 .45-.15l7.41-5.47a.76.76 0 0 0 .14-1.01\"/><path fill=\"#aecbfa\" d=\"M12 20.52a.72.72 0 0 1 0-1.43v-.22l-7-5.14a.76.76 0 0 0-1 .16a.74.74 0 0 0 .16 1l7.41 5.47a.73.73 0 0 0 .44.15Z\"/><path fill=\"#4285f4\" d=\"M12 18.34a1.47 1.47 0 1 0 1.47 1.47A1.47 1.47 0 0 0 12 18.34m0 2.18a.72.72 0 1 1 .72-.71a.71.71 0 0 1-.72.71\"/><path fill=\"#aecbfa\" d=\"M6 6.11a.76.76 0 0 1-.75-.75V3.48a.76.76 0 1 1 1.51 0v1.88a.76.76 0 0 1-.76.75\"/><circle cx=\"5.98\" cy=\"12\" r=\".76\" fill=\"#aecbfa\"/><circle cx=\"5.98\" cy=\"9.79\" r=\".76\" fill=\"#aecbfa\"/><circle cx=\"5.98\" cy=\"7.57\" r=\".76\" fill=\"#aecbfa\"/><path fill=\"#4285f4\" d=\"M18 8.31a.76.76 0 0 1-.75-.76V5.67a.75.75 0 1 1 1.5 0v1.88a.75.75 0 0 1-.75.76\"/><circle cx=\"18.02\" cy=\"12.01\" r=\".76\" fill=\"#4285f4\"/><circle cx=\"18.02\" cy=\"9.76\" r=\".76\" fill=\"#4285f4\"/><circle cx=\"18.02\" cy=\"3.48\" r=\".76\" fill=\"#4285f4\"/><path fill=\"#669df6\" d=\"M12 15a.76.76 0 0 1-.75-.75v-1.91a.76.76 0 0 1 1.51 0v1.89A.76.76 0 0 1 12 15\"/><circle cx=\"12\" cy=\"16.45\" r=\".76\" fill=\"#669df6\"/><circle cx=\"12\" cy=\"10.14\" r=\".76\" fill=\"#669df6\"/><circle cx=\"12\" cy=\"7.92\" r=\".76\" fill=\"#669df6\"/><path fill=\"#4285f4\" d=\"M15 10.54a.76.76 0 0 1-.75-.75V7.91a.76.76 0 1 1 1.51 0v1.88a.76.76 0 0 1-.76.75\"/><circle cx=\"15.01\" cy=\"5.69\" r=\".76\" fill=\"#4285f4\"/><circle cx=\"15.01\" cy=\"14.19\" r=\".76\" fill=\"#4285f4\"/><circle cx=\"15.01\" cy=\"11.97\" r=\".76\" fill=\"#4285f4\"/><circle cx=\"8.99\" cy=\"14.19\" r=\".76\" fill=\"#aecbfa\"/><circle cx=\"8.99\" cy=\"7.92\" r=\".76\" fill=\"#aecbfa\"/><circle cx=\"8.99\" cy=\"5.69\" r=\".76\" fill=\"#aecbfa\"/><path fill=\"#aecbfa\" d=\"M9 12.73a.76.76 0 0 1-.76-.73v-1.9a.75.75 0 1 1 1.5 0V12a.75.75 0 0 1-.74.73\"/>"},"bigquery":{"vb":"0 0 24 24","d":"<g fill-rule=\"evenodd\"><path fill=\"#aecbfa\" d=\"M6.73 10.83v2.63a4.9 4.9 0 0 0 1.71 1.74v-4.37Z\"/><path fill=\"#669df6\" d=\"M9.89 8.41v7.53A8 8 0 0 0 11 16a8 8 0 0 0 1 0V8.41Z\"/><path fill=\"#aecbfa\" d=\"M13.64 11.86v3.29a5 5 0 0 0 1.7-1.82v-1.47Z\"/><path fill=\"#4285f4\" d=\"m17.74 16.32l-1.42 1.42a.42.42 0 0 0 0 .6l3.54 3.54a.42.42 0 0 0 .59 0l1.43-1.43a.42.42 0 0 0 0-.59l-3.54-3.54a.42.42 0 0 0-.6 0\"/><path fill=\"#669df6\" d=\"M11 2a9 9 0 1 0 9 9a9 9 0 0 0-9-9m0 15.69A6.68 6.68 0 1 1 17.69 11A6.68 6.68 0 0 1 11 17.69\"/></g>"},"cloud-storage":{"vb":"0 0 24 24","d":"<path fill=\"#aecbfa\" d=\"M2 4h20v7H2z\"/><path fill=\"#669df6\" d=\"M20 4h2v7h-2z\"/><path fill=\"#4285f4\" d=\"M22 4h-2v7z\"/><path fill=\"#669df6\" d=\"M2 4h2v7H2z\"/><path fill=\"#fff\" d=\"M6 7h6v1H6z\"/><rect width=\"3\" height=\"3\" x=\"15\" y=\"6\" fill=\"#fff\" rx=\"1.5\"/><path fill=\"#aecbfa\" d=\"M2 13h20v7H2z\"/><path fill=\"#669df6\" d=\"M20 13h2v7h-2z\"/><path fill=\"#4285f4\" d=\"M22 13h-2v7z\"/><path fill=\"#669df6\" d=\"M2 13h2v7H2z\"/><path fill=\"#fff\" d=\"M6 16h6v1H6z\"/><rect width=\"3\" height=\"3\" x=\"15\" y=\"15\" fill=\"#fff\" rx=\"1.5\"/>"},"firestore":{"vb":"0 0 24 24","d":"<path fill=\"#669df6\" d=\"m21 13l-9-4v4l9 4Zm0-7l-9-4v4l9 4Z\"/><path fill=\"#aecbfa\" d=\"m3 6l9-4v4l-9 4zm0 7l9-4v4l-9 4z\"/><path fill=\"#4285f4\" d=\"m12 18l3.37-1.5l4.51 2L12 22z\"/>"},"cloud-logging":{"vb":"0 0 24 24","d":"<path fill=\"#4285f4\" d=\"M6 11h4v2H6zm-2 7h6v2H4z\"/><path fill=\"none\" d=\"M0 0h24v24H0z\"/><path fill=\"#4285f4\" d=\"M4 18h2V6H4z\"/><path fill=\"#669df6\" d=\"M9 7h13V3H9zm0 7h13v-4H9zm0 7h13v-4H9z\"/><path fill=\"#aecbfa\" d=\"M2 8h6V2H2z\"/>"},"trace":{"vb":"0 0 24 24","d":"<path fill=\"none\" d=\"M0 0h24v24H0z\"/><path fill=\"#4285f4\" d=\"M12 14h10v-4H12zm0 8h10v-4H12z\"/><path fill=\"#669df6\" d=\"M8 22h4v-4H8zM2 2h6v4H2zm0 8h10v4H2z\"/>"},"cloud-monitoring":{"vb":"0 0 24 24","d":"<path fill=\"#669df6\" d=\"M10.83 15.84h2.33v2.64h-2.33z\"/><path fill=\"#4285f4\" d=\"M18.48 13.87a.56.56 0 0 1-.4-.17L14 9.47l-2.74 2.89a.57.57 0 0 1-.76.05l-2.08-1.68l-2.2 2.92a.56.56 0 0 1-.45.22H2v1.71a.75.75 0 0 0 .74.75h18.52a.75.75 0 0 0 .74-.75v-1.71Z\"/><path fill=\"#669df6\" d=\"M5.5 12.76L7.88 9.6a.55.55 0 0 1 .37-.22a.63.63 0 0 1 .42.12l2.12 1.72l2.8-2.94a.54.54 0 0 1 .4-.17a.54.54 0 0 1 .4.17l4.33 4.48H22V6a.74.74 0 0 0-.74-.74H2.74A.74.74 0 0 0 2 6v6.81Z\"/><rect width=\"6.67\" height=\".61\" x=\"8.67\" y=\"18.18\" fill=\"#4285f4\" rx=\".3\"/>"},"google-cloud":{"vb":"0 0 256 206","d":"<path fill=\"#ea4335\" d=\"m170.252 56.819l22.253-22.253l1.483-9.37C153.437-11.677 88.976-7.496 52.42 33.92C42.267 45.423 34.734 59.764 30.717 74.573l7.97-1.123l44.505-7.34l3.436-3.513c19.797-21.742 53.27-24.667 76.128-6.168z\"/><path fill=\"#4285f4\" d=\"M224.205 73.918a100.25 100.25 0 0 0-30.217-48.722l-31.232 31.232a55.52 55.52 0 0 1 20.379 44.037v5.544c15.35 0 27.797 12.445 27.797 27.796c0 15.352-12.446 27.485-27.797 27.485h-55.671l-5.466 5.934v33.34l5.466 5.231h55.67c39.93.311 72.553-31.494 72.864-71.424a72.3 72.3 0 0 0-31.793-60.453\"/><path fill=\"#34a853\" d=\"M71.87 205.796h55.593V161.29H71.87a27.3 27.3 0 0 1-11.399-2.498l-7.887 2.42l-22.409 22.253l-1.952 7.574c12.567 9.489 27.9 14.825 43.647 14.757\"/><path fill=\"#fbbc05\" d=\"M71.87 61.426C31.94 61.663-.237 94.227.001 134.158a72.3 72.3 0 0 0 28.222 56.88l32.248-32.246c-13.99-6.322-20.208-22.786-13.887-36.776s22.786-20.208 36.775-13.888a27.8 27.8 0 0 1 13.887 13.888l32.248-32.248A72.22 72.22 0 0 0 71.87 61.427\"/>"}};
+const DIAGRAM = {
+  title: "PSearch — Cloud Spanner Hybrid Search & GenAI Architecture",
+  theme: "light",
+  mode: "slides",
+  viewBox: [1480, 736],
+  outsideLabel: "Client & Browser",
+  cloud: {
+    x: 240, y: 14, w: 1224, h: 708,
+    icon: "google-cloud",
+    label: "Google Cloud · PROJECT_ID · us-central1 (Cloud Run, Spanner, Firestore) & global (Vertex AI)"
+  },
+  notice: "Evidence-verified inventory (placeholders: PROJECT_ID, SERVICE_URL, RUNTIME_SA) · 15 live-verified + 2 code/partial-assumed nodes · 20 verified + 2 batch-assumed edges",
+  legend: [
+    "1–9 Synchronous /api/search request flow",
+    "Dashed line: async telemetry, cache miss, batch/CLI job, or ops check",
+    "Click any component or step dot to inspect evidence"
+  ]
+};
+
+const OUTSIDE = [
+  {
+    id: "client",
+    x: 20, y: 90, w: 190, h: 232,
+    glyph: "browser",
+    title: "Shopper & UI",
+    sub: "GET / · React 19 UI",
+    rows: [
+      "GET / Storefront",
+      "GET /diagram View",
+      "Club & Country Themes",
+      "Disjunctive Facets",
+      "Photo & Click Events"
+    ],
+    what: "[VERIFIED] Browser clients access the embedded storefront served at GET / on psearch-serving, the interactive architecture diagram at GET /diagram, or the React 19 UI (src/application/ui; standalone hosting unverified). Supports 43 WCAG AA colour themes (Padrão, 15 Brasileirão clubs, 27 countries), multimodal photo search, and analytics beacons.",
+    why: "Evidence: Verified in live Cloud Run revision psearch-serving-00040-r2j, src/psearch/serving/internal/api/routes.go, and src/application/ui/."
+  }
+];
+
+const GROUPS = [
+  {
+    id: "g-serving",
+    tone: "blue",
+    title: "1. Search API Gateway, Query Understanding & Cache (Cloud Run · us-central1 · 1 vCPU / 512 MiB)",
+    x: 264, y: 52, w: 860, h: 134
+  },
+  {
+    id: "g-spanner",
+    tone: "blue",
+    title: "2. Cloud Spanner · psearch-instance (Enterprise 100 PU) / psearch-db (20,535 products · DDL 011–027)",
+    x: 264, y: 224, w: 860, h: 134
+  },
+  {
+    id: "g-ranking",
+    tone: "yellow",
+    title: "3. Stage-2 LTR Re-Ranking, Session Personalization & Sponsored Products",
+    x: 264, y: 396, w: 860, h: 134
+  },
+  {
+    id: "g-ops-analytics",
+    tone: "grey",
+    title: "4. Closed-Loop Signal Rollup, Cloud Observability & Pre-Deploy SQL Verification",
+    x: 264, y: 568, w: 860, h: 134
+  },
+  {
+    id: "g-ai-data",
+    tone: "green",
+    title: "5. Vertex AI & Data Ingestion",
+    x: 1168, y: 52, w: 276, h: 650
+  }
+];
+
+const CARDS = [
+  /* Row 1: g-serving (cards y: 90..148, label band y: 152..182) */
+  {
+    id: "serving",
+    group: "g-serving",
+    x: 284, y: 90, w: 236, h: 58,
+    icon: "cloud-run",
+    title: "psearch-serving",
+    sub: "Cloud Run · Go 1.26 / Gin",
+    what: "[VERIFIED] Cloud Run service in us-central1 (Go 1.26 on alpine:3.20, port 8080, 1 vCPU / 512 MiB, min 0 / max 100, concurrency 80, timeout 300s, public allUsers invoker, rev psearch-serving-00040-r2j). Runs as dedicated SA psearch-serving@PROJECT_ID (roles/spanner.databaseUser on psearch-db [V], roles/aiplatform.user [N]). No VPC connector or Secret Manager refs; ADMIN_TOKEN unset.",
+    why: "Evidence: Verified via live gcloud run services describe, /api/info, DEPLOYMENT.md §1–2, and routes.go."
+  },
+  {
+    id: "query-intent",
+    group: "g-serving",
+    x: 576, y: 90, w: 236, h: 58,
+    icon: "vertexai",
+    title: "Query Understanding",
+    sub: "Intent parser · Synonym expand",
+    what: "[VERIFIED] Parses conversational queries into structured price, brand, color, and category filters using a deterministic parser backed by Spanner query_intent_cache (migration 020), optional Gemini 3.8 Flash fallback (INTENT_LLM_FALLBACK=false on live), accent folding (TEXT_FOLDING=true), and 0.3x low-weight synonym expansion (search_synonyms, migration 015).",
+    why: "Evidence: Verified in ADR-003, ADR-007, live env (TEXT_FOLDING=true), services/query_understanding.go, and services/synonyms.go."
+  },
+  {
+    id: "embed-cache",
+    group: "g-serving",
+    x: 868, y: 90, w: 236, h: 58,
+    icon: "cloud-spanner",
+    title: "Embedding Cache",
+    sub: "Memory LRU + embedding_cache",
+    what: "[VERIFIED] Two-tier query vector cache combining an in-process LRU cache with the Cloud Spanner embedding_cache table (migration 013). On cache miss, calls Vertex AI gemini-embedding-2 (location global) to generate 1024-dimension RETRIEVAL_QUERY vectors or fused multimodal image+text vectors.",
+    why: "Evidence: Verified in ADR-001, ADR-010, 013_embedding_cache.sql, services/embedding_service.go, and services/embedding_cache.go."
+  },
+
+  /* Row 2: g-spanner (cards y: 264..322, label band y: 326..354) */
+  {
+    id: "facets-commerce",
+    group: "g-spanner",
+    x: 284, y: 264, w: 236, h: 58,
+    icon: "cloud-spanner",
+    title: "Facets, Pricing & SLA",
+    sub: "Interleaved SKUs, prices, attrs",
+    what: "[VERIFIED] Computes concurrent errgroup disjunctive facet counts (exclude-own-dimension categories, brands, colors, sizes, price_ranges) and auto-discovered vertical facets from interleaved product_attributes (migration 025, index product_attributes_by_tenant_name_val). Enriches results with B2B contract prices (product_prices, migration 019), variant SKUs (migration 022), and regional CEP delivery SLAs (regional_inventory interleaved in skus, migration 017).",
+    why: "Evidence: Verified in live Spanner schema, ADR-005, ADR-008, ADR-009, ADR-013, ADR-014, and services/facets.go."
+  },
+  {
+    id: "telemetry-events",
+    group: "g-spanner",
+    x: 576, y: 264, w: 236, h: 58,
+    icon: "cloud-spanner",
+    title: "Search Telemetry",
+    sub: "impressions & conversions (90d)",
+    what: "[VERIFIED] Cloud Spanner tables search_impressions (index search_impressions_by_tenant_time) and search_conversions (index search_conversions_by_impression) with 90-day ROW DELETION POLICY TTL (migration 026). Records async query_id impressions and idempotent click, add_to_cart, and purchase events via POST /api/analytics/events; powers GET /api/analytics/summary CTR, MRR@10, and A/B KPIs.",
+    why: "Evidence: Verified in live Spanner DDL, ADR-015, 026_search_events.sql, and services/analytics.go."
+  },
+  {
+    id: "spanner-rrf",
+    group: "g-spanner",
+    x: 868, y: 264, w: 236, h: 58,
+    icon: "cloud-spanner",
+    title: "Hybrid RRF & ScaNN",
+    sub: "FTS SEARCH + embedding_v2 ANN",
+    what: "[VERIFIED] Cloud Spanner psearch-instance (Enterprise, 100 PU, regional-us-central1, 1h retention) / psearch-db storing 20,535 products (100% with 1024-d embedding_v2). Single-query Reciprocal Rank Fusion combines SEARCH() over products_text_idx with ScaNN APPROX_COSINE_DISTANCE on products_embedding_v2_idx (COSINE, tree_depth=2, num_leaves=100, STORING 8 filter columns, num_leaves_to_search=20), plus merchandising_rules and 8 boost signals.",
+    why: "Evidence: Verified via live gcloud spanner inspection (20,535 rows), ADR-001, ADR-004, ADR-012, and 024_products_vector_index.sql."
+  },
+
+  /* Row 3: g-ranking (cards y: 436..494, label band y: 498..526) */
+  {
+    id: "sponsored-ads",
+    group: "g-ranking",
+    x: 284, y: 436, w: 236, h: 58,
+    icon: "cloud-spanner",
+    title: "Sponsored Ads Auction",
+    sub: "ad_campaigns · CPC slots 1,4,8",
+    what: "[VERIFIED] Matches active, in-budget, in-stock campaigns from ad_campaigns (index ad_campaigns_by_tenant_product, migration 023) using the third hybrid SQL CTE and cosine similarity >= 0.55. Injects deduplicated ads at 1-based slots 1, 4, and 8 on page 1, and bills CPC clicks atomically via Spanner ReadWriteTransaction in interleaved ad_clicks.",
+    why: "Evidence: Verified in live Spanner schema, ADR-011, 023_ad_campaigns.sql, and services/ads.go."
+  },
+  {
+    id: "session-pers",
+    group: "g-ranking",
+    x: 576, y: 436, w: 236, h: 58,
+    icon: "cloud-spanner",
+    title: "Session Personalization",
+    sub: "user_session_events centroid",
+    what: "[VERIFIED] Computes a decay-weighted 1024-d session vector centroid from recent click and purchase events in user_session_events (migration 021, purchase weight 2.0x vs click 1.0x) and applies a cosine similarity boost (SESSION_BOOST_WEIGHT=0.003). Also powers item-to-item similar, in-stock substitutes, and co-viewed recommendations (GET /api/products/:id/similar).",
+    why: "Evidence: Verified in live Spanner schema, ADR-007, ADR-016, 021_user_session_events.sql, and services/session.go."
+  },
+  {
+    id: "stage2-ltr",
+    group: "g-ranking",
+    x: 868, y: 436, w: 236, h: 58,
+    icon: "cloud-run",
+    title: "Stage-2 LTR Ranker",
+    sub: "In-memory 12-feature model",
+    what: "[VERIFIED] Re-ranks the candidate window W in Go memory in <100 microseconds using a 12-feature linear Learning-to-Rank model (lexical score, vector cosine, RRF score, CTR, CVR, rating, review log, stock ratio, margin, recency, price match, brand match) while preserving out-of-stock-last and merchandising pin/bury invariants.",
+    why: "Evidence: Verified in ADR-006, src/iac/bigquery_scripts/ltr_train.sql, and services/ltr.go."
+  },
+
+  /* Row 4: g-ops-analytics (cards y: 608..666, label band y: 670..698) */
+  {
+    id: "cloud-obs",
+    group: "g-ops-analytics",
+    x: 284, y: 608, w: 236, h: 58,
+    icon: "cloud-monitoring",
+    title: "Logging · Trace · Metrics",
+    sub: "Cloud Logging & Monitoring",
+    what: "[VERIFIED: Logging & Monitoring / ASSUMED: App Trace] Cloud Logging captures Cloud Run request, app, and Cloud Build logs [V]. Cloud Monitoring collects Cloud Run metrics while Spanner builtin client metrics are disabled via SPANNER_DISABLE_BUILTIN_METRICS=true [V]. Cloud Trace API is enabled [V] and receives Scion agent OTLP waterfalls, whereas psearch-serving has no explicit app trace instrumentation.",
+    why: "Evidence: Verified via gcloud services & env inspection, DEPLOYMENT.md §2, and docs/telemetry/README.md."
+  },
+  {
+    id: "eval-dashboard",
+    group: "g-ops-analytics",
+    x: 576, y: 608, w: 236, h: 58,
+    icon: "cloud-run",
+    title: "Eval Dashboard & sqlcheck",
+    sub: "Cloud Run · 63-query SQL gate",
+    what: "[VERIFIED] Cloud Run service psearch-eval-dashboard in us-central1 (1 vCPU / 512 MiB, public allUsers, default compute SA, mounts Secret Manager secret github-token as GITHUB_TOKEN, calls psearch-serving via PSEARCH_SERVING_URL, and reads Spanner eval_runs & factory_agent_status). Every deploy is gated by cmd/sqlcheck (63 live read-only Spanner SQL checks).",
+    why: "Evidence: Verified via live gcloud run services describe psearch-eval-dashboard, DEPLOYMENT.md §4, and cmd/sqlcheck/main.go."
+  },
+  {
+    id: "signal-rollup",
+    group: "g-ops-analytics",
+    x: 868, y: 608, w: 236, h: 58,
+    icon: "cloud-run",
+    title: "Bayesian Signal Rollup",
+    sub: "POST /api/analytics/rollup",
+    what: "[VERIFIED] Admin-guarded endpoint on psearch-serving that aggregates attributed impressions, clicks, and orders over a configurable window and applies idempotent Bayesian prior-blended CTR and conversion rate updates over frozen baseline columns (baseline_clicks, baseline_orders, baseline_ctr, baseline_conversion_rate in migration 027), with dry_run support.",
+    why: "Evidence: Verified in live Spanner schema, ADR-015, Issue #47, 027_products_signal_baseline.sql, and services/analytics.go."
+  },
+
+  /* Col 4: g-ai-data */
+  {
+    id: "vertex-models",
+    group: "g-ai-data",
+    x: 1188, y: 90, w: 236, h: 58,
+    icon: "vertexai",
+    title: "Vertex AI (global)",
+    sub: "gemini-embedding-2 · 3.8-flash",
+    what: "[VERIFIED] Google Gen AI SDK integration at GENAI_LOCATION=global serving gemini-embedding-2 (1024-d v2 query, product, and multimodal photo embeddings), gemini-3.8-flash (text and query understanding), gemini-4-argon (pro model), and gemini-3.1-flash-image (batch enrichment image generation).",
+    why: "Evidence: Verified via live /api/info response, DEPLOYMENT.md §2, config/config.go, and tooling/enrichment/."
+  },
+  {
+    id: "backfill-cli",
+    group: "g-ai-data",
+    x: 1188, y: 264, w: 236, h: 58,
+    icon: "cloud-run",
+    title: "backfill-embeddings",
+    sub: "8 workers · 200-row chunks",
+    what: "[VERIFIED] Go CLI (cmd/backfill-embeddings) and Cloud Build / Artifact Registry deploy pipeline (cloud-run-source-deploy in us-central1). Embeds catalog items using 8 workers and 32-row Vertex AI batches, writing 200-row chunked Spanner mutations; populated all 20,535 products (100% embedding_v2 coverage).",
+    why: "Evidence: Verified via live Spanner 20,535-row embedding_v2 count, ADR-012, and cmd/backfill-embeddings/main.go."
+  },
+  {
+    id: "bq-dataset",
+    group: "g-ai-data",
+    x: 1188, y: 386, w: 236, h: 58,
+    icon: "bigquery",
+    title: "BigQuery & Migrations",
+    sub: "Catalog staging · DDL 011–027",
+    what: "[VERIFIED] BigQuery staging dataset psearch_catalog_us (US multi-region, table medicamentos_staged) and psearch_dataset (us-central1, planned query logging), SQL scripts (src/iac/bigquery_scripts/*), and 26 additive Cloud Spanner DDL/DML migrations (011–027).",
+    why: "Evidence: Verified via live BigQuery dataset inspection, DEPLOYMENT.md §1 & §3, and src/iac/migrations/."
+  },
+  {
+    id: "enrichment-job",
+    group: "g-ai-data",
+    x: 1188, y: 498, w: 236, h: 58,
+    icon: "cloud-run",
+    title: "Enrichment Cloud Run Job",
+    sub: "Batch design (not deployed)",
+    what: "[ASSUMED RUNTIME / VERIFIED CODE] Python batch enrichment workflow in tooling/enrichment (deploy.sh builds via Cloud Build to Artifact Registry and creates a 2 CPU / 2 GiB Cloud Run Job; currently not deployed in us-central1). Reads BigQuery rows and generates descriptions (gemini-3.8-flash) and images (gemini-3.1-flash-image).",
+    why: "Evidence: Verified in tooling/enrichment/README.md, main.py, and deploy.sh; confirmed not currently deployed via live gcloud run jobs list."
+  },
+  {
+    id: "gcs-firestore",
+    group: "g-ai-data",
+    x: 1188, y: 608, w: 236, h: 58,
+    icon: "cloud-storage",
+    title: "Cloud Storage & Firestore",
+    sub: "Native Firestore · GCS buckets",
+    what: "[VERIFIED] Firestore (default) database in Native mode (us-central1) stores per-product enrichment checkpoints (product_enrichment collection), and Cloud Storage stores build sources (run-sources-PROJECT_ID-us-central1), generated product images, and consolidated CSV reports.",
+    why: "Evidence: Verified via live gcloud firestore/storage inspection and tooling/enrichment/firestore_client.py."
+  }
+];
+
+const EDGES = [
+  /* 1..9 Synchronous /api/search Request Flow */
+  {
+    id: "e1",
+    n: 1,
+    from: "client",
+    to: "serving",
+    pts: [[210, 119], [284, 119]],
+    disc: [245, 119],
+    label: "GET/POST /api/search",
+    lx: 210, ly: 80
+  },
+  {
+    id: "e2",
+    n: 2,
+    from: "serving",
+    to: "query-intent",
+    pts: [[520, 119], [576, 119]],
+    disc: [548, 119],
+    label: "Parse intent",
+    lx: 548, ly: 168
+  },
+  {
+    id: "e3",
+    n: 3,
+    from: "query-intent",
+    to: "embed-cache",
+    pts: [[812, 119], [868, 119]],
+    disc: [840, 119],
+    label: "Lookup vector",
+    lx: 840, ly: 168
+  },
+  {
+    id: "e4",
+    n: 4,
+    from: "embed-cache",
+    to: "spanner-rrf",
+    pts: [[986, 148], [986, 264]],
+    disc: [986, 202],
+    label: "FTS + ScaNN RRF",
+    lx: 1002, ly: 206,
+    anchor: "start"
+  },
+  {
+    id: "e5",
+    n: 5,
+    from: "spanner-rrf",
+    to: "stage2-ltr",
+    pts: [[986, 322], [986, 436]],
+    disc: [986, 374],
+    label: "Top-W candidates",
+    lx: 1002, ly: 378,
+    anchor: "start"
+  },
+  {
+    id: "e6",
+    n: 6,
+    from: "stage2-ltr",
+    to: "session-pers",
+    pts: [[868, 465], [812, 465]],
+    disc: [840, 465],
+    label: "12-feat LTR",
+    lx: 840, ly: 514
+  },
+  {
+    id: "e7",
+    n: 7,
+    from: "session-pers",
+    to: "sponsored-ads",
+    pts: [[576, 465], [520, 465]],
+    disc: [548, 465],
+    label: "Centroid boost",
+    lx: 548, ly: 514
+  },
+  {
+    id: "e8",
+    n: 8,
+    from: "sponsored-ads",
+    to: "facets-commerce",
+    pts: [[402, 436], [402, 322]],
+    disc: [402, 374],
+    label: "Inject slots 1,4,8",
+    lx: 418, ly: 378,
+    anchor: "start"
+  },
+  {
+    id: "e9",
+    n: 9,
+    from: "facets-commerce",
+    to: "client",
+    pts: [[284, 293], [210, 293]],
+    disc: [245, 293],
+    label: "200 JSON + query_id",
+    lx: 210, ly: 342
+  },
+
+  /* Vertex AI & Data Ingestion Edges */
+  {
+    id: "e-vertex-embed",
+    from: "embed-cache",
+    to: "vertex-models",
+    dash: true,
+    pts: [[1104, 119], [1188, 119]],
+    label: "1024-d embed",
+    lx: 1146, ly: 168
+  },
+  {
+    id: "e-vertex-backfill",
+    from: "vertex-models",
+    to: "backfill-cli",
+    dash: true,
+    pts: [[1306, 148], [1306, 264]],
+    label: "Batch embed (32)",
+    lx: 1320, ly: 210,
+    anchor: "start"
+  },
+  {
+    id: "e-backfill-spanner",
+    from: "backfill-cli",
+    to: "spanner-rrf",
+    dash: true,
+    pts: [[1188, 293], [1104, 293]],
+    label: "200-row chunks",
+    lx: 1146, ly: 342
+  },
+  {
+    id: "e-bq-backfill",
+    from: "bq-dataset",
+    to: "backfill-cli",
+    dash: true,
+    pts: [[1306, 386], [1306, 322]],
+    label: "DDL 011–027 & seed",
+    lx: 1320, ly: 358,
+    anchor: "start"
+  },
+  {
+    id: "e-bq-enrich",
+    from: "bq-dataset",
+    to: "enrichment-job",
+    dash: true,
+    pts: [[1306, 444], [1306, 498]],
+    label: "Staging rows",
+    lx: 1320, ly: 475,
+    anchor: "start"
+  },
+  {
+    id: "e-enrich-gcs",
+    from: "enrichment-job",
+    to: "gcs-firestore",
+    dash: true,
+    pts: [[1306, 556], [1306, 608]],
+    label: "Images & state",
+    lx: 1320, ly: 586,
+    anchor: "start"
+  },
+
+  /* Closed-Loop Telemetry, Rollup & Ops Edges */
+  {
+    id: "e-serving-telemetry",
+    from: "serving",
+    to: "telemetry-events",
+    dash: true,
+    pts: [[480, 148], [480, 202], [694, 202], [694, 264]],
+    label: "Impressions & clicks",
+    lx: 587, ly: 196
+  },
+  {
+    id: "e-telemetry-spanner",
+    from: "telemetry-events",
+    to: "spanner-rrf",
+    dash: true,
+    pts: [[812, 293], [868, 293]],
+    label: "90d KPIs",
+    lx: 840, ly: 342
+  },
+  {
+    id: "e-rollup-spanner",
+    from: "signal-rollup",
+    to: "spanner-rrf",
+    dash: true,
+    pts: [[1104, 637], [1146, 637], [1146, 308], [1104, 308]],
+    label: "Bayesian rollup",
+    lx: 1138, ly: 588,
+    anchor: "end"
+  },
+  {
+    id: "e-rollup-ltr",
+    from: "signal-rollup",
+    to: "stage2-ltr",
+    dash: true,
+    pts: [[986, 608], [986, 494]],
+    label: "Prior-blended CTR/CVR",
+    lx: 974, ly: 552,
+    anchor: "end"
+  },
+  {
+    id: "e-obs-export",
+    from: "sponsored-ads",
+    to: "cloud-obs",
+    dash: true,
+    pts: [[402, 494], [402, 608]],
+    label: "Logs & metrics",
+    lx: 418, ly: 552,
+    anchor: "start"
+  },
+  {
+    id: "e-obs-eval",
+    from: "cloud-obs",
+    to: "eval-dashboard",
+    dash: true,
+    pts: [[520, 637], [576, 637]],
+    label: "Metrics",
+    lx: 548, ly: 684
+  },
+  {
+    id: "e-eval-rollup",
+    from: "eval-dashboard",
+    to: "signal-rollup",
+    dash: true,
+    pts: [[812, 637], [868, 637]],
+    label: "HTTPS + 63 SQL checks",
+    lx: 840, ly: 684
+  }
+];
+
+const SLIDES = [
+  {
+    tone: "blue",
+    title: "System Context — PSearch on Google Cloud",
+    line: "End-to-end hybrid vector and full-text product search platform combining Cloud Run (psearch-serving, Go 1.26/Gin), Cloud Spanner (20,535 products, FTS + ScaNN ANN), Vertex AI Gemini models, BigQuery staging, closed-loop telemetry, and observability.",
+    facts: [
+      ["Region", "us-central1 + global"],
+      ["Spanner", "Enterprise 100 PU (20,535 rows)"],
+      ["Embeddings", "gemini-embedding-2 (1024-d)"],
+      ["Live rev", "psearch-serving-00040-r2j"]
+    ],
+    units: [],
+    edges: [],
+    notes: "Evidence-verified architecture built from live gcloud inspection + repository sources (README.md, DEPLOYMENT.md, knowledge-plane/INDEX.md, ADR-001..016, config.go, src/iac/migrations/011..027). Summary: 15 live-verified components + 2 code/partially-assumed components (Enrichment Cloud Run Job is defined in tooling/enrichment/deploy.sh but not currently deployed; Cloud Trace API is enabled but psearch-serving has no explicit app trace instrumentation). All project IDs, URLs, and emails are redacted to placeholders (PROJECT_ID, SERVICE_URL, RUNTIME_SA)."
+  },
+  {
+    n: "1–3",
+    tone: "blue",
+    title: "Request Entry, Query Understanding & Two-Tier Embedding Cache",
+    line: "Shopper queries hit Cloud Run psearch-serving (1), which parses conversational intent and expands synonyms (2), then resolves a 1024-dimension query vector from the two-tier LRU + Spanner embedding_cache or Vertex AI gemini-embedding-2 at location=global (3).",
+    facts: [
+      ["Cloud Run", "1 vCPU · 512 MiB · conc 80"],
+      ["Intent model", "Parser + gemini-3.8-flash"],
+      ["Embed model", "gemini-embedding-2 (1024-d)"],
+      ["Cache tiers", "In-memory LRU + Spanner"]
+    ],
+    units: ["client", "serving", "query-intent", "embed-cache", "vertex-models"],
+    edges: ["e1", "e2", "e3", "e-vertex-embed"],
+    notes: "Steps 1–3 of /api/search: (1) Public Cloud Run service psearch-serving (us-central1, SA psearch-serving@PROJECT_ID) dispatches /api/search; (2) QueryUnderstandingService extracts price/brand/color/category filters (query_intent_cache, migration 020) and expands low-weight (0.3x) synonyms from search_synonyms (migration 015); (3) EmbeddingService checks memory LRU and Spanner embedding_cache (migration 013) before calling Vertex AI global gemini-embedding-2."
+  },
+  {
+    n: "4–5",
+    tone: "blue",
+    title: "Cloud Spanner Hybrid RRF (FTS + ScaNN ANN) & Stage-2 LTR",
+    line: "Cloud Spanner fuses full-text SEARCH() over accent-folded tokenlists and ScaNN APPROX_COSINE_DISTANCE on 1024-d embedding_v2 across 20,535 products via Reciprocal Rank Fusion plus 8 business signals (4), then passes candidate window W to the <100µs 12-feature LTR ranker (5).",
+    facts: [
+      ["Catalog", "20,535 products (100% v2)"],
+      ["Vector index", "ScaNN COSINE (depth 2, 100 leaves)"],
+      ["Query leaves", "num_leaves_to_search=20"],
+      ["Stage-2 LTR", "12 features in <100µs"]
+    ],
+    units: ["embed-cache", "spanner-rrf", "stage2-ltr"],
+    edges: ["e4", "e5"],
+    notes: "Steps 4–5 of /api/search: (4) Spanner psearch-db (Enterprise, 100 PU, regional-us-central1) executes specialized SQL combining products_text_idx (accent-folded tokens) and products_embedding_v2_idx (COSINE, tree_depth=2, num_leaves=100, STORING 8 filter columns) with automatic exact cosine fallback, merchandising_rules, and 8 boost signals; (5) Go Stage-2 LTR re-ranks top candidates while keeping out-of-stock items last."
+  },
+  {
+    n: "6–9",
+    tone: "yellow",
+    title: "Personalization, Sponsored Auction, Facets/Commerce & Response",
+    line: "Candidates receive a real-time session centroid similarity boost (6), CPC sponsored products are injected at slots 1, 4, and 8 (7), concurrent disjunctive/dynamic facets, B2B contract prices, and CEP delivery SLAs are attached (8), and the JSON response with query_id returns to the client (9).",
+    facts: [
+      ["Session boost", "SESSION_BOOST_WEIGHT=0.003"],
+      ["Ad slots", "1, 4, 8 (sim >= 0.55)"],
+      ["Facets", "Disjunctive + dynamic attrs"],
+      ["Commerce", "Interleaved SKUs, prices, SLA"]
+    ],
+    units: ["stage2-ltr", "session-pers", "sponsored-ads", "facets-commerce", "client"],
+    edges: ["e6", "e7", "e8", "e9"],
+    notes: "Steps 6–9 of /api/search: (6) SessionService computes a 1024-d centroid from user_session_events (purchases 2x, clicks 1x); (7) InjectSponsored places relevant in-budget ads from ad_campaigns at slots 1, 4, 8 (interleaved ad_clicks for ACID CPC billing); (8) Concurrent errgroup queries compute exclude-own-dimension facets, dynamic product_attributes facets, interleaved product_prices, SKU variants, and regional_inventory CEP SLAs; (9) 200 OK JSON returns with query_id."
+  },
+  {
+    tone: "green",
+    title: "Data, Catalog Enrichment & Embedding Backfill Pipeline",
+    line: "BigQuery (psearch_catalog_us.medicamentos_staged & psearch_dataset) and 26 Spanner DDL/DML migrations (011–027) define the catalog; backfill-embeddings wrote 1024-d vectors across all 20,535 products in 200-row chunks, paired with the batch Enrichment Cloud Run Job design.",
+    facts: [
+      ["BigQuery", "psearch_catalog_us + psearch_dataset"],
+      ["Backfill CLI", "20,535 rows · 8 workers · 200 chunk"],
+      ["Enrichment", "Cloud Run Job design (undeployed)"],
+      ["Firestore", "(default) Native us-central1"]
+    ],
+    units: ["vertex-models", "backfill-cli", "bq-dataset", "enrichment-job", "gcs-firestore", "spanner-rrf"],
+    edges: ["e-vertex-backfill", "e-backfill-spanner", "e-bq-backfill", "e-bq-enrich", "e-enrich-gcs"],
+    notes: "Ingestion & schema side: (1) src/iac/migrations/011..027 define additive Spanner tables, 4 interleaved child tables, ScaNN VECTOR INDEX, and 4 secondary indexes; (2) cmd/backfill-embeddings populated all 20,535 products with gemini-embedding-2 vectors; (3) tooling/enrichment is designed as a Cloud Run Job (deploy.sh -> Cloud Build -> Artifact Registry) using gemini-3.8-flash, gemini-3.1-flash-image, Cloud Storage, and Native Firestore (marked dashed/assumed as not currently deployed in us-central1)."
+  },
+  {
+    tone: "grey",
+    title: "Closed-Loop Search Telemetry & Bayesian Signal Rollup",
+    line: "Every search logs an async impression (query_id) and attributes click, cart, and purchase conversions in Spanner (90-day TTL); POST /api/analytics/rollup blends observed CTR and CVR with a Bayesian prior over the frozen 027 baseline to improve future ranking.",
+    facts: [
+      ["Tables", "search_impressions / conversions"],
+      ["Retention", "90-day row deletion policy"],
+      ["KPIs", "CTR, MRR@10, zero-result, A/B"],
+      ["Rollup", "Bayesian prior over 027 baseline"]
+    ],
+    units: ["serving", "telemetry-events", "signal-rollup", "spanner-rrf", "stage2-ltr"],
+    edges: ["e-serving-telemetry", "e-telemetry-spanner", "e-rollup-spanner", "e-rollup-ltr"],
+    notes: "Telemetry & analytics loop (ADR-015, Issues #43 & #47): POST /api/analytics/events records idempotent click/add_to_cart/purchase conversions linked to query_id; GET /api/analytics/summary reports tenant CTR, MRR@10, and A/B experiment metrics; POST /api/analytics/rollup snapshots baseline_clicks/orders/ctr/cvr (migration 027) and writes prior-smoothed signals back to products."
+  },
+  {
+    tone: "grey",
+    title: "Operations, Cloud Observability & Pre-Deploy Verification",
+    line: "Cloud Logging and Cloud Monitoring collect request logs, build logs, and service metrics (SPANNER_DISABLE_BUILTIN_METRICS=true); psearch-eval-dashboard tracks L1–L5 quality and calls psearch-serving over HTTPS, while every deploy is gated by 63 live Spanner SQL checks in cmd/sqlcheck.",
+    facts: [
+      ["Logging/Metrics", "Cloud Run + Cloud Build [V]"],
+      ["Cloud Trace", "API enabled (app uninstrumented)"],
+      ["Eval service", "psearch-eval-dashboard (Cloud Run)"],
+      ["Deploy gate", "cmd/sqlcheck (63 live queries)"]
+    ],
+    units: ["sponsored-ads", "cloud-obs", "eval-dashboard", "signal-rollup"],
+    edges: ["e-obs-export", "e-obs-eval", "e-eval-rollup"],
+    notes: "Operations & governance: Source deployments build multi-stage Docker images via Cloud Build into Artifact Registry (cloud-run-source-deploy in us-central1). psearch-eval-dashboard runs on Cloud Run (1 vCPU / 512 MiB, Secret Manager github-token) and queries psearch-serving + Spanner eval_runs/factory_agent_status. Cloud Trace API is enabled in the project (used by Scion agent telemetry), while psearch-serving app tracing is uninstrumented."
+  },
+  {
+    tone: "blue",
+    title: "Complete Architecture & Evidence Summary",
+    line: "Full PSearch cloud architecture across all five domains: 15 live-verified nodes + 2 code/partially-assumed nodes (17 total) and 20 verified + 2 batch-assumed edges (22 total), served at GET /diagram.",
+    facts: [
+      ["Verified nodes", "15 live + 2 code/partial"],
+      ["Verified edges", "20 live + 2 batch-assumed"],
+      ["Redaction", "Zero real IDs / URLs / emails"],
+      ["Route", "GET /diagram (go:embed)"]
+    ],
+    units: [],
+    edges: [],
+    notes: "Evidence Table Summary — Verified (15 nodes, 20 edges): client storefront (/ and /diagram), psearch-serving (Cloud Run us-central1, rev 00040-r2j, SA psearch-serving@PROJECT_ID), query-intent (query_intent_cache + search_synonyms), embed-cache (LRU + embedding_cache), spanner-rrf (psearch-instance 100 PU / psearch-db, 20,535 rows, products_text_idx, products_embedding_v2_idx ScaNN), facets-commerce (interleaved skus, regional_inventory, product_prices, product_attributes), stage2-ltr (12-feature Go LTR), session-pers (user_session_events), sponsored-ads (ad_campaigns + ad_clicks), telemetry-events (search_impressions + search_conversions 90d TTL), signal-rollup (/api/analytics/rollup + 027 baseline), eval-dashboard (psearch-eval-dashboard + cmd/sqlcheck), vertex-models (global gemini-embedding-2, gemini-3.8-flash, gemini-4-argon), backfill-cli (cmd/backfill-embeddings + Cloud Build/Artifact Registry), bq-dataset (psearch_catalog_us.medicamentos_staged + psearch_dataset + DDL 011–027), gcs-firestore (Native Firestore us-central1 + GCS). Assumed / Partial (2 nodes, 2 edges): enrichment-job (defined in tooling/enrichment/deploy.sh, not currently deployed as a Cloud Run Job in us-central1) and cloud-obs Trace instrumentation (Cloud Logging & Monitoring verified live; Cloud Trace API enabled but app uninstrumented)."
+  }
+];
+
+const NS = "http://www.w3.org/2000/svg";
+const mk = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+/* Two tints per hue for the group, plus one accent per surface. */
+const TONES = {
+  dash:   { tint: "#F8F9FA", edge: "#BDC1C6", paper: "#5F6368", screen: "#BDC1C6", dashed: true },
+  blue:   { tint: "#E8F0FE", edge: "#A8C7FA", paper: "#1A73E8", screen: "#8AB4F8" },
+  red:    { tint: "#FCE8E6", edge: "#F2B8B5", paper: "#C5221F", screen: "#F28B82" },
+  yellow: { tint: "#FEF7E0", edge: "#FDE293", paper: "#B06000", screen: "#FDD663" },
+  green:  { tint: "#E6F4EA", edge: "#A8DAB5", paper: "#137333", screen: "#81C995" },
+  grey:   { tint: "#F1F3F4", edge: "#C8CCD1", paper: "#5F6368", screen: "#BDC1C6" }
+};
+
+document.getElementById("doc-title").textContent = DIAGRAM.title;
+document.title = DIAGRAM.title;
+document.documentElement.dataset.theme = DIAGRAM.theme || "light";
+document.documentElement.dataset.mode = DIAGRAM.mode || "slides";
+document.getElementById("diagram").setAttribute("viewBox", `0 0 ${DIAGRAM.viewBox.join(" ")}`);
+for (const [id, value] of [["notice", DIAGRAM.notice], ["legend", (DIAGRAM.legend || []).join(" · ")]]) {
+  const el = document.getElementById(id); el.textContent = value || ""; el.hidden = !value;
+}
+
+/** A product icon, top-left at (x, y), drawn at `size`. */
+function icon(name, x, y, size) {
+  const ic = ICONS[name];
+  if (!ic) return null;
+  const [vx, vy, vw, vh] = ic.vb.split(/\s+/).map(Number);
+  const scale = size / Math.max(vw, vh);
+  const g = mk("g", { transform: `translate(${x + (size - vw * scale) / 2} ${y + (size - vh * scale) / 2}) scale(${scale}) translate(${-vx} ${-vy})` });
+  g.innerHTML = ic.d;
+  return g;
+}
+
+/* --------------------------------------------------------------- frames -- */
+
+const frames = document.getElementById("layer-frames");
+const cloud = DIAGRAM.cloud;
+
+frames.append(mk("rect", { class: "gc-frame", x: cloud.x, y: cloud.y, width: cloud.w, height: cloud.h }));
+const mark = cloud.icon && icon(cloud.icon, cloud.x + 16, cloud.y + 10, 20);
+if (mark) frames.append(mark);
+const cloudLabel = mk("text", { class: "gc-label", x: cloud.x + (mark ? 44 : 16), y: cloud.y + 25 });
+cloudLabel.textContent = cloud.label;
+frames.append(cloudLabel);
+
+if (DIAGRAM.outsideLabel) {
+  const t = mk("text", { class: "zone-label", x: 16, y: 26 });
+  t.textContent = DIAGRAM.outsideLabel;
+  frames.append(t);
+}
+
+for (const g of GROUPS) {
+  const tone = TONES[g.tone];
+  frames.append(mk("rect", {
+    class: "grp", x: g.x, y: g.y, width: g.w, height: g.h,
+    style: `--tint:${tone.tint};--edge:${tone.edge}` + (tone.dashed ? ";stroke-dasharray:5 4" : "")
+  }));
+  const t = mk("text", { class: "grp-title", x: g.x + 14, y: g.y + 21 });
+  t.textContent = g.title;
+  frames.append(t);
+}
+
+/* ---------------------------------------------------------------- wires -- */
+
+const wires = document.getElementById("layer-wires");
+const wireParts = {};
+const edgeById = Object.fromEntries(EDGES.map((e) => [e.id, e]));
+
+for (const e of EDGES) {
+  const d = e.pts.map((p, i) => (i ? `L ${p[0]} ${p[1]}` : `M ${p[0]} ${p[1]}`)).join(" ");
+  const parts = [mk("path", { class: "wirepart wire" + (e.dash ? " dash" : ""), d })];
+
+  const [px, py] = e.pts[e.pts.length - 2];
+  const [qx, qy] = e.pts[e.pts.length - 1];
+  if (py === qy) {
+    const s = qx > px ? 1 : -1;
+    parts.push(mk("polygon", { class: "wirepart wire-head", points: `${qx - 7 * s},${qy - 4} ${qx - 7 * s},${qy + 4} ${qx},${qy}` }));
+  } else {
+    const s = qy > py ? 1 : -1;
+    parts.push(mk("polygon", { class: "wirepart wire-head", points: `${qx - 4},${qy - 7 * s} ${qx + 4},${qy - 7 * s} ${qx},${qy}` }));
+  }
+
+  if (e.label) {
+    const label = mk("text", { class: "wirepart wire-label", x: e.lx, y: e.ly, "text-anchor": e.anchor || "middle" });
+    label.textContent = e.label;
+    parts.push(label);
+  }
+  if (e.disc) {
+    parts.push(mk("circle", { class: "wirepart disc", cx: e.disc[0], cy: e.disc[1], r: 9 }));
+    const n = mk("text", { class: "wirepart disc-n", x: e.disc[0], y: e.disc[1] + 3.5, "text-anchor": "middle" });
+    n.textContent = e.n;
+    parts.push(n);
+  }
+
+  wires.append(...parts);
+  wireParts[e.id] = parts;
+}
+
+/* ---------------------------------------------------------------- units -- */
+
+const units = document.getElementById("layer-units");
+const unitG = {};
+const ALL = [];
+
+/** Line-art glyphs for actors. Actors never get a product icon. */
+function glyph(kind, x, y) {
+  const g = mk("g", {
+    transform: `translate(${x} ${y})`, fill: "none", stroke: "#5F6368",
+    "stroke-width": "1.6", "stroke-linecap": "round", "stroke-linejoin": "round"
+  });
+  const paths = {
+    person: ["M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", "M4 21a8 8 0 0 1 16 0"],
+    browser: ["M3 5h18v14H3z", "M3 9h18"],
+    phone: ["M8 3h8a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z", "M11 18h2"],
+    printer: ["M7 9V4h10v5", "M5 9h14a2 2 0 0 1 2 2v5h-4v4H7v-4H3v-5a2 2 0 0 1 2-2Z"],
+    server: ["M4 5h16v6H4z", "M4 13h16v6H4z", "M8 8h.01", "M8 16h.01"]
+  }[kind] || [];
+  for (const d of paths) g.append(mk("path", { d }));
+  return g;
+}
+
+function addUnit(u) {
+  const g = mk("g", {
+    class: "unit", id: "u-" + u.id, role: "button", tabindex: "0",
+    "aria-label": u.title + ", " + u.sub + ". " + u.what
+  });
+
+  if (u.kind === "outside") {
+    g.append(mk("rect", { class: "box", x: u.x, y: u.y, width: u.w, height: u.h }));
+    g.append(glyph(u.glyph, u.x + 13, u.y + 12));
+    const t = mk("text", { class: "box-title", x: u.x + 45, y: u.y + 25 });
+    t.textContent = u.title;
+    const s = mk("text", { class: "box-sub", x: u.x + 45, y: u.y + 40 });
+    s.textContent = u.sub;
+    g.append(t, s);
+    (u.rows || []).forEach((r, i) => {
+      const row = mk("text", { class: "box-sub", x: u.x + 14, y: u.y + 70 + i * 22 });
+      row.textContent = "· " + r;
+      g.append(row);
+    });
+  } else {
+    g.append(mk("rect", { class: "card", x: u.x, y: u.y, width: u.w, height: u.h, style: `--edge:${TONES[u.tone].edge}` }));
+    const ic = u.icon && icon(u.icon, u.x + 11, u.y + (u.h - 20) / 2, 20);
+    if (ic) g.append(ic);
+    const tx = u.icon ? u.x + 40 : u.x + 13;
+    const two = u.h >= 50;
+    const t = mk("text", { class: "card-title", x: tx, y: u.y + (two ? 22 : 18) });
+    t.textContent = u.title;
+    const s = mk("text", { class: "card-sub", x: tx, y: u.y + (two ? 38 : 32) });
+    s.textContent = u.sub;
+    g.append(t, s);
+  }
+
+  g.addEventListener("mouseenter", () => showTip(u.id));
+  g.addEventListener("focus", () => showTip(u.id));
+  g.addEventListener("mouseleave", hideTip);
+  g.addEventListener("blur", hideTip);
+  g.addEventListener("click", (ev) => { ev.stopPropagation(); showTip(u.id); });
+  g.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); showTip(u.id); }
+  });
+
+  units.append(g);
+  unitG[u.id] = g;
+  ALL.push(u);
+}
+
+for (const o of OUTSIDE) { o.kind = "outside"; addUnit(o); }
+for (const c of CARDS) {
+  const grp = GROUPS.find((g) => g.id === c.group);
+  c.tone = grp.tone;
+  c.kind = "card";
+  c.groupTitle = grp.title;
+  addUnit(c);
+}
+
+const byId = Object.fromEntries(ALL.map((u) => [u.id, u]));
+const componentPicker = document.getElementById("component-picker");
+for (const u of ALL) { const option = document.createElement("option"); option.value = u.id; option.textContent = u.title; componentPicker.append(option); }
+componentPicker.addEventListener("change", () => { if (componentPicker.value) showTip(componentPicker.value); else hideTip(); });
+
+/* ------------------------------------------------------------- the tip -- */
+
+const stagewrap = document.getElementById("stagewrap");
+const tip = document.getElementById("tip");
+
+function showTip(id) {
+  const u = byId[id];
+  document.getElementById("tip-title").textContent = u.title;
+  document.getElementById("tip-sub").textContent = u.groupTitle ? u.groupTitle + " · " + u.sub : u.sub;
+  document.getElementById("tip-what").textContent = u.what;
+  const why = document.getElementById("tip-why"); why.textContent = u.why || ""; why.hidden = !u.why;
+  tip.hidden = false;
+
+  const box = unitG[id].getBoundingClientRect();
+  const frame = stagewrap.getBoundingClientRect();
+  const left = box.left - frame.left, top = box.top - frame.top;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = frame.width - (left + box.width) > w + 20 ? left + box.width + 12 : left - w - 12;
+  x = Math.max(10, Math.min(x, frame.width - w - 10));
+  let y = top + box.height / 2 - h / 2;
+  y = Math.max(10, Math.min(y, frame.height - h - 10));
+  tip.style.left = x + "px";
+  tip.style.top = y + "px";
+}
+
+function hideTip() { tip.hidden = true; }
+document.addEventListener("click", (ev) => { if (ev.target !== componentPicker) hideTip(); });
+
+/* ----------------------------------------------------------- the slides -- */
+
+const VW = DIAGRAM.viewBox[0], VH = DIAGRAM.viewBox[1];
+const stage = document.getElementById("stage");
+const sheet = document.getElementById("sheet");
+
+/** The frame a slide zooms to: everything it lights, plus room to breathe. */
+function focusBox(slide) {
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  const grow = (ax, ay, bx, by) => {
+    x1 = Math.min(x1, ax); y1 = Math.min(y1, ay);
+    x2 = Math.max(x2, bx); y2 = Math.max(y2, by);
+  };
+  for (const id of slide.units) { const u = byId[id]; if (u) grow(u.x, u.y, u.x + u.w, u.y + u.h); }
+  for (const id of slide.edges) { const e = edgeById[id]; if (e) for (const [px, py] of e.pts) grow(px, py, px, py); }
+  if (x1 === Infinity) return { x: 0, y: 0, w: VW, h: VH };
+  const pad = 46;
+  return { x: x1 - pad, y: y1 - pad, w: x2 - x1 + pad * 2, h: y2 - y1 + pad * 2 };
+}
+
+function frameStage(slide) {
+  const f = focusBox(slide);
+  const s = Math.max(1, Math.min(VW / f.w, VH / f.h, 2.3));
+  const cx = f.x + f.w / 2, cy = f.y + f.h / 2;
+  let tx = VW / 2 - s * cx, ty = VH / 2 - s * cy;
+  tx = Math.min(0, Math.max(VW * (1 - s), tx));
+  ty = Math.min(0, Math.max(VH * (1 - s), ty));
+  stage.setAttribute("transform", `translate(${tx.toFixed(2)} ${ty.toFixed(2)}) scale(${s.toFixed(4)})`);
+  sheet.classList.toggle("zoomed", s > 1.02);
+}
+
+const elStepNo = document.getElementById("stepno");
+const elTitle = document.getElementById("title");
+const elLine = document.getElementById("line");
+const elChips = document.getElementById("chips");
+const elCounter = document.getElementById("counter");
+const notes = document.getElementById("notes"), notesToggle = document.getElementById("notes-toggle");
+notesToggle.addEventListener("click", () => { notes.hidden = !notes.hidden; notesToggle.setAttribute("aria-expanded", String(!notes.hidden)); });
+
+const dotBtn = SLIDES.map((s, i) => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "dot";
+  b.textContent = s.n || "◆";
+  b.setAttribute("aria-label", "Step " + (i + 1) + ": " + s.title);
+  b.style.setProperty("--dot", TONES[s.tone || "blue"][DIAGRAM.theme === "dark" ? "screen" : "paper"]);
+  b.addEventListener("click", () => go(i));
+  document.getElementById("dots").append(b);
+  return b;
+});
+
+let at = 0;
+
+function go(i) {
+  if (DIAGRAM.mode === "diagram") i = 0;
+  at = (i + SLIDES.length) % SLIDES.length;
+  const s = SLIDES[at];
+  const tone = TONES[s.tone || "blue"];
+
+  document.documentElement.style.setProperty("--accent", DIAGRAM.theme === "dark" ? tone.screen : tone.paper);
+  document.documentElement.style.setProperty("--accent-paper", tone.paper);
+
+  elStepNo.hidden = !s.n;
+  if (s.n) elStepNo.textContent = s.n;
+  elTitle.textContent = s.title;
+  elLine.textContent = s.line;
+  notes.textContent = s.notes || ""; notes.hidden = true; notesToggle.hidden = !s.notes || DIAGRAM.mode === "diagram";
+  notesToggle.setAttribute("aria-expanded", "false");
+
+  elChips.hidden = !s.facts;
+  elChips.textContent = "";
+  for (const [k, v] of s.facts || []) {
+    const li = document.createElement("li");
+    const b = document.createElement("b"); b.textContent = v;
+    const sp = document.createElement("span"); sp.textContent = k;
+    li.append(b, sp);
+    elChips.append(li);
+  }
+
+  const showAll = !s.edges.length && !s.units.length;
+  for (const u of ALL) {
+    const lit = s.units.includes(u.id);
+    unitG[u.id].classList.toggle("lit", lit);
+    unitG[u.id].classList.toggle("dim", !showAll && !lit);
+  }
+  for (const e of EDGES) {
+    const lit = s.edges.includes(e.id);
+    for (const part of wireParts[e.id]) {
+      part.classList.toggle("lit", lit);
+      part.classList.toggle("dim", !showAll && !lit);
+    }
+  }
+
+  frameStage(s);
+  hideTip();
+  dotBtn.forEach((b, j) => b.setAttribute("aria-current", String(j === at)));
+  elCounter.textContent = (at + 1) + " / " + SLIDES.length;
+  dotBtn[at].scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+document.getElementById("prev").addEventListener("click", () => go(at - 1));
+document.getElementById("next").addEventListener("click", () => go(at + 1));
+
+addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") { hideTip(); notes.hidden = true; notesToggle.setAttribute("aria-expanded", "false"); return; }
+  if (ev.target.closest('button, input, textarea, select, [contenteditable="true"]')) return;
+  if (ev.key === "ArrowRight" || ev.key === "PageDown" || ev.key === " ") { ev.preventDefault(); go(at + 1); }
+  else if (ev.key === "ArrowLeft" || ev.key === "PageUp") { ev.preventDefault(); go(at - 1); }
+  else if (ev.key === "Home") go(0);
+  else if (ev.key === "End") go(SLIDES.length - 1);
+});
+
+let downX = null;
+stagewrap.addEventListener("pointerdown", (ev) => { downX = ev.clientX; });
+stagewrap.addEventListener("pointerup", (ev) => {
+  if (downX === null) return;
+  const dx = ev.clientX - downX;
+  downX = null;
+  if (Math.abs(dx) > 55) go(at + (dx < 0 ? 1 : -1));
+});
+
+addEventListener("resize", () => frameStage(SLIDES[at]));
+go(0);
+</script>
+</body>
+</html>

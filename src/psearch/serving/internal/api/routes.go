@@ -1,6 +1,7 @@
 package api
 
 import (
+	_ "embed"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,6 +10,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"psearch/serving-go/internal/config"
 )
+
+//go:embed diagram.html
+var architectureDiagramHTML []byte
 
 func SetupRouter(router *gin.Engine, cfg *config.Config) {
 	router.Use(cors.New(cors.Config{
@@ -51,6 +55,10 @@ func SetupRouter(router *gin.Engine, cfg *config.Config) {
 	router.GET("/api/search", controller.Search)
 	router.POST("/api/search", controller.Search)
 	registerWave6Routes(router, controller)
+
+	router.GET("/diagram", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", architectureDiagramHTML)
+	})
 
 	if cfg.StaticDir != "" {
 		if info, err := os.Stat(cfg.StaticDir); err == nil && info.IsDir() {

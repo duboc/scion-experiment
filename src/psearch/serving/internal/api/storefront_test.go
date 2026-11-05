@@ -2,6 +2,8 @@ package api
 
 import (
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -484,3 +486,88 @@ func TestStorefrontCountryThemes(t *testing.T) {
 		}
 	}
 }
+
+// TestArchitectureDiagramRoute verifies Issue #51:
+//   - GET /diagram returns 200 text/html containing the diagram root element
+//   - Covers the /api/search request flow, data/ingestion, telemetry/analytics, and ops views
+//   - Contains no real project IDs, .run.app service URLs, account emails, or secrets
+//   - All inline <script> blocks parse cleanly via node --check
+func TestArchitectureDiagramRoute(t *testing.T) {
+	router := newTestRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/diagram", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /diagram status = %d, want 200", rec.Code)
+	}
+	ct := rec.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("GET /diagram Content-Type = %q, want text/html*", ct)
+	}
+
+	body := rec.Body.String()
+	requiredSnippets := []string{
+		`<svg class="diagram" id="diagram"`,
+		`id="layer-frames"`,
+		`id="layer-wires"`,
+		`id="layer-units"`,
+		`psearch-serving`,
+		`Query Understanding`,
+		`Embedding Cache`,
+		`Hybrid RRF & ScaNN`,
+		`Stage-2 LTR Ranker`,
+		`Session Personalization`,
+		`Sponsored Ads Auction`,
+		`Facets, Pricing & SLA`,
+		`backfill-embeddings`,
+		`Enrichment Cloud Run Job`,
+		`Search Telemetry`,
+		`Bayesian Signal Rollup`,
+		`Logging · Trace · Metrics`,
+		`Eval Dashboard & sqlcheck`,
+	}
+	for _, snip := range requiredSnippets {
+		if !strings.Contains(body, snip) {
+			t.Errorf("GET /diagram missing expected snippet: %q", snip)
+		}
+	}
+
+	forbiddenPatterns := []struct {
+		name string
+		re   *regexp.Regexp
+	}{
+		{"real sandbox project ID", regexp.MustCompile(`(?i)riojucu`)},
+		{"real hub project ID", regexp.MustCompile(`(?i)scion-hub-[a-z0-9-]+`)},
+		{"Cloud Run .run.app URL", regexp.MustCompile(`(?i)[a-z0-9-]+\.run\.app`)},
+		{"service account email", regexp.MustCompile(`(?i)[a-z0-9._-]+@[a-z0-9.-]+\.iam\.gserviceaccount\.com`)},
+	}
+	for _, fp := range forbiddenPatterns {
+		if m := fp.re.FindString(body); m != "" {
+			t.Errorf("GET /diagram contains forbidden %s: %q", fp.name, m)
+		}
+	}
+
+	// Verify inline <script> blocks in diagram.html parse without syntax errors.
+	nodePath, err := exec.LookPath("node")
+	if err == nil {
+		scriptRe := regexp.MustCompile(`(?s)<script[^>]*>(.*?)</script>`)
+		matches := scriptRe.FindAllStringSubmatch(body, -1)
+		if len(matches) == 0 {
+			t.Fatalf("no <script> block found in GET /diagram")
+		}
+		tmpDir := t.TempDir()
+		for i, m := range matches {
+			jsFile := filepath.Join(tmpDir, "diagram_script_"+string(rune('0'+i))+".js")
+			if err := os.WriteFile(jsFile, []byte(m[1]), 0o600); err != nil {
+				t.Fatalf("write temp js: %v", err)
+			}
+			cmd := exec.Command(nodePath, "--check", jsFile)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("GET /diagram inline script[%d] syntax error: %v\n%s", i, err, string(out))
+			}
+		}
+	}
+}
+
