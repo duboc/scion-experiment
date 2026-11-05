@@ -480,6 +480,18 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
     - **(4) Allowlist validation & `localStorage` persistence:** `applyClubTheme()` validates against `CLUB_THEMES[normalized]` and falls back to `'padrao'` on unknown or untrusted input (XSS-safe).
     - **(5) Component readability:** Sponsored badges, facet chips, pagination buttons, recommendation carousels, substitute rows, and `#analytics-drawer` remain readable across all 27 country themes. Issues: none.
 
+## #51 Interactive Cloud Architecture Diagram at `GET /diagram` (`28cdac1`)
+- **Date:** 2026-11-05
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), isolated `/tmp/review-51` archive (removed)
+- **Status:** PASS (APPROVED)
+- **Checks:**
+    - `go vet ./...` and `go test -race -count=1 ./...` in `src/psearch/serving`: PASS (`internal/api`, `internal/config`, `internal/services` incl. `TestArchitectureDiagramRoute`, `TestStorefrontInlineJSParses`, and all existing storefront & API tests).
+    - **(1) Route wiring & isolation (`routes.go`):** `GET /diagram` serves `architectureDiagramHTML` (`//go:embed diagram.html`) with `200 text/html; charset=utf-8` before the `StaticDir` `NoRoute` fallback, leaving `GET /` and every other route unchanged.
+    - **(2) Accuracy against repo & live deployer inventory (`diagram.html`):** All 17 nodes (`15` live-verified + `2` code/partial-assumed) and 22 edges (`20` live-verified + `2` batch-assumed) match reality: Cloud Run `psearch-serving` (`us-central1`, `1 vCPU / 512 MiB`, `concurrency 80`, SA `psearch-serving@PROJECT_ID`, `ADMIN_TOKEN` unset) and `psearch-eval-dashboard` (`us-central1`, Secret Manager `github-token`, `cmd/sqlcheck` 63-query gate); Cloud Spanner `psearch-instance` (Enterprise 100 PU `regional-us-central1`) / `psearch-db` (`20,535` products, 100% `embedding_v2`, `products_text_idx` FTS + `products_embedding_v2_idx` ScaNN `COSINE` `tree_depth=2`/`num_leaves=100` `STORING` 8 filter columns, interleaved `skus`, `regional_inventory`, `product_prices`, `product_attributes`, `ad_clicks`, 90d TTL `search_impressions`/`search_conversions`, and `027` `baseline_*` columns); Vertex AI at `GENAI_LOCATION=global` (`gemini-embedding-2`, `gemini-3.8-flash`, `gemini-4-argon`, `gemini-3.1-flash-image`); BigQuery (`psearch_catalog_us.medicamentos_staged` + `psearch_dataset`), Native Firestore `(default)`, GCS, Cloud Build + Artifact Registry (`cloud-run-source-deploy`). `enrichment-job` (`Batch design (not deployed)`, `[ASSUMED RUNTIME / VERIFIED CODE]`) and `cloud-obs` Trace instrumentation (`[VERIFIED: Logging & Monitoring / ASSUMED: App Trace]`, `SPANNER_DISABLE_BUILTIN_METRICS=true`, app uninstrumented) are explicitly labeled. Synchronous `/api/search` steps `1..9` match `Controller.Search` in `handlers.go`.
+    - **(3) Safety & external dependencies:** Zero project IDs (`riojucu`, `scion-hub`), project numbers, `.run.app` URLs, `.iam.gserviceaccount.com` emails, tokens, or secrets; only external links are Google Fonts (`fonts.googleapis.com` / `fonts.gstatic.com`) with full system font fallbacks.
+    - **(4) Inline JS & XSS check:** Inline `<script>` parses cleanly via `node --check`; zero `eval`, `new Function`, remote script loads, or query-param reflection (`location.search` / `URLSearchParams`), and all dynamic labels use `.textContent`. Issues: none.
+
+
 
 
 
