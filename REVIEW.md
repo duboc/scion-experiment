@@ -491,6 +491,18 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
     - **(3) Safety & external dependencies:** Zero occurrences of the real project ID pattern, project numbers, `.run.app` URLs, `.iam.gserviceaccount.com` emails, tokens, or secrets; only external links are Google Fonts (`fonts.googleapis.com` / `fonts.gstatic.com`) with full system font fallbacks.
     - **(4) Inline JS & XSS check:** Inline `<script>` parses cleanly via `node --check`; zero `eval`, `new Function`, remote script loads, or query-param reflection (`location.search` / `URLSearchParams`), and all dynamic labels use `.textContent`. Issues: none.
 
+## #52 Redaction of Real GCP Project Identifiers from Tracked Files & Public Endpoints (`3eb8d7a`, `28f121a`)
+- **Date:** 2026-11-05
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), isolated `/tmp/review-52` archive & detached worktree (removed)
+- **Status:** PASS (APPROVED)
+- **Checks:**
+    - `go vet ./...` and `go test -race -count=1 ./...` in `src/psearch/serving` (including with `FORBIDDEN_ID_PATTERN` set to the real project ID, project number, and service-account email regex): PASS (`TestTrackedSourceContainsNoForbiddenIDPattern`, `TestStorefrontRepoBadgeRedaction`, `TestArchitectureDiagramRoute`, `TestConfigProjectIDDefaultEmptyAndSpannerValidation`, `TestSpannerModeRequiresProjectIDAndSeedUsesConfiguredProject`, `TestHealthAndInfoEndpoints`).
+    - **(1) Repo-wide `git grep` & automated `FORBIDDEN_ID_PATTERN` gate:** `git grep` at `28f121a` returns 0 tracked matches for the real GCP project ID, project number, or service-account emails across all tracked files (`Dockerfile`, `README.md`, `REVIEW.md`, playbooks, migrations, source, and tests).
+    - **(2) `/api/info` & storefront badge redaction (`handlers.go`, `routes.go`):** `GET /api/info` sets `"sandbox"` to `c.config.Environment` (defaulting to `"production"`) instead of `c.config.ProjectID`, and the storefront header badge (`data-testid="repo-badge"`) displays `"Repo: duboc/scion-experiment"` with no `Sandbox: <id>` label.
+    - **(3) `config.go` empty `ProjectID` default & fail-fast Spanner validation:** `ProjectID` defaults to `""` (`PROJECT_ID` -> `GCP_SANDBOX_PROJECT` -> `CLOUDSDK_CORE_PROJECT` -> `""`); `Config.Validate()` and `NewSpannerService` fail fast only when `USE_MEMORY_STORE=false` and `ProjectID` is empty, while memory mode and tests run without `PROJECT_ID`.
+    - **(4) `catalog_seed.go` & `Dockerfile`:** `DefaultSeedProductsForProject` builds `projects/<projectID>/locations/global/...` from the configured project ID (falling back to `"PROJECT_ID"` when unset), and `Dockerfile` removes `ENV PROJECT_ID=...` while preserving `PORT`, `ENVIRONMENT`, `REGION`, `SPANNER_INSTANCE_ID`, and `SPANNER_DATABASE_ID`. Issues: none.
+
+
 
 
 
