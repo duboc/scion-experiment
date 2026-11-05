@@ -502,6 +502,25 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
     - **(3) `config.go` empty `ProjectID` default & fail-fast Spanner validation:** `ProjectID` defaults to `""` (`PROJECT_ID` -> `GCP_SANDBOX_PROJECT` -> `CLOUDSDK_CORE_PROJECT` -> `""`); `Config.Validate()` and `NewSpannerService` fail fast only when `USE_MEMORY_STORE=false` and `ProjectID` is empty, while memory mode and tests run without `PROJECT_ID`.
     - **(4) `catalog_seed.go` & `Dockerfile`:** `DefaultSeedProductsForProject` builds `projects/<projectID>/locations/global/...` from the configured project ID (falling back to `"PROJECT_ID"` when unset), and `Dockerfile` removes `ENV PROJECT_ID=...` while preserving `PORT`, `ENVIRONMENT`, `REGION`, `SPANNER_INSTANCE_ID`, and `SPANNER_DATABASE_ID`. Issues: none.
 
+## #53 Removal of Demo Theme Picker from Embedded Storefront (`ed578f3`)
+- **Date:** 2026-11-05
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), isolated `/tmp/review-53-54` worktree (removed)
+- **Status:** PASS (APPROVED)
+- **Checks:**
+    - `go vet ./...` and `go test -race -count=1 ./...` in `src/psearch/serving`: PASS (`internal/api`, `internal/config`, `internal/services` incl. `TestStorefrontDefaultDarkThemeOnly`, `TestStorefrontInlineJSParses`, `TestArchitectureDiagramRoute`, `TestStorefrontRepoBadgeRedaction`, and all existing storefront & API tests).
+    - **(1) Complete removal of club/country theme picker & JS/CSS:** Zero occurrences of `theme-select`, `theme-picker`, `theme-swatch`, `data-theme`, `CLUB_THEMES`, `applyClubTheme`, `initClubTheme`, `THEME_STORAGE_KEY`, or `params.get('theme')` remain in `routes.go`; any stale `psearch_storefront_theme` key in browser `localStorage` is ignored harmlessly.
+    - **(2) Default dark `:root` palette, `:focus-visible`, `#52` badge & `GET /diagram` preserved:** `:root` preserves the exact default dark palette (`--bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f8fafc; --muted: #94a3b8; --green: #22c55e; --btn-text: #0f172a; --border: #334155; --chip-bg: #0c4a6e; --chip-text: #e0f2fe; --oos: #f87171;`), `:focus-visible` outlines remain on all interactive elements, the `#52` header badge (`Repo: duboc/scion-experiment`) and `GET /diagram` are untouched, and inline JS parses cleanly. Issues: none.
+
+## #54 Complete Feature Matrix & Documentation Update (`fdcfdc3`, `e7b5015`)
+- **Date:** 2026-11-05
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), isolated `/tmp/review-53-54` worktree (removed)
+- **Status:** PASS (APPROVED)
+- **Checks:**
+    - **(1) Complete feature matrix & endpoint/parameter accuracy (`README.md`, `docs/USAGE.md`, `src/application/ui/README.md`):** The 29-row feature matrix in `README.md:62-97` accurately covers all active capabilities across Issues `#1`–`#48`, `#51`–`#52`, and `#54` with valid endpoints, parameters, migrations (`011`–`027`), and resolving ADR links (`ADR-001`–`ADR-016`).
+    - **(2) No removed theme references, `/diagram` documented & no hardcoded revision:** Zero references to the removed `#49`/`#50` club/country themes appear in `README.md`, `docs/USAGE.md`, or `src/application/ui/README.md`; `GET /diagram` (`#51`) and `#52` (`sandbox` = environment name, `PROJECT_ID` fail-fast in Spanner mode, `FORBIDDEN_ID_PATTERN`, and `Repo: duboc/scion-experiment` badge) are documented; `DEPLOYMENT.md` is referenced instead of hardcoding a Cloud Run revision string.
+    - **(3) Link resolution, ASD-STE100 sentence length & `FORBIDDEN_ID_PATTERN` gate:** All relative markdown links resolve, ASD-STE100 sentence length limits (`<= 20` procedural / `<= 25` descriptive) pass across all 3 updated files, and `FORBIDDEN_ID_PATTERN` test passes with 0 matches across the repository. Issues: none.
+
+
 
 
 
