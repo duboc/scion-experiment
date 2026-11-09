@@ -4,8 +4,11 @@ Run: python3 -m unittest discover -s docs/scion/scripts/tests -v
 """
 import importlib.util
 import json
+import os
 import pathlib
+import sqlite3
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -188,6 +191,91 @@ class CeilingTest(unittest.TestCase):
         self.assertTrue(lc.COMPACT_INSTRUCTIONS["lead"].startswith("Keep only what the lead needs to continue: "))
         self.assertTrue(lc.COMPACT_INSTRUCTIONS["deployer"].endswith(
             "Drop everything else: DEPLOYMENT.md and the GitHub issues are the record."))
+
+
+GH_JSON_TWO_ISSUES = json.dumps([
+    {"number": 55, "title": "Add facet X", "createdAt": "2026-11-09T09:00:00Z", "updatedAt": "2026-11-09T11:30:00Z",
+     "comments": [{"createdAt": "2026-11-09T10:00:00Z", "body": "plan"},
+                  {"createdAt": "2026-11-09T11:30:00Z", "body": "deployed"}]},
+    {"number": 56, "title": "Fix Y", "createdAt": "2026-11-09T11:00:00Z", "updatedAt": "2026-11-09T11:00:00Z",
+     "comments": []},
+])
+
+
+def make_hub_db(path):
+    """Minimal hub.db with the columns the controller reads (values in the Hub's Go time format)."""
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE projects (id TEXT, slug TEXT);
+        CREATE TABLE agents (id TEXT, project_id TEXT, name TEXT, slug TEXT, activity TEXT, deleted_at TEXT);
+        CREATE TABLE messages (id TEXT, project_id TEXT, sender TEXT, recipient TEXT, msg TEXT, created TEXT);
+        INSERT INTO projects VALUES ('p1', 'psearch'), ('p2', 'psearch-eval');
+        INSERT INTO agents VALUES ('a1', 'p1', 'lead', 'lead', 'stalled', NULL),
+                                  ('a2', 'p1', 'backend', 'backend', 'completed', NULL),
+                                  ('a3', 'p1', 'old-worker', 'old-worker', 'working', '2026-10-01 00:00:00 +0000 UTC'),
+                                  ('a4', 'p2', 'eval-lead', 'eval-lead', 'working', NULL);
+        INSERT INTO messages VALUES
+          ('m0', 'p1', 'agent:lead', 'agent:backend', 'yesterday', '2026-11-08 22:00:00.5 +0000 UTC m=+10.0'),
+          ('m2', 'p1', 'agent:backend', 'agent:lead', 'backend -> lead: DONE', '2026-11-09 10:20:00 +0000 UTC'),
+          ('m1', 'p1', 'agent:lead', 'agent:backend', 'lead -> backend: #55',
+           '2026-11-09 10:00:00.123456789 +0000 UTC m=+1979146.354969246'),
+          ('m3', 'p2', 'agent:eval-lead', 'agent:factory-analyst', 'other project', '2026-11-09 10:30:00 +0000 UTC');
+    """)
+    conn.commit()
+    conn.close()
+
+
+class ReadersTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = os.path.join(self.tmp.name, "hub.db")
+        make_hub_db(self.db)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_read_hub_from_fixture_db(self):
+        snap = lc.read_hub(self.db, "psearch", since=datetime(2026, 11, 9, tzinfo=UTC))
+        self.assertEqual(snap.project_id, "p1")
+        self.assertEqual(snap.activity, {"lead": "stalled", "backend": "completed"})
+        self.assertEqual([m.sender for m in snap.messages], ["agent:lead", "agent:backend"])
+        self.assertEqual(snap.messages[0].created_at, datetime(2026, 11, 9, 10, 0, 0, 123456, tzinfo=UTC))
+        self.assertEqual(snap.messages[1].body, "backend -> lead: DONE")
+
+    def test_read_hub_missing_db_raises_signal_error(self):
+        with self.assertRaises(lc.SignalError):
+            lc.read_hub(os.path.join(self.tmp.name, "nonexistent.db"), "psearch", since=NOW)
+
+    def test_read_hub_unknown_project_raises_signal_error(self):
+        with self.assertRaises(lc.SignalError):
+            lc.read_hub(self.db, "nope", since=NOW)
+
+    def test_parse_issues_last_comment(self):
+        issues = lc.parse_issues(GH_JSON_TWO_ISSUES)
+        self.assertEqual([i.number for i in issues], [55, 56])
+        self.assertEqual(issues[0].last_comment_at, datetime(2026, 11, 9, 11, 30, tzinfo=UTC))
+        self.assertEqual(issues[0].updated_at, datetime(2026, 11, 9, 11, 30, tzinfo=UTC))
+        self.assertIsNone(issues[1].last_comment_at)
+
+    def test_parse_issues_invalid_json_raises(self):
+        with self.assertRaises(lc.SignalError):
+            lc.parse_issues("HTTP 403: API rate limit exceeded")
+        with self.assertRaises(lc.SignalError):
+            lc.parse_issues('{"message": "Bad credentials"}')
+
+    def test_read_issues_command_and_error(self):
+        calls = []
+
+        def ok_runner(argv, timeout):
+            calls.append(argv)
+            return 0, GH_JSON_TWO_ISSUES
+
+        self.assertEqual(len(lc.read_issues(ok_runner, "owner/repo")), 2)
+        self.assertEqual(calls[0], ["docker", "exec", "-u", "scion", "psearch--lead", "gh", "issue", "list",
+                                    "-R", "owner/repo", "--state", "open", "--label", "psearch", "--json",
+                                    "number,title,createdAt,updatedAt,comments", "--limit", "50"])
+        with self.assertRaises(lc.SignalError):
+            lc.read_issues(lambda argv, timeout: (1, ""), "owner/repo")
 
 
 if __name__ == "__main__":

@@ -15,7 +15,9 @@ Dry-run by default. Stdlib only, single file: docs/scion/scripts/run-on-hub.sh s
 from __future__ import annotations
 
 import json
+import os
 import re
+import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -194,3 +196,100 @@ def compact(run: Runner, container: str, role: str, since: datetime,
         if done is not None and done > since:
             return True
     return False
+
+
+# ---------------------------------------------------------------------------
+# Hub and GitHub readers
+# ---------------------------------------------------------------------------
+LEAD_CONTAINER = "psearch--lead"
+
+
+class SignalError(Exception):
+    """A signal source (hub.db, gh, transcript, pane, Hub API) could not be read."""
+
+
+@dataclass
+class Message:
+    sender: str
+    recipient: str
+    body: str
+    created_at: datetime
+
+
+@dataclass
+class Issue:
+    number: int
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    last_comment_at: datetime | None
+
+
+@dataclass
+class HubSnapshot:
+    project_id: str
+    activity: dict[str, str]
+    messages: list[Message]
+
+
+def read_hub(db_path: str, project_slug: str, since: datetime) -> HubSnapshot:
+    """Agent activity and the project's messages created at or after `since`, read-only."""
+    if not os.path.exists(db_path):
+        raise SignalError(f"hub.db not found: {db_path}")
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            row = conn.execute("SELECT id FROM projects WHERE slug = ?", (project_slug,)).fetchone()
+            if not row:
+                raise SignalError(f"unknown project slug: {project_slug}")
+            project_id = row[0]
+            activity = {
+                name: act or ""
+                for name, act in conn.execute(
+                    "SELECT name, activity FROM agents WHERE project_id = ? AND deleted_at IS NULL", (project_id,))
+            }
+            rows = conn.execute(
+                "SELECT sender, recipient, msg, created FROM messages WHERE project_id = ? AND substr(created, 1, 10) >= ?",
+                (project_id, since.strftime("%Y-%m-%d"))).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error as err:
+        raise SignalError(f"hub.db read failed: {err}") from err
+    messages = []
+    for sender, recipient, body, created in rows:
+        created_at = parse_hub_time(created)
+        if created_at is not None and created_at >= since:
+            messages.append(Message(sender or "", recipient or "", body or "", created_at))
+    messages.sort(key=lambda m: m.created_at)
+    return HubSnapshot(project_id, activity, messages)
+
+
+def parse_issues(gh_json: str) -> list[Issue]:
+    """Parse `gh issue list --json number,title,createdAt,updatedAt,comments` output."""
+    try:
+        items = json.loads(gh_json)
+    except (TypeError, ValueError) as err:
+        raise SignalError(f"gh output is not JSON: {str(gh_json)[:120]!r}") from err
+    if not isinstance(items, list):
+        raise SignalError(f"gh output is not a list: {str(gh_json)[:120]!r}")
+    issues = []
+    for item in items:
+        created_at = parse_hub_time(item.get("createdAt")) if isinstance(item, dict) else None
+        updated_at = parse_hub_time(item.get("updatedAt")) if isinstance(item, dict) else None
+        if created_at is None or updated_at is None or not isinstance(item.get("number"), int):
+            raise SignalError(f"unexpected gh issue item: {str(item)[:120]!r}")
+        comment_times = [parse_hub_time(c.get("createdAt")) for c in item.get("comments") or [] if isinstance(c, dict)]
+        comment_times = [t for t in comment_times if t is not None]
+        issues.append(Issue(item["number"], item.get("title") or "", created_at, updated_at,
+                            max(comment_times) if comment_times else None))
+    return issues
+
+
+def read_issues(run: Runner, repo: str, label: str = "psearch") -> list[Issue]:
+    """Open issues with `label`, read with the GitHub token already injected in the lead's container."""
+    rc, out = run(["docker", "exec", "-u", "scion", LEAD_CONTAINER, "gh", "issue", "list", "-R", repo, "--state",
+                   "open", "--label", label, "--json", "number,title,createdAt,updatedAt,comments", "--limit", "50"],
+                  60)
+    if rc != 0:
+        raise SignalError(f"gh issue list exited {rc}")
+    return parse_issues(out)
