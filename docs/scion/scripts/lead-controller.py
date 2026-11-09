@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Callable, List, Tuple
 
 # ---------------------------------------------------------------------------
 # Parsing and idle detection
@@ -105,3 +107,90 @@ def is_idle(activity: str | None, pane: str, last_event_at: datetime | None, now
     if pane != "idle" or last_event_at is None:
         return None
     return (now - last_event_at).total_seconds() > IDLE_MIN_AGE_S
+
+
+# ---------------------------------------------------------------------------
+# Context ceiling
+# ---------------------------------------------------------------------------
+CEILING_TOKENS = 200_000
+COMPACT_COOLDOWN_S = 1800
+HEARTBEAT_GUARD_S = 120
+TMUX_TARGET = "scion:agent"
+TRANSCRIPT_GLOB = "/home/scion/.claude/projects/-workspace/*.jsonl"
+COMPACT_POLL_S = 15
+COMPACT_WAIT_S = 420
+
+COMPACT_INSTRUCTIONS = {
+    "lead": (
+        "Keep only what the lead needs to continue: open or in-flight GitHub issues and their current step, "
+        "who you are waiting on and since when, standing PO rules and PO decisions not yet recorded on GitHub, "
+        "the commit-slot holder, and pending escalations. Drop everything else: GitHub issues, commits and "
+        "knowledge-plane/ are the record."
+    ),
+    "deployer": (
+        "Keep only what the deployer needs to continue: an in-progress deploy or migration and its current step, "
+        "the last deployed revision and rollback target, and pending live checks. Drop everything else: "
+        "DEPLOYMENT.md and the GitHub issues are the record."
+    ),
+}
+
+# run(argv, timeout_s) -> (returncode, stdout)
+Runner = Callable[[List[str], int], Tuple[int, str]]
+
+
+def read_pane(run: Runner, container: str) -> str:
+    """Last lines of the agent's tmux pane ('' when unreadable)."""
+    rc, out = run(["docker", "exec", "-u", "scion", container, "tmux", "capture-pane", "-p", "-t", TMUX_TARGET,
+                   "-S", "-20"], 30)
+    return out if rc == 0 else ""
+
+
+def read_transcript_lines(run: Runner, container: str, n: int = 400) -> list[str]:
+    """Tail of the newest Claude Code transcript in the container ([] when unreadable)."""
+    rc, out = run(["docker", "exec", container, "sh", "-c", f"ls -t {TRANSCRIPT_GLOB} | head -1"], 30)
+    path = out.strip() if rc == 0 else ""
+    if not path:
+        return []
+    rc, out = run(["docker", "exec", container, "tail", "-n", str(n), path], 120)
+    return out.splitlines() if rc == 0 else []
+
+
+def should_compact(st: TranscriptState, idle: bool | None, now: datetime, last_compact_at: datetime | None,
+                   next_heartbeat_at: datetime | None) -> tuple[bool, str]:
+    """Decide whether to type /compact now; fail-closed on anything unknown."""
+    ctx = st.last_context_tokens
+    if ctx is None:
+        return False, "no context reading"
+    if ctx <= CEILING_TOKENS:
+        return False, f"context {ctx} <= {CEILING_TOKENS}"
+    if idle is not True:
+        return False, "agent not idle" if idle is False else "idle state unknown"
+    latest = max((t for t in (last_compact_at, st.last_compact_at) if t is not None), default=None)
+    if latest is not None and (now - latest).total_seconds() < COMPACT_COOLDOWN_S:
+        return False, "compaction cooldown"
+    if next_heartbeat_at is None:
+        return False, "next heartbeat unknown"
+    if (next_heartbeat_at - now).total_seconds() < HEARTBEAT_GUARD_S:
+        return False, "heartbeat due"
+    return True, f"context {ctx} > {CEILING_TOKENS}"
+
+
+def compact(run: Runner, container: str, role: str, since: datetime,
+            sleep: Callable[[float], None] = time.sleep) -> bool:
+    """Type `/compact <role instructions>` into an idle pane and wait for a compact_boundary newer than `since`."""
+    if pane_state(read_pane(run, container)) != "idle":
+        return False
+    base = ["docker", "exec", "-u", "scion", container, "tmux", "send-keys", "-t", TMUX_TARGET]
+    rc, _ = run(base + ["-l", "/compact " + COMPACT_INSTRUCTIONS[role]], 30)
+    if rc != 0:
+        return False
+    sleep(2)
+    rc, _ = run(base + ["Enter"], 30)
+    if rc != 0:
+        return False
+    for _ in range(COMPACT_WAIT_S // COMPACT_POLL_S):
+        sleep(COMPACT_POLL_S)
+        done = parse_transcript(read_transcript_lines(run, container, 200)).last_compact_at
+        if done is not None and done > since:
+            return True
+    return False

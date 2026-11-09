@@ -107,5 +107,88 @@ class ParsingTest(unittest.TestCase):
         self.assertIsNone(lc.is_idle("completed", "idle", None, now))
 
 
+NOW = datetime(2026, 11, 9, 12, 7, tzinfo=UTC)
+
+
+def st(ctx, compact_at=None, last_event_at=None):
+    return lc.TranscriptState(last_event_at=last_event_at, last_assistant_at=last_event_at,
+                              last_context_tokens=ctx, last_compact_at=compact_at)
+
+
+class FakeRunner:
+    """Stands in for `docker exec ...`: records argv lists and answers tmux / ls / tail like the Hub would."""
+
+    def __init__(self, pane="", boundary_after_send=False, transcript=None):
+        self.pane = pane
+        self.boundary_after_send = boundary_after_send
+        self.transcript = list(transcript) if transcript is not None else [
+            assistant_line("2026-11-09T11:45:30.000Z", cache_write=250_000)]
+        self.calls = []
+
+    def __call__(self, argv, timeout):
+        self.calls.append(list(argv))
+        if "capture-pane" in argv:
+            return 0, self.pane
+        if "send-keys" in argv:
+            return 0, ""
+        if "sh" in argv and any("ls -t" in a for a in argv):
+            return 0, "/home/scion/.claude/projects/-workspace/session.jsonl\n"
+        if "tail" in argv:
+            lines = list(self.transcript)
+            if self.boundary_after_send and any("send-keys" in c for c in self.calls):
+                lines.append(compact_line("2026-11-09T12:08:10.000Z"))
+            return 0, "\n".join(lines) + "\n"
+        return 1, ""
+
+
+class CeilingTest(unittest.TestCase):
+    def test_should_compact_above_ceiling_when_idle(self):
+        ok, _ = lc.should_compact(st(ctx=200_001), True, NOW, None, NOW + timedelta(minutes=30))
+        self.assertTrue(ok)
+
+    def test_no_compact_at_or_below_ceiling(self):
+        self.assertFalse(lc.should_compact(st(ctx=200_000), True, NOW, None, NOW + timedelta(minutes=30))[0])
+
+    def test_no_compact_when_busy_or_unknown(self):
+        later = NOW + timedelta(minutes=30)
+        self.assertFalse(lc.should_compact(st(ctx=500_000), False, NOW, None, later)[0])
+        self.assertFalse(lc.should_compact(st(ctx=500_000), None, NOW, None, later)[0])
+
+    def test_no_compact_within_cooldown(self):
+        later = NOW + timedelta(minutes=30)
+        self.assertFalse(lc.should_compact(st(ctx=500_000), True, NOW, NOW - timedelta(minutes=20), later)[0])
+        # the transcript's own compact_boundary counts too
+        self.assertFalse(lc.should_compact(st(ctx=500_000, compact_at=NOW - timedelta(minutes=5)), True, NOW,
+                                           None, later)[0])
+
+    def test_no_compact_near_heartbeat(self):
+        self.assertFalse(lc.should_compact(st(ctx=500_000), True, NOW, None, NOW + timedelta(seconds=90))[0])
+
+    def test_no_compact_when_next_heartbeat_unknown(self):
+        self.assertFalse(lc.should_compact(st(ctx=500_000), True, NOW, None, None)[0])
+
+    def test_compact_aborts_if_pane_busy_at_send_time(self):
+        run = FakeRunner(pane="✻ Working… (esc to interrupt)")
+        self.assertFalse(lc.compact(run, "psearch--lead", "lead", NOW, sleep=lambda s: None))
+        self.assertFalse(any("send-keys" in c for c in run.calls))
+
+    def test_compact_sends_literal_text_then_enter(self):
+        run = FakeRunner(pane=PANE_AFTER_STEP0, boundary_after_send=True)
+        self.assertTrue(lc.compact(run, "psearch--lead", "lead", NOW, sleep=lambda s: None))
+        sends = [c for c in run.calls if "send-keys" in c]
+        self.assertEqual(sends[0][-2:], ["-l", "/compact " + lc.COMPACT_INSTRUCTIONS["lead"]])
+        self.assertEqual(sends[1][-1], "Enter")
+        self.assertIn("scion:agent", sends[0])
+
+    def test_compact_reports_failure_without_boundary(self):
+        run = FakeRunner(pane=PANE_AFTER_STEP0, boundary_after_send=False)
+        self.assertFalse(lc.compact(run, "psearch--lead", "lead", NOW, sleep=lambda s: None))
+
+    def test_compact_instructions_exact_text(self):
+        self.assertTrue(lc.COMPACT_INSTRUCTIONS["lead"].startswith("Keep only what the lead needs to continue: "))
+        self.assertTrue(lc.COMPACT_INSTRUCTIONS["deployer"].endswith(
+            "Drop everything else: DEPLOYMENT.md and the GitHub issues are the record."))
+
+
 if __name__ == "__main__":
     unittest.main()
