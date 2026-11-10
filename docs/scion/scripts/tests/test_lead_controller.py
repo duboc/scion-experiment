@@ -540,7 +540,7 @@ class MultiContainerFakeRunner:
             return 0, f"/home/scion/.claude/projects/-workspace/{container}.jsonl\n"
         if "tail" in argv:
             ctx = self.lead_ctx if container == "psearch--lead" else self.deployer_ctx
-            lines = [assistant_line("2026-11-09T10:30:00.000Z", cache_write=ctx - 2)]
+            lines = [assistant_line("2026-11-09T11:25:00.000Z", cache_write=ctx - 2)]
             if container in self.sent_compact:
                 lines.append(compact_line("2026-11-09T12:10:00.000Z"))
             return 0, "\n".join(lines) + "\n"
