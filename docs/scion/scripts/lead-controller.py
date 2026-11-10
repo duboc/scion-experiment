@@ -18,10 +18,12 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Callable, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Parsing and idle detection
@@ -496,3 +498,69 @@ def evaluate(snap: Snapshot, state: dict) -> tuple[list[Wake], dict]:
             wakes.append(Wake("r5", "r5", f"periodic check: {open_count} open issue(s), no lead turn for {mins} min"))
 
     return wakes, out
+
+
+# ---------------------------------------------------------------------------
+# Effects — wake message, run log and blind-signal alerts
+# ---------------------------------------------------------------------------
+SIGNAL_ALERT_THRESHOLD = 3
+
+ApiCall = Callable[[str, str, Optional[Dict]], Tuple[int, Dict]]
+
+
+def format_wake(wakes: list[Wake]) -> str:
+    """Single Hub message body carrying every wake reason from one evaluation."""
+    return GATE_PREFIX + "; ".join(w.reason for w in wakes) + ". Follow your wake-up checklist."
+
+
+def send_wake(api: ApiCall, project_id: str, text: str) -> bool:
+    status, _ = api("POST", f"/api/v1/projects/{project_id}/agents/lead/message", {"message": text})
+    return status in (200, 204)
+
+
+def record_signal_health(state: dict, failures: list[str]) -> tuple[dict, list[str]]:
+    """Track consecutive failures per signal; return `(new_state, newly_alerted)` when a counter reaches 3."""
+    out = dict(state) if isinstance(state, dict) else {}
+    prev = out.get("signal_failures")
+    counters = {str(k): int(v) for k, v in prev.items()} if isinstance(prev, dict) else {}
+    failed_set = {str(f) for f in failures}
+    alerted: list[str] = []
+    for key in list(counters.keys()):
+        if key not in failed_set:
+            counters[key] = 0
+    for key in sorted(failed_set):
+        counters[key] = counters.get(key, 0) + 1
+        if counters[key] == SIGNAL_ALERT_THRESHOLD:
+            alerted.append(key)
+    out["signal_failures"] = counters
+    return out, alerted
+
+
+def log_run(path: str, entry: dict) -> None:
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, sort_keys=True) + "\n")
+
+
+def _default_runner(argv: list[str], timeout: int) -> tuple[int, str]:
+    try:
+        res = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        return res.returncode, res.stdout
+    except Exception as err:  # noqa: BLE001
+        print(f"WARNING: command {argv[:3]} failed: {err}", file=sys.stderr)
+        return 1, ""
+
+
+def log_alert(event_type: str, payload: dict, severity: str, project_id: str,
+              run: Runner | None = None) -> None:
+    body = {"event": event_type, **payload}
+    print(f"[{severity}] {event_type}: {json.dumps(body, sort_keys=True)}")
+    if not project_id:
+        return
+    runner = run or _default_runner
+    rc, _ = runner([
+        "gcloud", "logging", "write", "scion-factory-alerts",
+        json.dumps(body), "--payload-type=json", f"--severity={severity}", f"--project={project_id}",
+    ], 15)
+    if rc != 0:
+        print(f"WARNING: gcloud logging write failed (code {rc})", file=sys.stderr)

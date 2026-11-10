@@ -461,5 +461,55 @@ class WakeRulesTest(unittest.TestCase):
         self.assertEqual(wakes[0].reason, "periodic check: 2 open issue(s), no lead turn for 65 min")
 
 
+class EffectsTest(unittest.TestCase):
+    def test_format_wake_prefix_and_reasons(self):
+        text = lc.format_wake([
+            lc.Wake("r1", "r1:56", 'new issue #56 "x" is open and has no plan from you yet'),
+            lc.Wake("r3", "r3:backend", "backend has not replied for 31 min to your message at 12:00Z"),
+        ])
+        self.assertTrue(text.startswith("GATE (automated, not the PO): new issue #56"))
+        self.assertIn("; backend has not replied", text)
+        self.assertTrue(text.endswith(". Follow your wake-up checklist."))
+
+    def test_send_wake_posts_to_lead_endpoint(self):
+        calls = []
+        ok = lc.send_wake(lambda m, p, b: (calls.append((m, p, b)) or (200, {})), "pid-1", "GATE ...")
+        self.assertTrue(ok)
+        self.assertEqual(calls, [("POST", "/api/v1/projects/pid-1/agents/lead/message", {"message": "GATE ..."})])
+        self.assertFalse(lc.send_wake(lambda m, p, b: (500, {"error": "down"}), "pid-1", "GATE ..."))
+
+    def test_signal_alert_fires_on_third_consecutive_failure_only(self):
+        s, a1 = lc.record_signal_health({}, ["gh"])
+        s, a2 = lc.record_signal_health(s, ["gh"])
+        s, a3 = lc.record_signal_health(s, ["gh"])
+        s, a4 = lc.record_signal_health(s, ["gh"])
+        self.assertEqual((a1, a2, a3, a4), ([], [], ["gh"], []))
+
+    def test_signal_counter_resets_on_success(self):
+        s, _ = lc.record_signal_health({}, ["gh"])
+        s, _ = lc.record_signal_health(s, [])
+        self.assertEqual(s["signal_failures"].get("gh", 0), 0)
+
+    def test_log_run_appends_json_lines(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = os.path.join(tmp, "lead-controller.log")
+            lc.log_run(p, {"result": "ok", "n": 1})
+            lc.log_run(p, {"result": "ok", "n": 2})
+            with open(p, encoding="utf-8") as f:
+                lines = [json.loads(line) for line in f]
+            self.assertEqual([x["n"] for x in lines], [1, 2])
+
+    def test_log_alert_noop_without_project_and_invokes_gcloud_with_project(self):
+        seen = []
+        lc.log_alert("SIGNAL_BLIND", {"signals": ["gh"]}, "ERROR", "", run=lambda a, t: (seen.append(a) or (0, "")))
+        self.assertEqual(seen, [])
+        lc.log_alert("SIGNAL_BLIND", {"signals": ["gh"]}, "ERROR", "my-hub-proj",
+                     run=lambda a, t: (seen.append(a) or (0, "")))
+        self.assertEqual(len(seen), 1)
+        self.assertIn("scion-factory-alerts", seen[0])
+        self.assertIn("--severity=ERROR", seen[0])
+        self.assertIn("--project=my-hub-proj", seen[0])
+
+
 if __name__ == "__main__":
     unittest.main()
