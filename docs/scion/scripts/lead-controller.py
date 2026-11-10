@@ -20,7 +20,7 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, List, Tuple
 
 # ---------------------------------------------------------------------------
@@ -293,3 +293,206 @@ def read_issues(run: Runner, repo: str, label: str = "psearch") -> list[Issue]:
     if rc != 0:
         raise SignalError(f"gh issue list exited {rc}")
     return parse_issues(out)
+
+
+# ---------------------------------------------------------------------------
+# Wake rules engine
+# ---------------------------------------------------------------------------
+GATE_PREFIX = "GATE (automated, not the PO): "
+TEAM = ("backend", "frontend", "reviewer", "deployer")
+RECENT_TURN_GUARD_S = 300
+R2_GRACE_S = 600
+R2_COOLDOWN_S = 1800
+R3_SILENCE_S = 1800
+R3_COOLDOWN_S = 1800
+R3_MAX_WAKES = 2
+R5_BASE_S = 3600
+R5_MAX_S = 14400
+
+
+@dataclass
+class Snapshot:
+    now: datetime
+    lead_idle: bool | None
+    lead_last_turn_at: datetime | None
+    issues: list[Issue] | None
+    messages: list[Message]
+    activity: dict[str, str]
+
+
+@dataclass
+class Wake:
+    rule: str
+    key: str
+    reason: str
+
+
+def _iso(ts: datetime) -> str:
+    return ts.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _is_ignored_message(body: str) -> bool:
+    stripped = (body or "").lstrip()
+    return stripped.startswith(GATE_PREFIX.strip()) or stripped.startswith("HEARTBEAT")
+
+
+def _clean_rule_state(state: dict) -> tuple[dict, bool]:
+    """Copy `state` (preserving non-rule keys like `signal_failures`) and validate rule fields."""
+    base = {k: v for k, v in (state.items() if isinstance(state, dict) else [])
+            if k not in ("initialized", "known_issues", "open_issue_count", "last_wake", "r3", "r5")}
+    if not isinstance(state, dict) or state.get("initialized") is not True:
+        return base, False
+    known = state.get("known_issues")
+    last_wake = state.get("last_wake")
+    r3 = state.get("r3")
+    r5 = state.get("r5")
+    if (not isinstance(known, list) or not all(isinstance(x, int) for x in known)
+            or not isinstance(last_wake, dict) or not isinstance(r3, dict) or not isinstance(r5, dict)):
+        return base, False
+    out = dict(base)
+    out["initialized"] = True
+    out["known_issues"] = list(known)
+    out["open_issue_count"] = int(state.get("open_issue_count") or 0)
+    out["last_wake"] = {str(k): str(v) for k, v in last_wake.items() if isinstance(v, str)}
+    out["r3"] = {
+        str(k): {"streak_start": str(v["streak_start"]), "wakes": int(v["wakes"])}
+        for k, v in r3.items()
+        if isinstance(v, dict) and isinstance(v.get("streak_start"), str) and isinstance(v.get("wakes"), int)
+    }
+    interval = int(r5.get("interval_s") or R5_BASE_S)
+    lw = r5.get("last_wake_at")
+    out["r5"] = {"interval_s": max(R5_BASE_S, min(interval, R5_MAX_S)),
+                 "last_wake_at": lw if isinstance(lw, str) else None}
+    return out, True
+
+
+def _cooldown_ok(last_wake: dict[str, str], key: str, now: datetime, cooldown_s: int) -> bool:
+    prev = parse_hub_time(last_wake.get(key))
+    return prev is None or (now - prev).total_seconds() >= cooldown_s
+
+
+def evaluate(snap: Snapshot, state: dict) -> tuple[list[Wake], dict]:
+    """Pure evaluation of R1, R2, R3 and R5 against `snap`, returning `(wakes, new_state)`."""
+    out, ok = _clean_rule_state(state)
+    if not ok:
+        if snap.issues is None:
+            out.update({"initialized": False, "known_issues": [], "open_issue_count": 0, "last_wake": {},
+                        "r3": {}, "r5": {"interval_s": R5_BASE_S, "last_wake_at": None}})
+            return [], out
+        out.update({
+            "initialized": True,
+            "known_issues": sorted({i.number for i in snap.issues}),
+            "open_issue_count": len(snap.issues),
+            "last_wake": {},
+            "r3": {},
+            "r5": {"interval_s": R5_BASE_S, "last_wake_at": None},
+        })
+        return [], out
+
+    if snap.issues is not None:
+        out["open_issue_count"] = len(snap.issues)
+    open_count = out["open_issue_count"]
+
+    msgs = [m for m in snap.messages if not _is_ignored_message(m.body)]
+
+    # Reset R5 backoff on any real message or issue update/comment newer than r5.last_wake_at; also clear
+    # R3 streaks when a worker has replied, even if the global guard suppresses waking on this tick.
+    r5_last = parse_hub_time(out["r5"]["last_wake_at"])
+    if r5_last is not None:
+        activity_times = [m.created_at for m in msgs]
+        for iss in snap.issues or []:
+            activity_times.append(iss.updated_at)
+            if iss.last_comment_at is not None:
+                activity_times.append(iss.last_comment_at)
+        if any(t > r5_last for t in activity_times):
+            out["r5"]["interval_s"] = R5_BASE_S
+    if open_count == 0:
+        out["r5"] = {"interval_s": R5_BASE_S, "last_wake_at": None}
+
+    unanswered: dict[str, datetime] = {}
+    for agent in TEAM:
+        replies = [m.created_at for m in msgs if m.sender == f"agent:{agent}" and m.recipient == "agent:lead"]
+        last_reply = max(replies) if replies else None
+        reqs = [m.created_at for m in msgs if m.sender == "agent:lead" and m.recipient == f"agent:{agent}"
+                and (last_reply is None or m.created_at > last_reply)]
+        if not reqs:
+            if last_reply is not None:
+                out["r3"].pop(agent, None)
+            continue
+        first_req = min(reqs)
+        existing = out["r3"].get(agent)
+        prev_start = parse_hub_time(existing["streak_start"]) if existing else None
+        if prev_start is None or (last_reply is not None and last_reply > prev_start):
+            out["r3"][agent] = {"streak_start": _iso(first_req), "wakes": 0}
+            unanswered[agent] = first_req
+        else:
+            start = min(prev_start, first_req)
+            out["r3"][agent]["streak_start"] = _iso(start)
+            unanswered[agent] = start
+
+    # Global guard: never wake while the lead is working or within 5 min after its last turn.
+    if snap.lead_idle is False:
+        return [], out
+    if snap.lead_last_turn_at is not None and (snap.now - snap.lead_last_turn_at).total_seconds() < RECENT_TURN_GUARD_S:
+        return [], out
+
+    wakes: list[Wake] = []
+    known_set = set(out["known_issues"])
+    new_numbers: set[int] = set()
+
+    # R1: New issue
+    if snap.issues is not None:
+        for iss in sorted(snap.issues, key=lambda i: i.number):
+            if iss.number not in known_set:
+                key = f"r1:{iss.number}"
+                known_set.add(iss.number)
+                new_numbers.add(iss.number)
+                out["last_wake"][key] = _iso(snap.now)
+                wakes.append(Wake("r1", key, f'new issue #{iss.number} "{iss.title}" is open and has no plan from you yet'))
+        out["known_issues"] = sorted(known_set)
+
+    # R2: Unattended activity on an already-known open issue
+    if snap.issues is not None and snap.lead_last_turn_at is not None:
+        cutoff = snap.lead_last_turn_at + timedelta(seconds=R2_GRACE_S)
+        for iss in sorted(snap.issues, key=lambda i: i.number):
+            if iss.number in new_numbers:
+                continue
+            latest = max(t for t in (iss.updated_at, iss.last_comment_at) if t is not None)
+            key = f"r2:{iss.number}"
+            r1_key = f"r1:{iss.number}"
+            if (latest > cutoff and latest <= snap.now
+                    and _cooldown_ok(out["last_wake"], key, snap.now, R2_COOLDOWN_S)
+                    and _cooldown_ok(out["last_wake"], r1_key, snap.now, R2_COOLDOWN_S)):
+                out["last_wake"][key] = _iso(snap.now)
+                wakes.append(Wake("r2", key,
+                                  f"issue #{iss.number} has activity since your last turn (latest at {latest.strftime('%H:%M')}Z)"))
+
+    # R3: Unanswered request to a non-working team agent
+    if open_count >= 1:
+        for agent in TEAM:
+            start = unanswered.get(agent)
+            entry = out["r3"].get(agent)
+            key = f"r3:{agent}"
+            if start is None or entry is None or snap.activity.get(agent) == "working":
+                continue
+            age_s = (snap.now - start).total_seconds()
+            if age_s > R3_SILENCE_S and entry["wakes"] < R3_MAX_WAKES and _cooldown_ok(out["last_wake"], key, snap.now, R3_COOLDOWN_S):
+                entry["wakes"] += 1
+                out["last_wake"][key] = _iso(snap.now)
+                wakes.append(Wake("r3", key,
+                                  f"{agent} has not replied for {int(age_s // 60)} min to your message at {start.strftime('%H:%M')}Z"))
+
+    # R5: Safety wake with exponential backoff (1h -> 2h -> 4h cap), only when R1-R3 found nothing this tick
+    if open_count >= 1 and not wakes:
+        interval_s = out["r5"]["interval_s"]
+        ref_candidates = [t for t in (snap.lead_last_turn_at, parse_hub_time(out["r5"]["last_wake_at"])) if t is not None]
+        ref = max(ref_candidates) if ref_candidates else None
+        elapsed_s = (snap.now - ref).total_seconds() if ref is not None else float(interval_s)
+        if elapsed_s >= interval_s:
+            mins = int(elapsed_s // 60)
+            out["r5"]["last_wake_at"] = _iso(snap.now)
+            out["r5"]["interval_s"] = min(interval_s * 2, R5_MAX_S)
+            out["last_wake"]["r5"] = _iso(snap.now)
+            wakes.append(Wake("r5", "r5", f"periodic check: {open_count} open issue(s), no lead turn for {mins} min"))
+
+    return wakes, out

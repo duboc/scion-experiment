@@ -278,5 +278,188 @@ class ReadersTest(unittest.TestCase):
             lc.read_issues(lambda argv, timeout: (1, ""), "owner/repo")
 
 
+T0 = datetime(2026, 11, 9, 12, 0, tzinfo=UTC)
+
+
+def issue(number, title="Issue", created_at=T0 - timedelta(hours=2), updated_at=None, last_comment_at=None):
+    return lc.Issue(number=number, title=title, created_at=created_at,
+                    updated_at=updated_at or last_comment_at or created_at, last_comment_at=last_comment_at)
+
+
+def msg(sender, recipient, at, body="work message"):
+    return lc.Message(sender=sender, recipient=recipient, body=body, created_at=at)
+
+
+def snap(now=T0 + timedelta(minutes=15), lead_idle=True, lead_last_turn_at=T0, issues=None, messages=None,
+         activity=None):
+    return lc.Snapshot(
+        now=now,
+        lead_idle=lead_idle,
+        lead_last_turn_at=lead_last_turn_at,
+        issues=[] if issues is None else issues,
+        messages=list(messages or []),
+        activity=dict(activity or {"lead": "stalled", "backend": "completed", "frontend": "completed",
+                                   "reviewer": "stalled", "deployer": "stalled"}),
+    )
+
+
+class WakeRulesTest(unittest.TestCase):
+    def test_first_run_records_issues_without_waking(self):
+        wakes, state = lc.evaluate(snap(issues=[issue(55)]), {})
+        self.assertEqual(wakes, [])
+        self.assertTrue(state["initialized"])
+        self.assertEqual(state["known_issues"], [55])
+        self.assertEqual(state["open_issue_count"], 1)
+
+    def test_missing_or_corrupt_state_behaves_as_first_run(self):
+        wakes, state = lc.evaluate(snap(issues=[issue(55)]), {"garbage": 1, "r3": "corrupt"})
+        self.assertEqual(wakes, [])
+        self.assertEqual(state["known_issues"], [55])
+
+    def test_first_run_with_unreadable_issues_stays_uninitialized(self):
+        s_unreadable = lc.Snapshot(now=T0 + timedelta(minutes=15), lead_idle=True, lead_last_turn_at=T0,
+                                   issues=None, messages=[], activity={})
+        wakes, state = lc.evaluate(s_unreadable, {})
+        self.assertEqual(wakes, [])
+        self.assertFalse(state["initialized"])
+        # Next run when gh recovers still treats existing open issues as baseline (no wake storm)
+        wakes2, state2 = lc.evaluate(snap(issues=[issue(55), issue(56)]), state)
+        self.assertEqual(wakes2, [])
+        self.assertEqual(state2["known_issues"], [55, 56])
+
+    def test_r1_new_issue_wakes_once(self):
+        s1 = lc.evaluate(snap(issues=[issue(55)]), {})[1]
+        i56 = issue(56, title="Add vector cache", created_at=T0 + timedelta(minutes=12))
+        wakes, s2 = lc.evaluate(snap(now=T0 + timedelta(minutes=15), issues=[issue(55), i56]), s1)
+        self.assertEqual([w.key for w in wakes], ["r1:56"])
+        self.assertEqual(wakes[0].reason, 'new issue #56 "Add vector cache" is open and has no plan from you yet')
+        self.assertEqual(lc.evaluate(snap(now=T0 + timedelta(minutes=20), issues=[issue(55), i56]), s2)[0], [])
+
+    def test_r2_after_grace_wakes_then_cooldown(self):
+        s = lc.evaluate(snap(now=T0 - timedelta(minutes=5), lead_last_turn_at=T0 - timedelta(minutes=20),
+                             issues=[issue(55)]), {})[1]
+        commented = [issue(55, last_comment_at=T0 + timedelta(minutes=11))]
+        w1, s = lc.evaluate(snap(now=T0 + timedelta(minutes=15), lead_last_turn_at=T0, issues=commented), s)
+        self.assertEqual([w.key for w in w1], ["r2:55"])
+        self.assertIn("latest at 12:11Z", w1[0].reason)
+        w2, s = lc.evaluate(snap(now=T0 + timedelta(minutes=25), lead_last_turn_at=T0, issues=commented), s)
+        self.assertEqual(w2, [])
+        w3, s = lc.evaluate(snap(now=T0 + timedelta(minutes=46), lead_last_turn_at=T0, issues=commented), s)
+        self.assertEqual([w.key for w in w3], ["r2:55"])
+
+    def test_r2_within_grace_does_not_wake(self):
+        s = lc.evaluate(snap(now=T0 - timedelta(minutes=5), lead_last_turn_at=T0 - timedelta(minutes=20),
+                             issues=[issue(55)]), {})[1]
+        commented = [issue(55, last_comment_at=T0 + timedelta(minutes=9))]
+        wakes, _ = lc.evaluate(snap(now=T0 + timedelta(minutes=15), lead_last_turn_at=T0, issues=commented), s)
+        self.assertEqual(wakes, [])
+
+    def test_r3_unanswered_request_wakes_after_30_min(self):
+        s = lc.evaluate(snap(issues=[issue(55)]), {})[1]
+        m1 = msg("agent:lead", "agent:backend", T0)
+        wakes, _ = lc.evaluate(snap(now=T0 + timedelta(minutes=31), issues=[issue(55)], messages=[m1]), s)
+        self.assertEqual([w.key for w in wakes], ["r3:backend"])
+        self.assertEqual(wakes[0].reason, "backend has not replied for 31 min to your message at 12:00Z")
+
+    def test_r3_not_when_agent_working(self):
+        s = lc.evaluate(snap(issues=[issue(55)]), {})[1]
+        m1 = msg("agent:lead", "agent:backend", T0)
+        wakes, _ = lc.evaluate(snap(now=T0 + timedelta(minutes=31), issues=[issue(55)], messages=[m1],
+                                    activity={"backend": "working"}), s)
+        self.assertEqual(wakes, [])
+
+    def test_r3_stops_after_two_wakes_followups_do_not_reset(self):
+        s = lc.evaluate(snap(issues=[issue(55)]), {})[1]
+        m1 = msg("agent:lead", "agent:backend", T0)
+        w1, s = lc.evaluate(snap(now=T0 + timedelta(minutes=31), issues=[issue(55)], messages=[m1]), s)
+        self.assertEqual([w.key for w in w1], ["r3:backend"])
+        followup = msg("agent:lead", "agent:backend", T0 + timedelta(minutes=40), body="lead -> backend: status?")
+        w2, s = lc.evaluate(snap(now=T0 + timedelta(minutes=62), issues=[issue(55)], messages=[m1, followup]), s)
+        self.assertEqual([w.key for w in w2], ["r3:backend"])
+        w3, s = lc.evaluate(snap(now=T0 + timedelta(minutes=93), issues=[issue(55)], messages=[m1, followup]), s)
+        self.assertEqual([w.key for w in w3 if w.rule == "r3"], [])
+        self.assertEqual(s["r3"]["backend"]["wakes"], 2)
+
+    def test_r3_reply_ends_streak(self):
+        s = lc.evaluate(snap(issues=[issue(55)]), {})[1]
+        m1 = msg("agent:lead", "agent:backend", T0)
+        _, s = lc.evaluate(snap(now=T0 + timedelta(minutes=31), issues=[issue(55)], messages=[m1]), s)
+        reply = msg("agent:backend", "agent:lead", T0 + timedelta(minutes=35), body="backend -> lead: DONE")
+        wakes, s = lc.evaluate(snap(now=T0 + timedelta(minutes=65), lead_last_turn_at=T0 + timedelta(minutes=36),
+                                    issues=[issue(55)], messages=[m1, reply]), s)
+        self.assertEqual([w.key for w in wakes if w.rule == "r3"], [])
+        self.assertNotIn("backend", s["r3"])
+
+    def test_r5_backoff_1h_2h_4h_cap(self):
+        s = lc.evaluate(snap(now=T0, lead_last_turn_at=T0, issues=[issue(55)]), {})[1]
+        fired_hours = []
+        for hour in range(1, 13):
+            wakes, s = lc.evaluate(snap(now=T0 + timedelta(hours=hour), lead_last_turn_at=T0, issues=[issue(55)]), s)
+            if any(w.key == "r5" for w in wakes):
+                fired_hours.append(hour)
+        self.assertEqual(fired_hours, [1, 3, 7, 11])
+        self.assertEqual(s["r5"]["interval_s"], 14400)
+
+    def test_r5_resets_on_activity(self):
+        s = lc.evaluate(snap(now=T0, lead_last_turn_at=T0, issues=[issue(55)]), {})[1]
+        w1, s = lc.evaluate(snap(now=T0 + timedelta(hours=1), lead_last_turn_at=T0, issues=[issue(55)]), s)
+        self.assertEqual([w.key for w in w1], ["r5"])
+        self.assertEqual(s["r5"]["interval_s"], 7200)
+        act = msg("agent:backend", "agent:lead", T0 + timedelta(hours=1, minutes=10), body="backend -> lead: DONE")
+        _, s = lc.evaluate(snap(now=T0 + timedelta(hours=1, minutes=20),
+                                lead_last_turn_at=T0 + timedelta(hours=1, minutes=11),
+                                issues=[issue(55)], messages=[act]), s)
+        self.assertEqual(s["r5"]["interval_s"], 3600)
+
+    def test_r5_no_open_issues_no_wake(self):
+        s = lc.evaluate(snap(now=T0, lead_last_turn_at=T0, issues=[]), {})[1]
+        wakes, _ = lc.evaluate(snap(now=T0 + timedelta(hours=10), lead_last_turn_at=T0, issues=[]), s)
+        self.assertEqual(wakes, [])
+
+    def test_gate_messages_are_ignored(self):
+        s = lc.evaluate(snap(now=T0, lead_last_turn_at=T0, issues=[issue(55)]), {})[1]
+        _, s = lc.evaluate(snap(now=T0 + timedelta(hours=1), lead_last_turn_at=T0, issues=[issue(55)]), s)
+        self.assertEqual(s["r5"]["interval_s"], 7200)
+        gate_msg = msg("agent:backend", "agent:lead", T0 + timedelta(hours=1, minutes=5),
+                       body=lc.GATE_PREFIX + "synthetic")
+        req = msg("agent:lead", "agent:backend", T0 + timedelta(minutes=50))
+        wakes, s = lc.evaluate(snap(now=T0 + timedelta(hours=1, minutes=25), lead_last_turn_at=T0,
+                                    issues=[issue(55)], messages=[req, gate_msg]), s)
+        # gate_msg neither ended the R3 streak nor reset R5's interval
+        self.assertEqual([w.key for w in wakes], ["r3:backend"])
+        self.assertEqual(s["r5"]["interval_s"], 7200)
+
+    def test_heartbeat_messages_are_not_activity(self):
+        s = lc.evaluate(snap(now=T0, lead_last_turn_at=T0, issues=[issue(55)]), {})[1]
+        _, s = lc.evaluate(snap(now=T0 + timedelta(hours=1), lead_last_turn_at=T0, issues=[issue(55)]), s)
+        hb = msg("user:admin@example.com", "agent:lead", T0 + timedelta(hours=1, minutes=15),
+                 body="HEARTBEAT (every 15 min): 1) run scion list...")
+        _, s = lc.evaluate(snap(now=T0 + timedelta(hours=1, minutes=20), lead_last_turn_at=T0,
+                                issues=[issue(55)], messages=[hb]), s)
+        self.assertEqual(s["r5"]["interval_s"], 7200)
+
+    def test_no_wake_while_lead_working_or_recent_turn(self):
+        s = lc.evaluate(snap(issues=[issue(55)]), {})[1]
+        i56 = issue(56, created_at=T0 + timedelta(minutes=2))
+        w_busy, s_busy = lc.evaluate(snap(now=T0 + timedelta(minutes=15), lead_idle=False,
+                                          issues=[issue(55), i56]), s)
+        self.assertEqual(w_busy, [])
+        # And #56 was NOT swallowed while lead was busy: once idle, R1 still fires
+        w_after, _ = lc.evaluate(snap(now=T0 + timedelta(minutes=20), lead_idle=True,
+                                      issues=[issue(55), i56]), s_busy)
+        self.assertEqual([w.key for w in w_after], ["r1:56"])
+        w_recent, _ = lc.evaluate(snap(now=T0 + timedelta(minutes=4), lead_last_turn_at=T0,
+                                       issues=[issue(55), i56]), s)
+        self.assertEqual(w_recent, [])
+
+    def test_issues_unreadable_only_r5_runs(self):
+        s = lc.evaluate(snap(now=T0, lead_last_turn_at=T0, issues=[issue(55), issue(56)]), {})[1]
+        unreadable = lc.Snapshot(now=T0 + timedelta(hours=1, minutes=5), lead_idle=None, lead_last_turn_at=T0,
+                                 issues=None, messages=[], activity={})
+        wakes, _ = lc.evaluate(unreadable, s)
+        self.assertEqual([w.key for w in wakes], ["r5"])
+        self.assertEqual(wakes[0].reason, "periodic check: 2 open issue(s), no lead turn for 65 min")
+
+
 if __name__ == "__main__":
     unittest.main()
