@@ -716,6 +716,20 @@ class RunOnceAndCronTest(unittest.TestCase):
             self.assertNotIn("deployer_transcript", entry["failures"])
             self.assertEqual(entry["alerted"], [])
 
+    def test_paused_schedule_with_past_next_run_allows_compaction(self):
+        def paused_api(method, path, body=None):
+            if method == "GET" and path.endswith("/schedules"):
+                return 200, {"schedules": [{
+                    "name": "psearch-lead-heartbeat",
+                    "status": "paused",
+                    "nextRunAt": "2026-11-08T19:15:00Z",  # frozen in the past while paused
+                }]}
+            return self.deps.api(method, path, body)
+
+        deps = lc.Deps(run=self.fake, api=paused_api, now=self.deps.now, sleep=self.deps.sleep)
+        entry = lc.run_once(deps, self.cfg, False, False)
+        self.assertEqual(entry["would_compact"], ["lead"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -183,7 +183,7 @@ def should_compact(st: TranscriptState, idle: bool | None, now: datetime, last_c
         return False, "compaction cooldown"
     if next_heartbeat_at is None:
         return False, "next heartbeat unknown"
-    if (next_heartbeat_at - now).total_seconds() < HEARTBEAT_GUARD_S:
+    if -60 <= (next_heartbeat_at - now).total_seconds() < HEARTBEAT_GUARD_S:
         return False, "heartbeat due"
     return True, f"context {ctx} > {CEILING_TOKENS}"
 
@@ -618,6 +618,9 @@ def _save_state_file(path: str, state: dict) -> None:
         raise
 
 
+NO_UPCOMING_HEARTBEAT = datetime(9999, 12, 31, tzinfo=timezone.utc)
+
+
 def _next_heartbeat(api: ApiCall, project_id: str, project_slug: str) -> datetime | None:
     if not project_id:
         return None
@@ -630,8 +633,10 @@ def _next_heartbeat(api: ApiCall, project_id: str, project_slug: str) -> datetim
     want = f"{project_slug}-lead-heartbeat"
     for sched in schedules:
         if isinstance(sched, dict) and sched.get("name") == want:
+            if sched.get("status") and sched.get("status") != "active":
+                return NO_UPCOMING_HEARTBEAT
             return parse_hub_time(sched.get("nextRunAt"))
-    return None
+    return NO_UPCOMING_HEARTBEAT
 
 
 def run_once(deps: Deps, cfg: dict, apply_compact: bool, apply_wake: bool) -> dict:
