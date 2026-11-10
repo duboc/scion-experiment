@@ -70,6 +70,7 @@ Most of the work was not building the factory but keeping it from stopping. The 
 | Shared-workspace factory (this protocol, these templates) | running; templates here are the improved version of what the agents run |
 | Heartbeats, agent-status sync, Antigravity hook patch, sandbox setup | running and verified |
 | Watchdog daemon (`factory-watchdog.py`), backup cron (`backup-hub.sh`) | installed on Hub VM cron, running and verified |
+| Lead cost controller (`lead-controller.py`) | installed on Hub VM cron (`--apply-compact` live, activity gate in 24 h shadow dry-run before `--apply-wake`) |
 | End-to-End Telemetry (`setup-telemetry.sh`, `patch-sciontool-telemetry.sh`) | active and verified: 10/10 containers listening on 4317/4318, Cloud Logging, Cloud Monitoring, Cloud Trace, and Hub metrics API active |
 | Alerts & budgets (`setup-alerts-and-budgets.sh`) | Cloud Monitoring email alert policy and $150/mo billing budgets active |
 | Hub maintenance policy | set to `notify` in settings.yaml, verified across restart |
