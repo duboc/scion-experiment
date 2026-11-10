@@ -3,6 +3,7 @@
 Run: python3 -m unittest discover -s docs/scion/scripts/tests -v
 """
 import importlib.util
+import fcntl
 import json
 import os
 import pathlib
@@ -685,6 +686,35 @@ class RunOnceAndCronTest(unittest.TestCase):
         self.assertTrue(any("factory-watchdog.py" in l for l in lines))
         self.assertEqual(oct(os.stat(os.path.join(self.home, "lead-controller.py")).st_mode & 0o777), "0o700")
         self.assertEqual(oct(os.stat(os.path.join(self.home, "lead-controller.env")).st_mode & 0o777), "0o600")
+
+    def test_overlapping_run_returns_locked_without_touching_state(self):
+        self._seed_initialized_state(known=(55,))
+        lock_path = os.path.join(self.home, "lead-controller.lock")
+        with open(lock_path, "w", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                entry = lc.run_once(self.deps, self.cfg, True, True)
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        self.assertEqual(entry["result"], "locked")
+        self.assertEqual(self.fake.calls, [])
+        self.assertEqual(self.api_posts, [])
+        with open(self.cfg["state_path"], encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["known_issues"], [55])
+
+    def test_fresh_deployer_without_assistant_turn_does_not_alert_blind(self):
+        def runner_with_fresh_deployer(argv, timeout):
+            container = next((a for a in argv if a.startswith("psearch--")), "psearch--lead")
+            if container == "psearch--deployer" and "tail" in argv:
+                return 0, json.dumps({"type": "user", "timestamp": "2026-11-09T11:00:00.000Z",
+                                      "message": {"role": "user", "content": "Stand by as deployer"}}) + "\n"
+            return self.fake(argv, timeout)
+
+        deps = lc.Deps(run=runner_with_fresh_deployer, api=self.deps.api, now=self.deps.now, sleep=self.deps.sleep)
+        for _ in range(3):
+            entry = lc.run_once(deps, self.cfg, False, False)
+            self.assertNotIn("deployer_transcript", entry["failures"])
+            self.assertEqual(entry["alerted"], [])
 
 
 if __name__ == "__main__":

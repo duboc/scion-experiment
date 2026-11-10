@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import fcntl
 import hashlib
 import hmac
 import json
@@ -634,7 +635,7 @@ def _next_heartbeat(api: ApiCall, project_id: str, project_slug: str) -> datetim
 
 
 def run_once(deps: Deps, cfg: dict, apply_compact: bool, apply_wake: bool) -> dict:
-    """One controller pass: kill switch -> signals -> ceiling -> wake rules -> effects -> alerts -> state/log."""
+    """One controller pass: kill switch -> lock -> signals -> ceiling -> wake rules -> effects -> alerts -> state/log."""
     now = deps.now()
     disabled_path = os.path.join(cfg["home"], "lead-controller.disabled")
     if os.path.exists(disabled_path):
@@ -642,6 +643,22 @@ def run_once(deps: Deps, cfg: dict, apply_compact: bool, apply_wake: bool) -> di
         log_run(cfg["log_path"], entry)
         return entry
 
+    os.makedirs(cfg["home"], exist_ok=True)
+    lock_path = os.path.join(cfg["home"], "lead-controller.lock")
+    lock_file = open(lock_path, "w", encoding="utf-8")
+    try:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            entry = {"ts": _iso(now), "result": "locked"}
+            log_run(cfg["log_path"], entry)
+            return entry
+        return _run_once_locked(deps, cfg, apply_compact, apply_wake, now)
+    finally:
+        lock_file.close()
+
+
+def _run_once_locked(deps: Deps, cfg: dict, apply_compact: bool, apply_wake: bool, now: datetime) -> dict:
     state = _load_state_file(cfg["state_path"])
     failures: list[str] = []
     project_slug = cfg["project_slug"]
@@ -668,7 +685,7 @@ def run_once(deps: Deps, cfg: dict, apply_compact: bool, apply_wake: bool) -> di
     for role in CLAUDE_ROLES:
         container = f"{project_slug}--{role}"
         st = parse_transcript(read_transcript_lines(deps.run, container, TRANSCRIPT_TAIL_LINES))
-        if st.last_assistant_at is None:
+        if st.last_event_at is None or (role == "lead" and st.last_assistant_at is None and st.last_compact_at is None):
             failures.append(f"{role}_transcript")
         pane = pane_state(read_pane(deps.run, container))
         if pane == "unknown":
@@ -720,6 +737,8 @@ def run_once(deps: Deps, cfg: dict, apply_compact: bool, apply_wake: bool) -> di
                 failures.append("wake_api")
                 next_state = dict(state)
         else:
+            # Dry-run advances rule state on purpose (shadow mode) so 24h logs show realistic single wakes,
+            # not the same R1/R2/R3 wake repeated every 5 minutes.
             would_wake = [w.key for w in wakes]
 
     next_state["last_compact"] = last_compact
