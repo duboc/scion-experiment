@@ -14,13 +14,21 @@ Dry-run by default. Stdlib only, single file: docs/scion/scripts/run-on-hub.sh s
 """
 from __future__ import annotations
 
+import argparse
+import base64
+import hashlib
+import hmac
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, List, Optional, Tuple
@@ -287,9 +295,9 @@ def parse_issues(gh_json: str) -> list[Issue]:
     return issues
 
 
-def read_issues(run: Runner, repo: str, label: str = "psearch") -> list[Issue]:
+def read_issues(run: Runner, repo: str, label: str = "psearch", container: str = LEAD_CONTAINER) -> list[Issue]:
     """Open issues with `label`, read with the GitHub token already injected in the lead's container."""
-    rc, out = run(["docker", "exec", "-u", "scion", LEAD_CONTAINER, "gh", "issue", "list", "-R", repo, "--state",
+    rc, out = run(["docker", "exec", "-u", "scion", container, "gh", "issue", "list", "-R", repo, "--state",
                    "open", "--label", label, "--json", "number,title,createdAt,updatedAt,comments", "--limit", "50"],
                   60)
     if rc != 0:
@@ -564,3 +572,358 @@ def log_alert(event_type: str, payload: dict, severity: str, project_id: str,
     ], 15)
     if rc != 0:
         print(f"WARNING: gcloud logging write failed (code {rc})", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# CLI, run loop, kill switch and cron install
+# ---------------------------------------------------------------------------
+TRANSCRIPT_TAIL_LINES = 600
+HUB_MESSAGE_LOOKBACK_DAYS = 2
+CLAUDE_ROLES = ("lead", "deployer")
+
+
+@dataclass
+class Deps:
+    run: Runner
+    api: ApiCall
+    now: Callable[[], datetime]
+    sleep: Callable[[float], None]
+
+
+def _load_state_file(path: str) -> dict:
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            loaded = json.load(f)
+        return loaded if isinstance(loaded, dict) else {}
+    except Exception as err:  # noqa: BLE001
+        print(f"WARNING: failed to read {path}: {err}", file=sys.stderr)
+        return {}
+
+
+def _save_state_file(path: str, state: dict) -> None:
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=parent, prefix=".lead-controller-state.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2, sort_keys=True)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except Exception:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+def _next_heartbeat(api: ApiCall, project_id: str, project_slug: str) -> datetime | None:
+    if not project_id:
+        return None
+    status, body = api("GET", f"/api/v1/projects/{project_id}/schedules", None)
+    if status != 200:
+        return None
+    schedules = body.get("schedules", []) if isinstance(body, dict) else body
+    if not isinstance(schedules, list):
+        return None
+    want = f"{project_slug}-lead-heartbeat"
+    for sched in schedules:
+        if isinstance(sched, dict) and sched.get("name") == want:
+            return parse_hub_time(sched.get("nextRunAt"))
+    return None
+
+
+def run_once(deps: Deps, cfg: dict, apply_compact: bool, apply_wake: bool) -> dict:
+    """One controller pass: kill switch -> signals -> ceiling -> wake rules -> effects -> alerts -> state/log."""
+    now = deps.now()
+    disabled_path = os.path.join(cfg["home"], "lead-controller.disabled")
+    if os.path.exists(disabled_path):
+        entry = {"ts": _iso(now), "result": "disabled"}
+        log_run(cfg["log_path"], entry)
+        return entry
+
+    state = _load_state_file(cfg["state_path"])
+    failures: list[str] = []
+    project_slug = cfg["project_slug"]
+    hub_project_id = cfg.get("hub_project_id") or ""
+
+    try:
+        hub = read_hub(cfg["db_path"], project_slug, since=now - timedelta(days=HUB_MESSAGE_LOOKBACK_DAYS))
+        project_id, activity, messages = hub.project_id, hub.activity, hub.messages
+    except SignalError:
+        failures.append("hub")
+        project_id, activity, messages = "", {}, []
+
+    lead_container = f"{project_slug}--lead"
+    try:
+        if not cfg.get("repo"):
+            raise SignalError("GITHUB_REPO is empty")
+        issues: list[Issue] | None = read_issues(deps.run, cfg["repo"], label=project_slug, container=lead_container)
+    except SignalError:
+        failures.append("gh")
+        issues = None
+
+    transcripts: dict[str, TranscriptState] = {}
+    idles: dict[str, bool | None] = {}
+    for role in CLAUDE_ROLES:
+        container = f"{project_slug}--{role}"
+        st = parse_transcript(read_transcript_lines(deps.run, container, TRANSCRIPT_TAIL_LINES))
+        if st.last_assistant_at is None:
+            failures.append(f"{role}_transcript")
+        pane = pane_state(read_pane(deps.run, container))
+        if pane == "unknown":
+            failures.append(f"{role}_pane")
+        transcripts[role] = st
+        idles[role] = is_idle(activity.get(role), pane, st.last_event_at, now)
+
+    next_hb = _next_heartbeat(deps.api, project_id, project_slug)
+    last_compact = dict(state.get("last_compact")) if isinstance(state.get("last_compact"), dict) else {}
+    compacted: list[str] = []
+    would_compact: list[str] = []
+    for role in CLAUDE_ROLES:
+        container = f"{project_slug}--{role}"
+        prev_compact = parse_hub_time(last_compact.get(role))
+        want, _ = should_compact(transcripts[role], idles[role], now, prev_compact, next_hb)
+        if not want:
+            continue
+        if apply_compact:
+            if compact(deps.run, container, role, since=now, sleep=deps.sleep):
+                compacted.append(role)
+                now = deps.now()
+                last_compact[role] = _iso(now)
+                log_alert("LEAD_CONTROLLER_COMPACT", {
+                    "project": project_slug, "agent": role,
+                    "pre_context_tokens": transcripts[role].last_context_tokens,
+                }, "INFO", hub_project_id, run=deps.run)
+        else:
+            would_compact.append(role)
+
+    snap = Snapshot(
+        now=now,
+        lead_idle=idles["lead"],
+        lead_last_turn_at=transcripts["lead"].last_assistant_at,
+        issues=issues,
+        messages=messages,
+        activity=activity,
+    )
+    wakes, next_state = evaluate(snap, state)
+    woke: list[str] = []
+    would_wake: list[str] = []
+    if wakes:
+        if apply_wake:
+            if project_id and send_wake(deps.api, project_id, format_wake(wakes)):
+                woke = [w.key for w in wakes]
+                log_alert("LEAD_CONTROLLER_WAKE", {
+                    "project": project_slug, "keys": woke, "reasons": [w.reason for w in wakes],
+                }, "INFO", hub_project_id, run=deps.run)
+            else:
+                failures.append("wake_api")
+                next_state = dict(state)
+        else:
+            would_wake = [w.key for w in wakes]
+
+    next_state["last_compact"] = last_compact
+    next_state, alerted = record_signal_health(next_state, failures)
+    if alerted:
+        log_alert("LEAD_CONTROLLER_SIGNAL_BLIND", {
+            "project": project_slug, "signals": alerted, "consecutive_runs": SIGNAL_ALERT_THRESHOLD,
+        }, "ERROR", hub_project_id, run=deps.run)
+
+    _save_state_file(cfg["state_path"], next_state)
+    entry = {
+        "ts": _iso(now),
+        "result": "ok",
+        "apply_compact": apply_compact,
+        "apply_wake": apply_wake,
+        "lead_context_tokens": transcripts["lead"].last_context_tokens,
+        "deployer_context_tokens": transcripts["deployer"].last_context_tokens,
+        "lead_idle": idles["lead"],
+        "open_issues": len(issues) if issues is not None else None,
+        "compacted": compacted,
+        "would_compact": would_compact,
+        "woke": woke,
+        "would_wake": would_wake,
+        "failures": failures,
+        "alerted": alerted,
+    }
+    log_run(cfg["log_path"], entry)
+    return entry
+
+
+def load_env_file(path: str) -> None:
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            v = v.strip().strip("\"'")
+            if k and k not in os.environ:
+                os.environ[k] = v
+
+
+def _mint_admin_jwt(db_path: str, hub_env_path: str, admin_email: str) -> str:
+    if not os.path.exists(db_path) or not os.path.exists(hub_env_path):
+        raise SignalError("hub.db or hub.env missing")
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        user = None
+        if admin_email:
+            user = conn.execute("SELECT id, email, role FROM users WHERE email = ?", (admin_email,)).fetchone()
+        if not user:
+            user = conn.execute("SELECT id, email, role FROM users WHERE role = 'admin' ORDER BY created ASC LIMIT 1").fetchone()
+        if not user:
+            user = conn.execute("SELECT id, email, role FROM users ORDER BY created ASC LIMIT 1").fetchone()
+        if not user:
+            raise SignalError("no user in hub.db")
+    finally:
+        conn.close()
+    secret = None
+    with open(hub_env_path, encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("SCION_SERVER_SESSION_SECRET="):
+                secret = line.split("=", 1)[1].strip()
+    if not secret:
+        raise SignalError("SCION_SERVER_SESSION_SECRET missing in hub.env")
+    key = hashlib.sha256(("scion-hub-signing-key:user_signing_key:" + secret).encode()).digest()
+
+    def b64(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+    now_ts = int(time.time())
+    claims = {
+        "iss": "scion-hub", "sub": user["id"], "aud": ["scion-hub-api"], "exp": now_ts + 300,
+        "nbf": now_ts - 10, "iat": now_ts, "uid": user["id"], "email": user["email"],
+        "name": user["email"], "role": user["role"], "type": "access", "client": "web",
+    }
+    signing_input = b64(json.dumps({"alg": "HS256", "typ": "JWT"}).encode()) + "." + b64(json.dumps(claims).encode())
+    sig = hmac.new(key, signing_input.encode(), hashlib.sha256).digest()
+    return signing_input + "." + b64(sig)
+
+
+def _make_hub_api(hub_url: str, db_path: str, hub_env_path: str, admin_email: str) -> ApiCall:
+    token_box: list[str] = []
+    base_url = hub_url.rstrip("/")
+
+    def call(method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
+        if not token_box:
+            try:
+                token_box.append(_mint_admin_jwt(db_path, hub_env_path, admin_email))
+            except Exception as err:  # noqa: BLE001
+                return 500, {"error": str(err)}
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(
+            base_url + path, data=data, method=method,
+            headers={"Authorization": f"Bearer {token_box[0]}", "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read().decode()
+                return resp.status, (json.loads(raw) if raw else {})
+        except urllib.error.HTTPError as err:
+            return err.code, {"error": err.read().decode()[:500]}
+        except Exception as err:  # noqa: BLE001
+            return 500, {"error": str(err)}
+
+    return call
+
+
+def _read_system_crontab() -> str:
+    res = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
+    return res.stdout if res.returncode == 0 else ""
+
+
+def _write_system_crontab(content: str) -> None:
+    subprocess.run(["crontab", "-"], input=content, text=True, check=True)
+
+
+def install_cron(flags: list[str], cfg: dict,
+                 get_crontab: Callable[[], str] = _read_system_crontab,
+                 set_crontab: Callable[[str], None] = _write_system_crontab) -> str:
+    """Copy script to `<home>/lead-controller.py` (0700), write env (0600) and register the 5-min cron entry."""
+    home = cfg["home"]
+    os.makedirs(home, exist_ok=True)
+    dst_script = os.path.join(home, "lead-controller.py")
+    src_script = os.path.abspath(__file__)
+    if os.path.realpath(src_script) != os.path.realpath(dst_script):
+        shutil.copy2(src_script, dst_script)
+    os.chmod(dst_script, 0o700)
+
+    cur_path = os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+    if "/snap/bin" not in cur_path.split(":"):
+        cur_path = f"/snap/bin:{cur_path}"
+    admin_email = cfg.get("admin_email") or ""
+    env_path = os.path.join(home, "lead-controller.env")
+    env_content = "\n".join([
+        "# Lead cost controller configuration",
+        f"HUB_PROJECT_ID={cfg.get('hub_project_id') or ''}",
+        f"GITHUB_REPO={cfg.get('repo') or ''}",
+        f"ADMIN_EMAIL={admin_email}",
+        f"BUILD_PROJECT={cfg.get('project_slug') or 'psearch'}",
+        f"PATH={cur_path}",
+        "",
+    ])
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.write(env_content)
+    os.chmod(env_path, 0o600)
+
+    flag_str = (" " + " ".join(flags)) if flags else ""
+    cron_log = os.path.join(home, "lead-controller.cron.log")
+    cron_line = f"*/5 * * * * /usr/bin/python3 {dst_script}{flag_str} >> {cron_log} 2>&1"
+    kept = [line for line in get_crontab().splitlines() if "lead-controller.py" not in line]
+    kept.append(cron_line)
+    set_crontab("\n".join(kept).strip() + "\n")
+    return cron_line
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Scion lead cost controller (context ceiling + activity gate)")
+    parser.add_argument("--apply-compact", action="store_true", help="Send /compact when context > 200k and idle")
+    parser.add_argument("--apply-wake", action="store_true", help="Send wake messages when R1-R3/R5 fire")
+    parser.add_argument("--install-cron", action="store_true", help="Install to ~/.scion and register 5-min cron")
+    args = parser.parse_args(argv)
+
+    home = os.path.expanduser(os.environ.get("SCION_HOME", "~/.scion"))
+    for env_name in ("lead-controller.env", "watchdog.env", "sync.env"):
+        load_env_file(os.path.join(home, env_name))
+
+    admin_email = os.environ.get("ADMIN_EMAIL") or os.environ.get("PO_EMAIL", "")
+    cfg = {
+        "home": home,
+        "db_path": os.path.join(home, "hub.db"),
+        "state_path": os.path.join(home, "lead-controller-state.json"),
+        "log_path": os.path.join(home, "lead-controller.log"),
+        "repo": os.environ.get("GITHUB_REPO", ""),
+        "project_slug": os.environ.get("BUILD_PROJECT", "psearch"),
+        "hub_project_id": os.environ.get("HUB_PROJECT_ID") or os.environ.get("HUB_PROJECT", ""),
+        "admin_email": admin_email,
+    }
+
+    if args.install_cron:
+        flags = []
+        if args.apply_compact:
+            flags.append("--apply-compact")
+        if args.apply_wake:
+            flags.append("--apply-wake")
+        line = install_cron(flags, cfg)
+        print(f"Registered lead-controller job in crontab:\n  {line}")
+        return 0
+
+    hub_url = os.environ.get("HUB_LOCAL_URL", "http://localhost:8080")
+    deps = Deps(
+        run=_default_runner,
+        api=_make_hub_api(hub_url, cfg["db_path"], os.path.join(home, "hub.env"), admin_email),
+        now=lambda: datetime.now(timezone.utc),
+        sleep=time.sleep,
+    )
+    entry = run_once(deps, cfg, apply_compact=args.apply_compact, apply_wake=args.apply_wake)
+    print(json.dumps(entry, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

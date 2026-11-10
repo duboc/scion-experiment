@@ -511,5 +511,181 @@ class EffectsTest(unittest.TestCase):
         self.assertIn("--project=my-hub-proj", seen[0])
 
 
+class MultiContainerFakeRunner:
+    """FakeRunner supporting lead + deployer containers, gh issue list, tmux and gcloud logging."""
+
+    def __init__(self, lead_ctx=250_000, deployer_ctx=40_000, lead_pane=PANE_AFTER_STEP0,
+                 deployer_pane=PANE_AFTER_STEP0, gh_out=GH_JSON_TWO_ISSUES, gh_rc=0):
+        self.lead_ctx = lead_ctx
+        self.deployer_ctx = deployer_ctx
+        self.panes = {"psearch--lead": lead_pane, "psearch--deployer": deployer_pane}
+        self.gh_out = gh_out
+        self.gh_rc = gh_rc
+        self.calls = []
+        self.sent_compact = set()
+
+    def __call__(self, argv, timeout):
+        self.calls.append(list(argv))
+        if argv and argv[0] == "gcloud":
+            return 0, ""
+        container = next((a for a in argv if a.startswith("psearch--")), "psearch--lead")
+        if "gh" in argv:
+            return self.gh_rc, self.gh_out
+        if "capture-pane" in argv:
+            return 0, self.panes[container]
+        if "send-keys" in argv:
+            self.sent_compact.add(container)
+            return 0, ""
+        if "sh" in argv and any("ls -t" in a for a in argv):
+            return 0, f"/home/scion/.claude/projects/-workspace/{container}.jsonl\n"
+        if "tail" in argv:
+            ctx = self.lead_ctx if container == "psearch--lead" else self.deployer_ctx
+            lines = [assistant_line("2026-11-09T10:30:00.000Z", cache_write=ctx - 2)]
+            if container in self.sent_compact:
+                lines.append(compact_line("2026-11-09T12:10:00.000Z"))
+            return 0, "\n".join(lines) + "\n"
+        return 1, ""
+
+
+class RunOnceAndCronTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = self.tmp.name
+        self.db_path = os.path.join(self.home, "hub.db")
+        make_hub_db(self.db_path)
+        self.cfg = {
+            "home": self.home,
+            "db_path": self.db_path,
+            "state_path": os.path.join(self.home, "lead-controller-state.json"),
+            "log_path": os.path.join(self.home, "lead-controller.log"),
+            "repo": "owner/repo",
+            "project_slug": "psearch",
+            "hub_project_id": "my-hub-proj",
+        }
+        self.fake = MultiContainerFakeRunner()
+        self.api_posts = []
+        self.schedule_status = 200
+        self.next_run_at = "2026-11-09T12:30:00Z"
+
+        def fake_api(method, path, body=None):
+            if method == "GET" and path.endswith("/schedules"):
+                if self.schedule_status != 200:
+                    return self.schedule_status, {"error": "boom"}
+                return 200, {"schedules": [{"name": "psearch-lead-heartbeat", "nextRunAt": self.next_run_at}]}
+            if method == "POST":
+                self.api_posts.append((path, body))
+                return 200, {"status": "delivered"}
+            return 404, {}
+
+        self.deps = lc.Deps(
+            run=self.fake,
+            api=fake_api,
+            now=lambda: datetime(2026, 11, 9, 12, 7, tzinfo=UTC),
+            sleep=lambda s: None,
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _seed_initialized_state(self, known=(55,)):
+        with open(self.cfg["state_path"], "w", encoding="utf-8") as f:
+            json.dump({
+                "initialized": True,
+                "known_issues": list(known),
+                "open_issue_count": len(known),
+                "last_wake": {},
+                "r3": {},
+                "r5": {"interval_s": 3600, "last_wake_at": None},
+            }, f)
+
+    def test_kill_switch_exits_without_reading(self):
+        open(os.path.join(self.home, "lead-controller.disabled"), "w", encoding="utf-8").close()
+        entry = lc.run_once(self.deps, self.cfg, True, True)
+        self.assertEqual(entry["result"], "disabled")
+        self.assertEqual(self.fake.calls, [])
+        self.assertEqual(self.api_posts, [])
+
+    def test_dry_run_never_types_or_messages(self):
+        self._seed_initialized_state(known=(55,))
+        entry = lc.run_once(self.deps, self.cfg, False, False)
+        self.assertIn("lead", entry["would_compact"])
+        self.assertIn("r1:56", entry["would_wake"])
+        self.assertFalse(any("send-keys" in c for c in self.fake.calls))
+        self.assertEqual(self.api_posts, [])
+
+    def test_apply_wake_sends_one_message_for_multiple_wakes(self):
+        # Add an unanswered >30m lead->reviewer request in hub.db alongside new issue #56
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("INSERT INTO agents VALUES ('a9', 'p1', 'reviewer', 'reviewer', 'stalled', NULL)")
+        conn.execute("INSERT INTO messages VALUES ('m9', 'p1', 'agent:lead', 'agent:reviewer', "
+                     "'lead -> reviewer: check #55', '2026-11-09 11:00:00 +0000 UTC')")
+        conn.commit()
+        conn.close()
+        self._seed_initialized_state(known=(55,))
+        entry = lc.run_once(self.deps, self.cfg, False, True)
+        self.assertEqual(entry["woke"], ["r1:56", "r3:reviewer"])
+        self.assertEqual(len(self.api_posts), 1)
+        body = self.api_posts[0][1]["message"]
+        self.assertIn("new issue #56", body)
+        self.assertIn("reviewer has not replied", body)
+
+    def test_apply_wake_failure_preserves_pre_eval_state_for_retry(self):
+        self._seed_initialized_state(known=(55,))
+        fail_deps = lc.Deps(run=self.fake, api=lambda m, p, b=None: (500, {"error": "down"}),
+                            now=self.deps.now, sleep=self.deps.sleep)
+        entry = lc.run_once(fail_deps, self.cfg, False, True)
+        self.assertEqual(entry["woke"], [])
+        self.assertIn("wake_api", entry["failures"])
+        with open(self.cfg["state_path"], encoding="utf-8") as f:
+            saved = json.load(f)
+        self.assertEqual(saved["known_issues"], [55])
+
+    def test_unreadable_schedule_blocks_compaction(self):
+        self.schedule_status = 500
+        entry = lc.run_once(self.deps, self.cfg, True, False)
+        self.assertEqual(entry["compacted"], [])
+        self.assertFalse(any("send-keys" in c for c in self.fake.calls))
+
+    def test_apply_compact_compacts_above_ceiling_and_logs_info_alert(self):
+        entry = lc.run_once(self.deps, self.cfg, True, False)
+        self.assertEqual(entry["compacted"], ["lead"])
+        self.assertTrue(any(c[0] == "gcloud" and "--severity=INFO" in c for c in self.fake.calls))
+
+    def test_three_blind_runs_emit_one_error_alert(self):
+        self.fake.gh_rc = 1
+        for i in range(4):
+            entry = lc.run_once(self.deps, self.cfg, False, False)
+            self.assertEqual(entry["alerted"], ["gh"] if i == 2 else [])
+        err_alerts = [c for c in self.fake.calls if c[0] == "gcloud" and "--severity=ERROR" in c]
+        self.assertEqual(len(err_alerts), 1)
+
+    def test_state_saved_atomically_with_0600(self):
+        lc.run_once(self.deps, self.cfg, False, False)
+        self.assertEqual(oct(os.stat(self.cfg["state_path"]).st_mode & 0o777), "0o600")
+
+    def test_install_cron_replaces_existing_line(self):
+        existing = "\n".join([
+            "15 4 * * * /home/scion/.scion/backup-hub.sh >> /home/scion/.scion/backup.log 2>&1",
+            "*/5 * * * * /usr/bin/python3 /home/scion/.scion/factory-watchdog.py --apply >> /home/scion/.scion/watchdog.log 2>&1",
+            "*/5 * * * * /usr/bin/python3 /home/scion/.scion/lead-controller.py >> /home/scion/.scion/lead-controller.cron.log 2>&1",
+        ]) + "\n"
+        installed = []
+        line = lc.install_cron(
+            ["--apply-compact"],
+            {**self.cfg, "admin_email": "po@example.com"},
+            get_crontab=lambda: existing,
+            set_crontab=installed.append,
+        )
+        self.assertTrue(line.endswith(
+            f"lead-controller.py --apply-compact >> {os.path.join(self.home, 'lead-controller.cron.log')} 2>&1"))
+        self.assertEqual(len(installed), 1)
+        lines = [l for l in installed[0].splitlines() if l.strip()]
+        self.assertEqual(len(lines), 3)
+        self.assertEqual(sum(1 for l in lines if "lead-controller.py" in l), 1)
+        self.assertTrue(any("factory-watchdog.py" in l for l in lines))
+        self.assertEqual(oct(os.stat(os.path.join(self.home, "lead-controller.py")).st_mode & 0o777), "0o700")
+        self.assertEqual(oct(os.stat(os.path.join(self.home, "lead-controller.env")).st_mode & 0o777), "0o600")
+
+
 if __name__ == "__main__":
     unittest.main()
