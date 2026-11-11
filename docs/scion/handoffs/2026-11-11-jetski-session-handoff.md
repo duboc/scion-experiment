@@ -50,6 +50,7 @@ Referência completa de design e critérios de aceite: [`docs/scion/specs/2026-1
 - [`docs/plans/2026-11-09-lead-cost-controller.md`](../../plans/2026-11-09-lead-cost-controller.md) (`622842e`) — Plano TDD de 8 tarefas (Tasks 1–7 concluídas; **Task 8 pendente**).
 - [`docs/scion/scripts/lead-controller.py`](../scripts/lead-controller.py) — Controller CLI (`--apply-compact`, `--apply-wake`, `--install-cron`, `flock`, checagem de `last_event_at` para deployer, `NO_UPCOMING_HEARTBEAT`).
 - [`docs/scion/scripts/tests/test_lead_controller.py`](../scripts/tests/test_lead_controller.py) — Suíte unitária com **58 testes** (`python3 -m unittest discover -s docs/scion/scripts/tests` passando em `0.068s` no `main`).
+- [`docs/scion/scripts/query-token-metrics.py`](../scripts/query-token-metrics.py) — Utilitário read-only local para consultar métricas diárias do Cloud Monitoring (`gen_ai.api.calls`, `scion.usage.tokens`) por agente/modelo na etapa de verificação de custo da Task 8.
 - [`docs/scion/operations-runbook.md`](../operations-runbook.md), [`docs/scion/scripts/README.md`](../scripts/README.md), [`docs/scion/README.md`](../README.md) (`2ff8fd1`) — Documentação operacional de Stage 1/2, kill-switch e rollback.
 
 ---
@@ -87,9 +88,14 @@ Referência: [`docs/plans/2026-11-09-lead-cost-controller.md`](../../plans/2026-
    - Atualizar cron na VM do Hub para `--install-cron --apply-compact --apply-wake`.
    - Atualizar schedule `psearch-lead-heartbeat` para `0 */4 * * *` (safety net de 4h) usando [`scion-admin.py`](../scripts/scion-admin.py).
 4. **Verificar metas de custo (Spec §7) em janela de 24h ociosa:**
-   - Confirmar no Cloud Monitoring / Cloud Logging: `<= 20` chamadas Opus no dia ocioso e `< 1M` tokens de `cache_write` (comparado a ~96 chamadas/dia e dezenas de milhões de tokens antes do controller).
+   - Rodar `python3 docs/scion/scripts/query-token-metrics.py --days 3` e confirmar no Cloud Monitoring / Cloud Logging: `<= 20` chamadas Opus no dia ocioso e `< 1M` tokens de `cache_write` (comparado a ~96 chamadas/dia e dezenas de milhões de tokens antes do controller).
 5. **Registrar lições aprendidas e fechar Task 8:**
    - Adicionar entrada final em `docs/scion/lessons-learned.md` (se aplicável ao runbook) e atualizar status no [`docs/scion/README.md`](../README.md).
+
+### Pré-requisitos ao abrir num clone limpo do Jetski Hub
+
+- **`docs/scion/config/factory.env` é git-ignored (`*.env`)** e não virá no clone do Jetski Hub. Antes de executar `run-on-hub.sh`, `query-token-metrics.py` ou comandos SSH, recrie `docs/scion/config/factory.env` a partir de [`docs/scion/config/factory.env.example`](../config/factory.env.example) (ou defina `FACTORY_ENV=/caminho/para/factory.env`) preenchendo ao menos: `HUB_PROJECT`, `HUB_ZONE`, `HUB_VM`, `HUB_OS_USER`, `GITHUB_REPO` e `PO_EMAIL`.
+- **Autenticação no ambiente do Jetski Hub:** `gcloud auth login` (ou ADC) com permissão de IAP SSH para `${HUB_VM}` e leitura no Cloud Monitoring/Logging de `${HUB_PROJECT}`.
 
 ### Comandos úteis (sem segredos; lê variáveis de `docs/scion/config/factory.env` local)
 
@@ -98,7 +104,7 @@ Referência: [`docs/plans/2026-11-09-lead-cost-controller.md`](../../plans/2026-
 python3 -m unittest discover -s docs/scion/scripts/tests -q
 
 # Validar também o guard de IDs/emails proibidos nos arquivos versionados:
-# (construa FORBIDDEN_ID_PATTERN a partir dos valores de docs/scion/config/factory.env)
+# (construa FORBIDDEN_ID_PATTERN a partir dos valores reais de docs/scion/config/factory.env)
 (cd src/psearch/serving && go test ./...)
 
 # 2. Inspecionar logs completos e duração do lead-controller na VM do Hub
@@ -107,8 +113,9 @@ gcloud compute ssh "${HUB_OS_USER}@${HUB_VM}" \
   --project "${HUB_PROJECT}" --zone "${HUB_ZONE}" \
   --command 'sudo -u scion bash -lc "wc -l ~/.scion/lead-controller.log; grep -E \"compacted|would_compact|would_wake|failures|locked\" ~/.scion/lead-controller.log | tail -n 40; tail -n 30 ~/.scion/lead-controller.cron.log"'
 
-# 3. Ver schedules do Scion na VM do Hub
-docs/scion/scripts/run-on-hub.sh docs/scion/scripts/scion-admin.py -- schedule list psearch
+# 3. Ver schedules do Scion na VM do Hub e métricas diárias no Cloud Monitoring
+docs/scion/scripts/run-on-hub.sh docs/scion/scripts/scion-admin.py schedule list --project psearch
+python3 docs/scion/scripts/query-token-metrics.py --days 3
 ```
 
 ---

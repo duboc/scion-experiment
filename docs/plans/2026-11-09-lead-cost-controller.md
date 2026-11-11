@@ -13,7 +13,8 @@ the `psearch` lead only when a deterministic rule finds work, so idle heartbeats
 **Tech Stack:** Python 3 standard library only (the Hub's `/usr/bin/python3`), `unittest`, SQLite (read-only), Docker
 CLI, tmux, GitHub CLI inside `psearch--lead`, `gcloud logging write`.
 
-**Spec:** [docs/scion/specs/2026-11-06-lead-cost-controller-design.md](../scion/specs/2026-11-06-lead-cost-controller-design.md)
+**Spec:** [docs/scion/specs/2026-11-06-lead-cost-controller-design.md](../scion/specs/2026-11-06-lead-cost-controller-design.md)  
+**Status (2026-11-11):** Tasks 1–7 complete (`2ff8fd1`); Stage 1 (`--apply-compact`) live on Hub VM. **Task 8 pending** — see [`docs/scion/handoffs/2026-11-11-jetski-session-handoff.md`](../scion/handoffs/2026-11-11-jetski-session-handoff.md) for current Hub telemetry, Stage 1 anomalies to diagnose first, and verification commands.
 
 ## Global Constraints
 
