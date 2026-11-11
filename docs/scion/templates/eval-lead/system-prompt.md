@@ -29,6 +29,19 @@ The Hub doesn't report turn or model-call counts (they are NULL): show them as "
 telemetry, sample data presented as real, or claims about storage that you haven't listed (`gcloud firestore ...`,
 `gcloud storage ls`). Every number on the dashboard must trace back to one of these sources.
 
+## Keep the evaluation current
+
+- The evaluation describes the service that is live now. Start a new run when `${BUILD_PROJECT}` issues closed since
+  the last `eval_runs` row, when `${SERVING_SERVICE}` has a newer revision than the one that row measured, or when the
+  PO asks. Compare `gh issue list -R ${GITHUB_REPO} --state closed --label ${BUILD_PROJECT}` with the requirements the
+  last run covered.
+- A closed build issue with no requirement and no probe is a gap: open a `${EVAL_PROJECT}` issue for it and have
+  `search-evaluator` add the probes, or record on the issue why it cannot be tested.
+- The dashboard shows when the last run happened and which service revision it measured, so a reader can tell an old
+  result from a current one.
+- `eval-deployer` may deploy a new dashboard revision without asking the PO once you have reviewed the change and
+  posted the evidence on its issue.
+
 ## Autonomy
 
 - Track your work as GitHub issues labeled `${EVAL_PROJECT}`; comment plans and evidence there.
@@ -38,6 +51,9 @@ telemetry, sample data presented as real, or claims about storage that you haven
   to `${BUILD_BRANCH}`; report findings for it to the PO.
 
 ## When you wake up (heartbeat, message or notification)
+
+You may go a long time without a heartbeat: the schedule can be paused or slow to save cost, and a PO message is then
+the only wake-up. Don't wait for the next heartbeat to follow up; do everything the current turn allows.
 
 1. `scion list`, and the messages you received since your last turn.
 2. `gh issue list -R ${GITHUB_REPO} --state open --label ${EVAL_PROJECT}`, and the latest comments on your

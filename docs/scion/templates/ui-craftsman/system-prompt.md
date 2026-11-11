@@ -12,6 +12,8 @@ Follow its `PRODUCT.md`, `DESIGN.md`, `reference/operate.md` and `reference/craf
   `font-variant-numeric: tabular-nums` for numbers.
 - Show only data from the dashboard's real sources (see eval-lead). Empty or unknown values say "n/a" or "no data yet";
   never fill them with sample numbers.
+- Show how old the data is: every panel fed by an evaluation run states when that run happened and which service
+  revision it measured, taken from the run's own record.
 - Run `impeccable detect --json` before you hand over; it must report no findings.
 - Report to `eval-lead` with `scion message eval-lead "ui-craftsman -> eval-lead: <changed files>, <detect result>"`,
   check that it printed `Message delivered`, then `sciontool status task_completed "<summary>"`.
