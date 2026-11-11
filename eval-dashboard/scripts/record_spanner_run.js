@@ -28,6 +28,10 @@ async function main() {
   });
   const db = spanner.instance(spannerInstance).database(spannerDatabase);
 
+  const reqJson = payload.requirements_json || {};
+  const rev = reqJson.service_revision || reqJson.revision || 'n/a';
+  const evalAt = reqJson.evaluated_at || new Date().toISOString();
+
   await db.runTransactionAsync(async (tx) => {
     const query = {
       sql: 'INSERT INTO eval_runs (run_id, git_commit, overall_score, ndcg_at_10, mrr_at_10, p50_ms, p95_ms, p99_ms, requirements_json, created_at) VALUES (@run_id, @commit, @score, @ndcg, @mrr, @p50, @p95, @p99, PARSE_JSON(@json), PENDING_COMMIT_TIMESTAMP())',
@@ -40,14 +44,14 @@ async function main() {
         p50: payload.p50_ms,
         p95: payload.p95_ms,
         p99: payload.p99_ms,
-        json: JSON.stringify(payload.requirements_json)
+        json: JSON.stringify(reqJson)
       }
     };
     await tx.runUpdate(query);
     await tx.commit();
   });
 
-  console.log(`[SUCCESS] Recorded 100% verified eval run '${payload.run_id}' into Spanner eval_runs (${projectId})`);
+  console.log(`[SUCCESS] Recorded verified eval run '${payload.run_id}' (revision='${rev}', git_commit='${payload.git_commit}', evaluated_at='${evalAt}') into Spanner eval_runs`);
 }
 
 main().catch(err => {
