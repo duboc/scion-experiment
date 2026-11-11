@@ -97,8 +97,14 @@ def parse_transcript(lines: list[str]) -> TranscriptState:
             )
             if ts:
                 st.last_assistant_at = ts
-        elif event.get("type") == "system" and event.get("subtype") == "compact_boundary" and ts:
-            st.last_compact_at = ts
+        elif event.get("type") == "system" and event.get("subtype") == "compact_boundary":
+            # A compaction replaces the context, and Claude Code writes no assistant event for it: the last
+            # assistant call before the boundary no longer describes the context. Use the boundary's own
+            # postTokens until the next turn (None, which blocks /compact, if the field is missing).
+            post = (event.get("compactMetadata") or {}).get("postTokens")
+            st.last_context_tokens = int(post) if isinstance(post, (int, float)) else None
+            if ts:
+                st.last_compact_at = ts
     return st
 
 
@@ -203,8 +209,29 @@ def compact(run: Runner, container: str, role: str, since: datetime,
         return False
     for _ in range(COMPACT_WAIT_S // COMPACT_POLL_S):
         sleep(COMPACT_POLL_S)
-        done = parse_transcript(read_transcript_lines(run, container, 200)).last_compact_at
+        lines = read_transcript_lines(run, container, 200)
+        done = parse_transcript(lines).last_compact_at
         if done is not None and done > since:
+            return True
+        if _compact_refused(lines, since):
+            return False
+    return False
+
+
+COMPACT_REFUSED_TEXT = "Not enough messages to compact"
+
+
+def _compact_refused(lines: list[str], since: datetime) -> bool:
+    """True when Claude Code answered a /compact typed after `since` with its local 'nothing to compact' reply."""
+    for line in lines:
+        if COMPACT_REFUSED_TEXT not in line:
+            continue
+        try:
+            event = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        ts = parse_hub_time(event.get("timestamp")) if isinstance(event, dict) else None
+        if ts is not None and ts > since:
             return True
     return False
 
@@ -698,28 +725,7 @@ def _run_once_locked(deps: Deps, cfg: dict, apply_compact: bool, apply_wake: boo
         transcripts[role] = st
         idles[role] = is_idle(activity.get(role), pane, st.last_event_at, now)
 
-    next_hb = _next_heartbeat(deps.api, project_id, project_slug)
-    last_compact = dict(state.get("last_compact")) if isinstance(state.get("last_compact"), dict) else {}
-    compacted: list[str] = []
-    would_compact: list[str] = []
-    for role in CLAUDE_ROLES:
-        container = f"{project_slug}--{role}"
-        prev_compact = parse_hub_time(last_compact.get(role))
-        want, _ = should_compact(transcripts[role], idles[role], now, prev_compact, next_hb)
-        if not want:
-            continue
-        if apply_compact:
-            if compact(deps.run, container, role, since=now, sleep=deps.sleep):
-                compacted.append(role)
-                now = deps.now()
-                last_compact[role] = _iso(now)
-                log_alert("LEAD_CONTROLLER_COMPACT", {
-                    "project": project_slug, "agent": role,
-                    "pre_context_tokens": transcripts[role].last_context_tokens,
-                }, "INFO", hub_project_id, run=deps.run)
-        else:
-            would_compact.append(role)
-
+    # Wake rules run before the ceiling: a /compact can hold the tick for minutes and must not delay the gate.
     snap = Snapshot(
         now=now,
         lead_idle=idles["lead"],
@@ -746,6 +752,38 @@ def _run_once_locked(deps: Deps, cfg: dict, apply_compact: bool, apply_wake: boo
             # not the same R1/R2/R3 wake repeated every 5 minutes.
             would_wake = [w.key for w in wakes]
 
+    # Persist the wake decisions now, so a tick killed during a long /compact cannot repeat a wake.
+    _save_state_file(cfg["state_path"], next_state)
+
+    next_hb = _next_heartbeat(deps.api, project_id, project_slug)
+    last_compact = dict(state.get("last_compact")) if isinstance(state.get("last_compact"), dict) else {}
+    compacted: list[str] = []
+    would_compact: list[str] = []
+    compact_failed: list[str] = []
+    for role in CLAUDE_ROLES:
+        container = f"{project_slug}--{role}"
+        prev_compact = parse_hub_time(last_compact.get(role))
+        want, _ = should_compact(transcripts[role], idles[role], now, prev_compact, next_hb)
+        if not want:
+            continue
+        if not apply_compact:
+            would_compact.append(role)
+            continue
+        if role == "lead" and woke:
+            continue  # a wake was just sent: the lead is about to start a turn, retry on a later tick
+        ok = compact(deps.run, container, role, since=now, sleep=deps.sleep)
+        # The cooldown starts at the attempt, successful or not, so a refused or slow /compact is not retyped
+        # on every tick.
+        last_compact[role] = _iso(deps.now())
+        payload = {"project": project_slug, "agent": role,
+                   "pre_context_tokens": transcripts[role].last_context_tokens}
+        if ok:
+            compacted.append(role)
+            log_alert("LEAD_CONTROLLER_COMPACT", payload, "INFO", hub_project_id, run=deps.run)
+        else:
+            compact_failed.append(role)
+            log_alert("LEAD_CONTROLLER_COMPACT_FAILED", payload, "WARNING", hub_project_id, run=deps.run)
+
     next_state["last_compact"] = last_compact
     next_state, alerted = record_signal_health(next_state, failures)
     if alerted:
@@ -765,6 +803,8 @@ def _run_once_locked(deps: Deps, cfg: dict, apply_compact: bool, apply_wake: boo
         "open_issues": len(issues) if issues is not None else None,
         "compacted": compacted,
         "would_compact": would_compact,
+        "compact_failed": compact_failed,
+        "duration_s": round((deps.now() - now).total_seconds(), 1),
         "woke": woke,
         "would_wake": would_wake,
         "failures": failures,

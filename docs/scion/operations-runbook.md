@@ -314,7 +314,7 @@ scripts/run-on-hub.sh scripts/scion-admin.py schedule update --project psearch -
 **Files on the Hub VM (`~/.scion/`):**
 - `lead-controller.py` (mode `0700`) and `lead-controller.env` (mode `0600`).
 - `lead-controller-state.json` (mode `0600`): known issues, per-rule cooldowns, R3 streaks, R5 backoff, signal failure counters.
-- `lead-controller.log`: one JSON line per 5-min run (`result`, `lead_context_tokens`, `deployer_context_tokens`, `compacted`, `would_compact`, `woke`, `would_wake`, `failures`, `alerted`). Applied compactions and wakes also emit `INFO` entries to Cloud Logging (`scion-factory-alerts`); 3 consecutive unreadable-signal runs emit an `ERROR` alert that emails the PO.
+- `lead-controller.log`: one JSON line per 5-min run (`result`, `lead_context_tokens`, `deployer_context_tokens`, `compacted`, `would_compact`, `compact_failed`, `duration_s`, `woke`, `would_wake`, `failures`, `alerted`). A `compact_failed` entry means `/compact` was typed but no new `compact_boundary` appeared (Claude Code refused or took more than 7 min); the next attempt for that agent waits the same 30 min cooldown, and a `WARNING` entry goes to Cloud Logging. `duration_s` should stay at a few seconds except on a tick that compacts; `{"result": "locked"}` means the previous tick was still running. Applied compactions and wakes also emit `INFO` entries to Cloud Logging (`scion-factory-alerts`); 3 consecutive unreadable-signal runs emit an `ERROR` alert that emails the PO.
 - `lead-controller.disabled` (**kill switch**): `touch ~/.scion/lead-controller.disabled` makes every run exit immediately with `{"result": "disabled"}`.
 
 **Rollback to 15-minute heartbeats (minutes):**

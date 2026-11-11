@@ -89,6 +89,23 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(st.last_assistant_at, datetime(2026, 11, 6, 22, 0, 34, tzinfo=UTC))
         self.assertEqual(st.last_event_at, datetime(2026, 11, 6, 22, 0, 34, tzinfo=UTC))
 
+    def test_parse_transcript_boundary_after_last_assistant_supersedes_context(self):
+        # Seen on the Hub on 2026-11-10: /compact writes a boundary but no assistant event, so the pre-compaction
+        # call (376,457 tokens) stayed the "last context" and the controller kept retyping /compact.
+        st = lc.parse_transcript([
+            assistant_line("2026-11-05T17:32:32.866Z", cache_write=376_455),
+            compact_line("2026-11-10T16:35:35.101Z"),
+        ])
+        self.assertEqual(st.last_context_tokens, 2326)
+        self.assertEqual(st.last_assistant_at, datetime(2026, 11, 5, 17, 32, 32, 866000, tzinfo=UTC))
+
+    def test_parse_transcript_boundary_without_post_tokens_gives_no_reading(self):
+        st = lc.parse_transcript([
+            assistant_line("2026-11-05T17:32:32.866Z", cache_write=376_455),
+            json.dumps({"type": "system", "subtype": "compact_boundary", "timestamp": "2026-11-10T16:35:35.101Z"}),
+        ])
+        self.assertIsNone(st.last_context_tokens)
+
     def test_parse_transcript_empty(self):
         st = lc.parse_transcript([])
         self.assertIsNone(st.last_context_tokens)
@@ -187,6 +204,27 @@ class CeilingTest(unittest.TestCase):
     def test_compact_reports_failure_without_boundary(self):
         run = FakeRunner(pane=PANE_AFTER_STEP0, boundary_after_send=False)
         self.assertFalse(lc.compact(run, "psearch--lead", "lead", NOW, sleep=lambda s: None))
+
+    def test_compact_stops_waiting_when_claude_refuses(self):
+        refused = json.dumps({"type": "system", "subtype": "local_command", "timestamp": "2026-11-09T12:07:05.000Z",
+                              "content": "<local-command-stdout>Not enough messages to compact.</local-command-stdout>"})
+        fake = FakeRunner(pane=PANE_AFTER_STEP0)
+
+        def run(argv, timeout):
+            rc, out = fake(argv, timeout)
+            if "tail" in argv and any("send-keys" in c for c in fake.calls):
+                out += refused + "\n"
+            return rc, out
+
+        self.assertFalse(lc.compact(run, "psearch--deployer", "deployer", NOW, sleep=lambda s: None))
+        self.assertEqual(sum(1 for c in fake.calls if "tail" in c), 1)  # no 420 s wait
+
+    def test_compact_ignores_refusals_older_than_this_attempt(self):
+        old = json.dumps({"type": "system", "subtype": "local_command", "timestamp": "2026-11-09T11:00:00.000Z",
+                          "content": "<local-command-stdout>Not enough messages to compact.</local-command-stdout>"})
+        run = FakeRunner(pane=PANE_AFTER_STEP0, boundary_after_send=True,
+                         transcript=[assistant_line("2026-11-09T11:45:30.000Z", cache_write=250_000), old])
+        self.assertTrue(lc.compact(run, "psearch--lead", "lead", NOW, sleep=lambda s: None))
 
     def test_compact_instructions_exact_text(self):
         self.assertTrue(lc.COMPACT_INSTRUCTIONS["lead"].startswith("Keep only what the lead needs to continue: "))
@@ -651,6 +689,44 @@ class RunOnceAndCronTest(unittest.TestCase):
         entry = lc.run_once(self.deps, self.cfg, True, False)
         self.assertEqual(entry["compacted"], ["lead"])
         self.assertTrue(any(c[0] == "gcloud" and "--severity=INFO" in c for c in self.fake.calls))
+
+    def test_failed_compaction_is_logged_and_starts_cooldown(self):
+        def never_compacts(argv, timeout):
+            rc, out = self.fake(argv, timeout)
+            if "send-keys" in argv:
+                self.fake.sent_compact.clear()  # the keys are typed but no compact_boundary ever appears
+            return rc, out
+
+        deps = lc.Deps(run=never_compacts, api=self.deps.api, now=self.deps.now, sleep=self.deps.sleep)
+        entry = lc.run_once(deps, self.cfg, True, False)
+        self.assertEqual(entry["compacted"], [])
+        self.assertEqual(entry["compact_failed"], ["lead"])
+        self.assertTrue(any(c[0] == "gcloud" and "--severity=WARNING" in c for c in self.fake.calls))
+        sends = sum(1 for c in self.fake.calls if "send-keys" in c)
+        entry = lc.run_once(deps, self.cfg, True, False)
+        self.assertEqual(entry["compact_failed"], [])
+        self.assertEqual(sum(1 for c in self.fake.calls if "send-keys" in c), sends)  # cooldown: not retyped
+
+    def test_compacted_agent_is_not_compacted_again_on_later_runs(self):
+        self.assertEqual(lc.run_once(self.deps, self.cfg, True, False)["compacted"], ["lead"])
+        sends = sum(1 for c in self.fake.calls if "send-keys" in c)
+        later = lc.Deps(run=self.fake, api=self.deps.api, now=lambda: datetime(2026, 11, 9, 13, 7, tzinfo=UTC),
+                        sleep=self.deps.sleep)
+        self.next_run_at = "2026-11-09T13:30:00Z"
+        entry = lc.run_once(later, self.cfg, True, False)  # past the 30 min cooldown, no new assistant turn
+        self.assertEqual(entry["lead_context_tokens"], 2326)
+        self.assertEqual((entry["compacted"], entry["compact_failed"]), ([], []))
+        self.assertEqual(sum(1 for c in self.fake.calls if "send-keys" in c), sends)
+
+    def test_no_lead_compaction_in_the_tick_that_wakes_it(self):
+        self._seed_initialized_state(known=(55,))
+        entry = lc.run_once(self.deps, self.cfg, True, True)
+        self.assertIn("r1:56", entry["woke"])
+        self.assertEqual(entry["compacted"], [])
+        self.assertFalse(any("send-keys" in c for c in self.fake.calls))
+
+    def test_entry_reports_tick_duration(self):
+        self.assertEqual(lc.run_once(self.deps, self.cfg, False, False)["duration_s"], 0.0)
 
     def test_three_blind_runs_emit_one_error_alert(self):
         self.fake.gh_rc = 1
