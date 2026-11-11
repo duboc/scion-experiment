@@ -148,6 +148,19 @@ func TestAnalyzeFactoryTelemetry(t *testing.T) {
 		t.Errorf("missing diagnostic for antigravity provision.py f-string NameError")
 	}
 
+	if report.LeadCostController == nil {
+		t.Fatalf("expected LeadCostController comparison to be populated")
+	}
+	if report.LeadCostController.PreController12d.LeadOpusSuccessCalls != 2776 {
+		t.Errorf("expected 2776 pre-controller 12d Opus calls, got %d", report.LeadCostController.PreController12d.LeadOpusSuccessCalls)
+	}
+	if report.LeadCostController.PostControllerFull.LeadOpusSuccessCalls != 13 {
+		t.Errorf("expected 13 post-controller Opus calls, got %d", report.LeadCostController.PostControllerFull.LeadOpusSuccessCalls)
+	}
+	if report.LeadCostController.PostDrillIdle2h.LeadOpusSuccessCalls != 0 {
+		t.Errorf("expected 0 post-drill 2h idle Opus calls, got %d", report.LeadCostController.PostDrillIdle2h.LeadOpusSuccessCalls)
+	}
+
 	if len(report.ActionableRecommendations) == 0 {
 		t.Errorf("expected actionable recommendations, got 0")
 	}
@@ -158,5 +171,8 @@ func TestAnalyzeFactoryTelemetry(t *testing.T) {
 	}
 	if !strings.Contains(jsonStr, "diag-reviewer-abandoned") {
 		t.Errorf("expected json to contain diag-reviewer-abandoned")
+	}
+	if !strings.Contains(jsonStr, "diag-lead-cost-controller-verified") {
+		t.Errorf("expected json to contain diag-lead-cost-controller-verified")
 	}
 }

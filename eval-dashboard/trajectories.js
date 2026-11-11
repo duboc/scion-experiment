@@ -1047,39 +1047,63 @@ const PR_METADATA = [
   }
 ];
 
-// Canonical GitHub Issue catalog for duboc/scion-experiment (Issues #1-#11, #18-#23, #26, #28-#36)
+// Canonical GitHub Issue catalog for duboc/scion-experiment (Issues #1-#11, #18-#23, #26, #28-#61)
 const ISSUE_METADATA = [
-  { issue_number: 1,  req_id: 'Req 4.1.1',  wave: 'wave-1', project: 'psearch',      linked_prs: [17],             cloud_run_revision: 'psearch-serving-00011-p6t', title: '[Req 4.1.1] Busca Híbrida: Parametrizar peso alpha no RRF (SQL + Biggy Search API + UI)' },
-  { issue_number: 2,  req_id: 'Req 4.1.2',  wave: 'wave-1', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00012-65q', title: '[Req 4.1.2] Busca Vetorial: 1024 dim (ScaNN), Blue/Green Index Switch & Cache de Embeddings' },
-  { issue_number: 3,  req_id: 'Req 4.1.3',  wave: 'wave-1', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00011-p6t', title: '[Req 4.1.3] Disponibilidade: Filtro de estoque/canal/visibilidade e indisponíveis no final' },
-  { issue_number: 4,  req_id: 'Req 4.1.4',  wave: 'wave-2', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00014-pc5', title: '[Req 4.1.4] Catálogo Multilanguage: Múltiplos idiomas por tenant (pt-BR, en-US, es-MX)' },
-  { issue_number: 5,  req_id: 'Req 4.1.5',  wave: 'wave-2', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00013-5vm', title: '[Req 4.1.5] Facets Server-Side: Agregação concorrente (texto, faixas numéricas e localização) no Spanner' },
-  { issue_number: 6,  req_id: 'Req 4.1.6',  wave: 'wave-3', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00016-jtj', title: '[Req 4.1.6] Relevance & Merchandising Rules: Regras por merchant no Spanner + 8 sinais de boost no SQL' },
-  { issue_number: 7,  req_id: 'Req 4.1.7',  wave: 'wave-3', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00015-dzf', title: '[Req 4.1.7] Low Relevance Synonyms: Expansão de sinônimos por tenant com peso reduzido no SCORE()' },
-  { issue_number: 8,  req_id: 'Req 4.1.8',  wave: 'wave-3', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00017-9wc', title: '[Req 4.1.8] Delivery Promises: Filtro/SLA por CEP e estoque em CDs/sellers via Spanner INTERLEAVE IN PARENT' },
-  { issue_number: 9,  req_id: 'Req 4.1.9',  wave: 'wave-4', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00018-rc5', title: '[Req 4.1.9] Autocomplete: Top queries do BigQuery Analytics indexadas com TOKENIZE_NGRAMS no Spanner' },
-  { issue_number: 10, req_id: 'Req 4.1.10', wave: 'wave-4', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00019-dsr', title: '[Req 4.1.10] Learning to Rank (LTR): Re-ranking ML em 2 estágios (Top-100 Spanner + In-Memory Scorer ~2ms)' },
-  { issue_number: 11, req_id: 'Platform',   wave: 'wave-0', project: 'psearch',      linked_prs: [12],             cloud_run_revision: 'psearch-serving-00009-9dc', title: '[Platform] Upgrade to latest Gemini models via Google Gen AI SDK (gemini-embedding-2 @1024d)' },
-  { issue_number: 18, req_id: 'Eval W1-4',  wave: 'wave-4', project: 'psearch-eval', linked_prs: [12, 13, 14, 15, 16], cloud_run_revision: 'psearch-eval-dashboard-00010', title: 'eval: full Wave 1–4 (#1–#10) live verification sweep against psearch-serving-00019-dsr' },
-  { issue_number: 19, req_id: 'Req 4.1.11', wave: 'wave-5', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00020-552', title: '[Req 4.1.11] Conversational Query Understanding: Extração de filtros e intenção em linguagem natural' },
-  { issue_number: 20, req_id: 'Req 4.1.12', wave: 'wave-5', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00024-ltv', title: '[Req 4.1.12] Session-Aware Personalization: Re-ranking em tempo real por vetor de sessão' },
-  { issue_number: 21, req_id: 'Req 4.1.13', wave: 'wave-5', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00022-nll', title: '[Req 4.1.13] Zero-Results Recovery & Spell Check: Did You Mean + Relaxamento de Termos' },
-  { issue_number: 22, req_id: 'Req 4.1.14', wave: 'wave-5', project: 'psearch',      linked_prs: [15],             cloud_run_revision: 'psearch-serving-00023-z7g', title: '[Req 4.1.14] B2B / Contract Pricing & Assortment via INTERLEAVE IN PARENT' },
-  { issue_number: 23, req_id: 'Platform',   wave: 'wave-5', project: 'psearch',      linked_prs: [24, 25],         cloud_run_revision: 'psearch-serving-00025-5mx', title: '[Platform] Upgrade psearch text/flash models to gemini-3.8-flash and pro models to gemini-4-argon' },
-  { issue_number: 26, req_id: 'Eval L1-5',  wave: 'wave-5', project: 'psearch-eval', linked_prs: [27],             cloud_run_revision: 'psearch-eval-dashboard-00011-tsf', title: 'eval: 5-Layer Product Evaluation Pyramid (L1–L5) & Wave 1–5 (14 Requirements) live sweep' },
-  { issue_number: 28, req_id: 'Docs',       wave: 'wave-5', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00026-7qm', title: '[Docs] Update README.md, PRODUCT.md, DESIGN.md, DEPLOYMENT.md & knowledge-plane for Waves 1–5' },
-  { issue_number: 29, req_id: 'Docs Eval',  wave: 'wave-5', project: 'psearch-eval', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00011-tsf', title: '[Docs] Update eval-dashboard README.md & documentation for 5-Layer Evaluation Pyramid' },
-  { issue_number: 30, req_id: 'Fix & Docs', wave: 'wave-5', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00026-7qm', title: '[Fix & Docs] Fix storefront inline JS syntax error (Loading catalog...) & Google Developer Standard README' },
-  { issue_number: 31, req_id: 'Fix & Docs', wave: 'wave-5', project: 'psearch-eval', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00012-k9v', title: '[Fix & Docs] Move 5-Layer Eval Pyramid above the fold, wire POST /api/eval/run & 15-SKU Catalog Workbench' },
-  { issue_number: 32, req_id: 'Req 4.1.15', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00027-dmv', title: '[Req 4.1.15] Variant Grouping / Collapse (Products -> SKUs INTERLEAVE)' },
-  { issue_number: 33, req_id: 'Req 4.1.16', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00028-klr', title: '[Req 4.1.16] Visual & Multimodal Search (gemini-embedding-2 @ 1024-d)' },
-  { issue_number: 34, req_id: 'Req 4.1.17', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00029-7ss', title: '[Req 4.1.17] Tornar as facetas no painel lateral clicáveis (Interactive Facet Re-Search)' },
-  { issue_number: 35, req_id: 'Req 4.1.18', wave: 'wave-6', project: 'psearch',      linked_prs: [],               cloud_run_revision: 'psearch-serving-00030-pqq', title: '[Req 4.1.18] Sponsored Products / Retail Media (Injeção de anúncios nativos com controle de budget real-time)' },
-  { issue_number: 36, req_id: 'FinOps #36', wave: 'wave-6', project: 'psearch-eval', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00024-nt2', title: 'feat(eval-dashboard): Scion-native zero-extra-cost PR/Issue FinOps & stateful turn attribution engine' },
-  { issue_number: 37, req_id: 'Workbench #37', wave: 'wave-6', project: 'psearch-eval', linked_prs: [],            cloud_run_revision: 'psearch-eval-dashboard-00025', title: 'feat(eval-dashboard): High-density multi-view observability workbench (FinOps Marimekko bar, 10-agent swimlane waterfall, context-bloat curve, crossfilter & turn inspector)' }
+  { issue_number: 1,  req_id: 'Req 4.1.1',  wave: 'wave-1', project: 'psearch',      state: 'CLOSED', linked_prs: [17],             cloud_run_revision: 'psearch-serving-00011-p6t', title: '[Req 4.1.1] Busca Híbrida: Parametrizar peso alpha no RRF (SQL + Biggy Search API + UI)' },
+  { issue_number: 2,  req_id: 'Req 4.1.2',  wave: 'wave-1', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00012-65q', title: '[Req 4.1.2] Busca Vetorial: 1024 dim (ScaNN), Blue/Green Index Switch & Cache de Embeddings' },
+  { issue_number: 3,  req_id: 'Req 4.1.3',  wave: 'wave-1', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00011-p6t', title: '[Req 4.1.3] Disponibilidade: Filtro de estoque/canal/visibilidade e indisponíveis no final' },
+  { issue_number: 4,  req_id: 'Req 4.1.4',  wave: 'wave-2', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00014-pc5', title: '[Req 4.1.4] Catálogo Multilanguage: Múltiplos idiomas por tenant (pt-BR, en-US, es-MX)' },
+  { issue_number: 5,  req_id: 'Req 4.1.5',  wave: 'wave-2', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00013-5vm', title: '[Req 4.1.5] Facets Server-Side: Agregação concorrente (texto, faixas numéricas e localização) no Spanner' },
+  { issue_number: 6,  req_id: 'Req 4.1.6',  wave: 'wave-3', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00016-jtj', title: '[Req 4.1.6] Relevance & Merchandising Rules: Regras por merchant no Spanner + 8 sinais de boost no SQL' },
+  { issue_number: 7,  req_id: 'Req 4.1.7',  wave: 'wave-3', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00015-dzf', title: '[Req 4.1.7] Low Relevance Synonyms: Expansão de sinônimos por tenant com peso reduzido no SCORE()' },
+  { issue_number: 8,  req_id: 'Req 4.1.8',  wave: 'wave-3', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00017-9wc', title: '[Req 4.1.8] Delivery Promises: Filtro/SLA por CEP e estoque em CDs/sellers via Spanner INTERLEAVE IN PARENT' },
+  { issue_number: 9,  req_id: 'Req 4.1.9',  wave: 'wave-4', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00018-rc5', title: '[Req 4.1.9] Autocomplete: Top queries do BigQuery Analytics indexadas com TOKENIZE_NGRAMS no Spanner' },
+  { issue_number: 10, req_id: 'Req 4.1.10', wave: 'wave-4', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00019-dsr', title: '[Req 4.1.10] Learning to Rank (LTR): Re-ranking ML em 2 estágios (Top-100 Spanner + In-Memory Scorer ~2ms)' },
+  { issue_number: 11, req_id: 'Platform',   wave: 'wave-0', project: 'psearch',      state: 'CLOSED', linked_prs: [12],             cloud_run_revision: 'psearch-serving-00009-9dc', title: '[Platform] Upgrade to latest Gemini models via Google Gen AI SDK (gemini-embedding-2 @1024d)' },
+  { issue_number: 18, req_id: 'Eval W1-4',  wave: 'wave-4', project: 'psearch-eval', state: 'CLOSED', linked_prs: [12, 13, 14, 15, 16], cloud_run_revision: 'psearch-eval-dashboard-00010', title: 'eval: full Wave 1–4 (#1–#10) live verification sweep against psearch-serving-00019-dsr' },
+  { issue_number: 19, req_id: 'Req 4.1.11', wave: 'wave-5', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00020-552', title: '[Req 4.1.11] Conversational Query Understanding: Extração de filtros e intenção em linguagem natural' },
+  { issue_number: 20, req_id: 'Req 4.1.12', wave: 'wave-5', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00024-ltv', title: '[Req 4.1.12] Session-Aware Personalization: Re-ranking em tempo real por vetor de sessão' },
+  { issue_number: 21, req_id: 'Req 4.1.13', wave: 'wave-5', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00022-nll', title: '[Req 4.1.13] Zero-Results Recovery & Spell Check: Did You Mean + Relaxamento de Termos' },
+  { issue_number: 22, req_id: 'Req 4.1.14', wave: 'wave-5', project: 'psearch',      state: 'CLOSED', linked_prs: [15],             cloud_run_revision: 'psearch-serving-00023-z7g', title: '[Req 4.1.14] B2B / Contract Pricing & Assortment via INTERLEAVE IN PARENT' },
+  { issue_number: 23, req_id: 'Platform',   wave: 'wave-5', project: 'psearch',      state: 'CLOSED', linked_prs: [24, 25],         cloud_run_revision: 'psearch-serving-00025-5mx', title: '[Platform] Upgrade psearch text/flash models to gemini-3.8-flash and pro models to gemini-4-argon' },
+  { issue_number: 26, req_id: 'Eval L1-5',  wave: 'wave-5', project: 'psearch-eval', state: 'CLOSED', linked_prs: [27],             cloud_run_revision: 'psearch-eval-dashboard-00011-tsf', title: 'eval: 5-Layer Product Evaluation Pyramid (L1–L5) & Wave 1–5 (14 Requirements) live sweep' },
+  { issue_number: 28, req_id: 'Docs',       wave: 'wave-5', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00026-7qm', title: '[Docs] Update README.md, PRODUCT.md, DESIGN.md, DEPLOYMENT.md & knowledge-plane for Waves 1–5' },
+  { issue_number: 29, req_id: 'Docs Eval',  wave: 'wave-5', project: 'psearch-eval', state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00011-tsf', title: '[Docs] Update eval-dashboard README.md & documentation for 5-Layer Evaluation Pyramid' },
+  { issue_number: 30, req_id: 'Fix & Docs', wave: 'wave-5', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00026-7qm', title: '[Fix & Docs] Fix storefront inline JS syntax error (Loading catalog...) & Google Developer Standard README' },
+  { issue_number: 31, req_id: 'Fix & Docs', wave: 'wave-5', project: 'psearch-eval', state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00012-k9v', title: '[Fix & Docs] Move 5-Layer Eval Pyramid above the fold, wire POST /api/eval/run & 15-SKU Catalog Workbench' },
+  { issue_number: 32, req_id: 'Req 4.1.15', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00027-dmv', title: '[Req 4.1.15] Variant Grouping / Collapse (Products -> SKUs INTERLEAVE)' },
+  { issue_number: 33, req_id: 'Req 4.1.16', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00028-klr', title: '[Req 4.1.16] Visual & Multimodal Search (gemini-embedding-2 @ 1024-d)' },
+  { issue_number: 34, req_id: 'Req 4.1.17', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00029-7ss', title: '[Req 4.1.17] Tornar as facetas no painel lateral clicáveis (Interactive Facet Re-Search)' },
+  { issue_number: 35, req_id: 'Req 4.1.18', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00030-pqq', title: '[Req 4.1.18] Sponsored Products / Retail Media (Injeção de anúncios nativos com controle de budget real-time)' },
+  { issue_number: 36, req_id: 'FinOps #36', wave: 'wave-6', project: 'psearch-eval', state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00024-nt2', title: 'feat(eval-dashboard): Scion-native zero-extra-cost PR/Issue FinOps & stateful turn attribution engine' },
+  { issue_number: 37, req_id: 'Workbench #37', wave: 'wave-6', project: 'psearch-eval', state: 'CLOSED', linked_prs: [],            cloud_run_revision: 'psearch-eval-dashboard-00025', title: 'feat(eval-dashboard): High-density multi-view observability workbench (FinOps Marimekko bar, 10-agent swimlane waterfall, context-bloat curve, crossfilter & turn inspector)' },
+  { issue_number: 38, req_id: 'Dup -> #41', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00034-wnr', title: 'facetas multilateral (triaged & superseded by #41 Disjunctive Multi-Select Faceting)' },
+  { issue_number: 39, req_id: 'Req 4.1.19', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00033-4n8', title: '[Wave 6] ScaNN ANN Vector Index (APPROX_COSINE_DISTANCE) & Concurrent Chunked Embedding Backfill' },
+  { issue_number: 40, req_id: 'Req 4.1.20', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00037-g74', title: '[Wave 6] True Search Pagination (page/offset), Accurate total_found & Extended Sort Modes' },
+  { issue_number: 41, req_id: 'Req 4.1.21', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00034-wnr', title: '[Wave 6] Disjunctive Multi-Select Faceting (OR Within Dimension, AND Across Dimensions & Exclude-Own-Dimension Counts)' },
+  { issue_number: 42, req_id: 'Req 4.1.22', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00035-x4l', title: '[Wave 6] Dynamic Schema-Free Product Attributes & Auto-Discovered Facets for Any Industry' },
+  { issue_number: 43, req_id: 'Req 4.1.23', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00037-g74', title: '[Wave 6] Closed-Loop Search Telemetry (query_id), Click/Conversion Attribution, A/B KPIs & LTR Signal Rollup' },
+  { issue_number: 44, req_id: 'Req 4.1.24', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00035-x4l', title: '[Wave 6] Item-to-Item Similar Products, In-Stock Substitutes & Session Co-Visitation (GET /api/products/:id/similar)' },
+  { issue_number: 45, req_id: 'Req 4.1.25', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00037-g74', title: '[Wave 6 follow-up] Out-of-stock products unreachable in unfiltered hybrid search after full embedding backfill' },
+  { issue_number: 46, req_id: 'Req 4.1.26', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00038-mpb', title: '[Wave 6 follow-up] Search latency regression from pre-retrieval exact COUNT (#40 fix-3)' },
+  { issue_number: 47, req_id: 'Req 4.1.27', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00038-mpb', title: '[Wave 6 follow-up] Analytics rollup overwrites seeded engagement signals on low traffic (needs prior blending)' },
+  { issue_number: 48, req_id: 'Docs #48',   wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00038-mpb', title: 'atualziar documentação (Google developer style + ASD-STE100 rewrite across root & UI docs)' },
+  { issue_number: 49, req_id: 'Theme #49',  wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00039-x8j', title: 'vamos adicionar um tema de futebol para a pagina de serving (Brasileirão club colour themes)' },
+  { issue_number: 50, req_id: 'Theme #50',  wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00040-r2j', title: 'coloca os principais paises do mundo como tema (World country flag-colour themes)' },
+  { issue_number: 51, req_id: 'Req 4.1.28', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00041-x6r', title: 'vamos usar essa skill para criar um diagrama (Interactive Cloud Architecture Diagram at /diagram)' },
+  { issue_number: 52, req_id: 'Req 4.1.29', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00042-mbh', title: 'Remove real GCP project ID, project number and service-account emails from tracked files (public repo)' },
+  { issue_number: 53, req_id: 'Req 4.1.30', wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00043-p87', title: 'vamos remover a escolha de temas (Remove demo theme picker from embedded storefront)' },
+  { issue_number: 54, req_id: 'Docs #54',   wave: 'wave-6', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00043-p87', title: 'atualizar a doc com a nova lista de features baseada nos issues (#1-#52 complete feature matrix)' },
+  { issue_number: 55, req_id: 'Drill #55',  wave: 'wave-7', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00043-p87', title: '[drill 1] lead-controller gate test (no work needed)' },
+  { issue_number: 56, req_id: 'Drill #56',  wave: 'wave-7', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00043-p87', title: '[drill 2] lead-controller gate test (no work needed)' },
+  { issue_number: 57, req_id: 'Drill #57',  wave: 'wave-7', project: 'psearch',      state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00043-p87', title: '[drill 3] lead-controller gate test (no work needed)' },
+  { issue_number: 58, req_id: 'Eval #58',   wave: 'wave-7', project: 'psearch-eval', state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00043-p87', title: 'Re-run the search evaluation against the live service (00043-p87)' },
+  { issue_number: 59, req_id: 'Eval #59',   wave: 'wave-7', project: 'psearch-eval', state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-serving-00043-p87', title: 'Extend requirements and probes to the build issues closed after 2026-10-14 (#39-#47, #51-#53)' },
+  { issue_number: 60, req_id: 'FinOps #60', wave: 'wave-7', project: 'psearch-eval', state: 'CLOSED', linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00026', title: 'Refresh the factory analysis, with model cost before and after the lead cost controller' },
+  { issue_number: 61, req_id: 'Deploy #61', wave: 'wave-7', project: 'psearch-eval', state: 'OPEN',   linked_prs: [],               cloud_run_revision: 'psearch-eval-dashboard-00026', title: 'Rebuild and deploy the eval dashboard on the refreshed data' }
 ];
 
-// Additional canonical baseline steps for PRs #12-#17, #24, #25, #27 and Issues #34, #35, #36, #37
+// Additional canonical baseline steps for PRs #12-#17, #24, #25, #27 and Issues #34-#61
 const EXTRA_PR_AND_ISSUE_STEPS = [
   // PR #12
   { project: 'psearch', agent: 'lead', wave: 'wave-0', issue_number: 11, pr_number: 12, step_type: 'ADR_PLAN', commit_sha: 'a09cb0e', event_timestamp: '2026-10-13T00:54:28Z', status: 'PASS', title: '[PR #12] Author Reproducible Software Factory Playbook, 10 Agent Templates & Shared Protocol', detail: 'Merged PR #12 (+3191/-0, 46 files): docs/scion/ architecture, setup/operations runbooks, 10 agent templates, and 20 lessons learned.' },
@@ -1123,7 +1147,41 @@ const EXTRA_PR_AND_ISSUE_STEPS = [
   { project: 'psearch-eval', agent: 'factory-analyst', wave: 'wave-6', issue_number: 36, step_type: 'TELEMETRY_SYNC', commit_sha: 'ea9d6e4', event_timestamp: '2026-10-15T17:52:00Z', status: 'PASS', title: 'Verify Exact Cost Conservation (<$0.0001 Drift) & Zero Heartbeat Leakage on Issue #36', detail: 'Verified 0 Spanner writes on incremental no-op run, >=90% git-diff file-intersection precision across PRs #12-#27, and 100% heartbeat_tax isolation.' },
   { project: 'psearch-eval', agent: 'ui-craftsman', wave: 'wave-6', issue_number: 36, step_type: 'UI_IMPL', commit_sha: '2f2702a', event_timestamp: '2026-10-15T17:55:00Z', status: 'PASS', title: 'Build FinOps Conservation Strip, Productive/Rework/Heartbeat Bars & Lazy Turn Drill-Down (#36)', detail: 'Wired 3-bucket FinOps decomposition banner and on-demand GET /api/trajectories/turns drill-down drawer in public/app.js.' },
   // Issue #37
-  { project: 'psearch-eval', agent: 'ui-craftsman', wave: 'wave-6', issue_number: 37, step_type: 'UI_IMPL', commit_sha: '18449ec', event_timestamp: '2026-10-15T21:18:00Z', status: 'PASS', title: 'Design & Implement High-Density Multi-View Observability Workbench (#37)', detail: 'Built sticky Workspace Lens Switcher, Active Crossfilter Strip, 2-Track FinOps Marimekko Conservation Bar, inline PR/Issue sparkbars, 10-agent Swimlane Waterfall SVG, Context Cache-Bloat Curve SVG, and Pinned Turn Inspector Drawer.' }
+  { project: 'psearch-eval', agent: 'ui-craftsman', wave: 'wave-6', issue_number: 37, step_type: 'UI_IMPL', commit_sha: 'e0581d4', event_timestamp: '2026-10-15T21:41:49Z', status: 'PASS', title: 'Design & Implement High-Density Multi-View Observability Workbench (#37)', detail: 'Built sticky Workspace Lens Switcher, Active Crossfilter Strip, 2-Track FinOps Marimekko Conservation Bar, inline PR/Issue sparkbars, 10-agent Swimlane Waterfall SVG, Context Cache-Bloat Curve SVG, and Pinned Turn Inspector Drawer.' },
+  // Wave 6 (#39-#47): ADRs, ScaNN ANN, True Pagination, Disjunctive Facets, Dynamic Attributes, Telemetry, Similar Products & Follow-up Fixes
+  { project: 'psearch', agent: 'lead', wave: 'wave-6', issue_number: 39, step_type: 'ADR_PLAN', commit_sha: 'd926319', event_timestamp: '2026-10-30T15:35:08Z', status: 'PASS', title: 'Author Wave 6 ADRs (ADR-012..016), OpenAPI v2.6 & Route Ownership Hook (#39–#44)', detail: 'Authored ADR-012 (ScaNN ANN & Pagination), ADR-013 (Disjunctive Facets), ADR-014 (Schema-Free Attributes), ADR-015 (Closed-Loop Telemetry & Rollup), ADR-016 (Similar Products & Co-Visitation), and registerWave6Routes hook (75cb289).' },
+  { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 39, step_type: 'BACKEND_IMPL', commit_sha: '64cee37', event_timestamp: '2026-10-30T17:18:03Z', status: 'PASS', title: 'Implement ScaNN ANN Vector Index (APPROX_COSINE_DISTANCE) & STORING-Only CTE Over-Fetch (#39)', detail: 'Implemented 024_scann_vector_index.sql, concurrent chunked embedding backfill (fecadde), and STORING-only ANN CTE predicate hotfix (64cee37) achieving recall@20=0.992.' },
+  { project: 'psearch', agent: 'deployer', wave: 'wave-6', issue_number: 39, step_type: 'CLOUD_RUN_DEPLOY', commit_sha: '18d47b3', event_timestamp: '2026-10-30T17:41:04Z', status: 'PASS', title: 'Catch Non-STORING ANN Predicate on 00031-n6v -> Backfill 150 Rows & Deploy 00033-4n8 (#39)', detail: 'Detected Spanner query rejection of non-STORING predicates inside FORCE_INDEX=idx_products_embedding_v2_ann on 00031-n6v; verified fix 64cee37, backfilled 150 rows, rebuilt ScaNN index, and deployed 00033-4n8 (recall@20=0.992).' },
+  { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 41, step_type: 'BACKEND_IMPL', commit_sha: '6ce3b8c', event_timestamp: '2026-10-30T17:24:19Z', status: 'PASS', title: 'Implement Disjunctive Multi-Select Faceting with Exclude-Own-Dimension Counts (#41)', detail: 'Implemented OR-within-dimension and AND-across-dimensions SQL predicates plus per-dimension exclude-own-filter facet aggregations per ADR-013.' },
+  { project: 'psearch', agent: 'frontend', wave: 'wave-6', issue_number: 41, step_type: 'UI_IMPL', commit_sha: '79c367f', event_timestamp: '2026-10-30T17:09:48Z', status: 'PASS', title: 'Implement Multi-Select Facet Checkboxes (#41) & Pagination/Sort Controls (#40) in Storefront & React', detail: 'Added disjunctive multi-select facet checkboxes with live counts, sort mode selector (relevance, price_asc, price_desc, popularity, rating), and page navigation.' },
+  { project: 'psearch', agent: 'deployer', wave: 'wave-6', issue_number: 41, step_type: 'CLOUD_RUN_DEPLOY', commit_sha: '4d26f0d', event_timestamp: '2026-10-30T17:49:12Z', status: 'PASS', title: 'Deploy Revision psearch-serving-00034-wnr & Verify Issue #41 Disjunctive Multi-Select Facets Live', detail: 'Verified OR-within-dimension brand/category multi-select and exclude-own-dimension facet counts live on 00034-wnr.' },
+  { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 42, step_type: 'BACKEND_IMPL', commit_sha: 'c030dfd', event_timestamp: '2026-10-30T17:46:33Z', status: 'PASS', title: 'Implement Dynamic Schema-Free Product Attributes (025_product_attributes.sql) & Admin Upsert (#42)', detail: 'Built interleaved product_attributes table, auto-discovered attribute facets (attr.<name>), admin PUT /api/products/:id/attributes, and Spanner FARM_FINGERPRINT seed fix (d1e3f9b).' },
+  { project: 'psearch', agent: 'frontend', wave: 'wave-6', issue_number: 42, step_type: 'UI_IMPL', commit_sha: 'c20964d', event_timestamp: '2026-10-30T17:30:04Z', status: 'PASS', title: 'Build Auto-Discovered Dynamic Attribute Facets & Product Card Spec Badges (#42)', detail: 'Rendered dynamic attribute facet groups and product card specification badges across storefront and React UI.' },
+  { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 44, step_type: 'BACKEND_IMPL', commit_sha: 'a540033', event_timestamp: '2026-10-30T17:52:31Z', status: 'PASS', title: 'Implement Item-to-Item Similar Products, In-Stock Substitutes & Session Co-Visitation (#44)', detail: 'Implemented GET /api/products/:id/similar combining 1024-d vector cosine similarity, same-category in-stock substitutes for OOS items, and session co-visitation counts per ADR-016.' },
+  { project: 'psearch', agent: 'frontend', wave: 'wave-6', issue_number: 44, step_type: 'UI_IMPL', commit_sha: '6800cf9', event_timestamp: '2026-10-30T17:47:46Z', status: 'PASS', title: 'Build Similar Products Drawer, Co-Viewed Carousels & In-Stock Substitute Recommendations (#44)', detail: 'Added interactive Similar Products modal/carousel and automatic In-Stock Alternatives banner for out-of-stock SKUs.' },
+  { project: 'psearch', agent: 'deployer', wave: 'wave-6', issue_number: 42, step_type: 'CLOUD_RUN_DEPLOY', commit_sha: '3eff6b3', event_timestamp: '2026-10-30T18:43:22Z', status: 'PASS', title: 'Apply DDL 025/025b & Deploy Revision psearch-serving-00035-x4l (#42 Attributes & #44 Similar Products)', detail: 'Applied product_attributes schema and FARM_FINGERPRINT seed data; verified #42 and #44 live on 00035-x4l.' },
+  { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 40, step_type: 'BACKEND_IMPL', commit_sha: 'fb3a00b', event_timestamp: '2026-10-30T18:50:29Z', status: 'PASS', title: 'Implement True Search Pagination with Page-Independent Candidate Window W & Sort Modes (#40)', detail: 'Iterated through 00032-46c, 00034-wnr, and 00035-x4l rollout catches (a527cda, 5076d80, 1923d3b, fb3a00b) to establish fixed candidate window W for disjoint pages and stable total_found.' },
+  { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 43, step_type: 'BACKEND_IMPL', commit_sha: '48b4aeb', event_timestamp: '2026-10-30T18:17:17Z', status: 'PASS', title: 'Implement Closed-Loop Search Telemetry (query_id), Click/Purchase Attribution, A/B KPIs & LTR Rollup (#43)', detail: 'Added 026_search_analytics.sql, POST /api/analytics/event idempotent attribution, GET /api/analytics/kpis, and POST /api/analytics/rollup per ADR-015.' },
+  { project: 'psearch', agent: 'frontend', wave: 'wave-6', issue_number: 43, step_type: 'UI_IMPL', commit_sha: '9c0555e', event_timestamp: '2026-10-30T18:25:49Z', status: 'PASS', title: 'Wire Search Telemetry Beacons, A/B Experiment Selector & Analytics KPI Drawer (#43)', detail: 'Added click/conversion event beacons bound to query_id, experiment variant selector, and live KPI drawer.' },
+  { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 45, step_type: 'BACKEND_IMPL', commit_sha: 'b28f6b4', event_timestamp: '2026-10-30T19:02:12Z', status: 'PASS', title: 'Fix Out-of-Stock Reachability by Selecting Stage-1 Candidates by Relevance Before OOS-Last Tail Sort (#45)', detail: 'Moved OOS-last ordering to outer query over window W (ae3f046, b28f6b4) so relevant out-of-stock products remain reachable on tail pages after full 150-row backfill.' },
+  { project: 'psearch', agent: 'deployer', wave: 'wave-6', issue_number: 43, step_type: 'CLOUD_RUN_DEPLOY', commit_sha: '91cdd57', event_timestamp: '2026-10-30T19:24:22Z', status: 'PASS', title: 'Apply DDL 026 & Deploy Revision psearch-serving-00037-g74 (#40 Pagination, #43 Telemetry & #45 OOS Fix)', detail: 'Verified disjoint pages 1..3, stable total_found, OOS tail reachability, and live telemetry/KPI endpoints on 00037-g74.' },
+  { project: 'psearch', agent: 'reviewer', wave: 'wave-6', issue_number: 46, step_type: 'REVIEW_REJECTED', commit_sha: '884dbab', event_timestamp: '2026-10-30T19:41:01Z', status: 'REJECTED', title: 'Reject Initial #46 Count Cache Key & #47 Rollup Prior Blending (884dbab, faf3321)', detail: 'Caught incomplete count-cache key / missing sponsored attributes in 3e424dd (#46) and non-idempotent repeated rollup decay in 5c64fd5 (#47) before deployment.' },
+  { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 46, step_type: 'BACKEND_IMPL', commit_sha: '10f6761', event_timestamp: '2026-10-30T20:24:29Z', status: 'PASS', title: 'Optimize Search Latency via Concurrent Capped Count, Canonical Cache & Go-Side SQL Specialization (#46)', detail: 'Eliminated IF(@price_table = "", ...) inside Spanner SEARCH WHERE clause (10f6761) and added bounded canonical count cache (2450195), cutting warm p50 latency from ~896ms to 152–185ms.' },
+  { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 47, step_type: 'BACKEND_IMPL', commit_sha: 'bbe6bc5', event_timestamp: '2026-10-30T20:00:05Z', status: 'PASS', title: 'Implement Idempotent Analytics Rollup over Frozen Signal Baseline (027_signal_baseline.sql) (#47)', detail: 'Added frozen baseline columns (baseline_ctr, baseline_cvr, baseline_popularity) and Bayesian prior blending (prior_weight=20) so repeated rollups are strictly idempotent.' },
+  { project: 'psearch', agent: 'deployer', wave: 'wave-6', issue_number: 46, step_type: 'CLOUD_RUN_DEPLOY', commit_sha: '376622d', event_timestamp: '2026-10-30T20:37:07Z', status: 'PASS', title: 'Apply DDL 027 & Deploy Revision psearch-serving-00038-mpb (#46 Latency p50 152–185ms & #47 Idempotent Rollup)', detail: 'Detected Spanner IF()-in-SEARCH latency regression on 00036-b6f; verified 10f6761 + bbe6bc5 live on 00038-mpb with warm p50=152ms (filtered) and 185ms (hybrid).' },
+  // Storefront, Docs, Architecture Diagram & Security Redaction (#48-#54)
+  { project: 'psearch', agent: 'lead', wave: 'wave-6', issue_number: 48, step_type: 'DOCS_SYNC', commit_sha: '9a2840c', event_timestamp: '2026-11-03T14:36:47Z', status: 'PASS', title: 'Rewrite Root & UI Documentation in Google Developer Style + ASD-STE100 (#48)', detail: 'Rewrote README.md, USAGE.md, TOOLING.md, CONTRIBUTING.md, and UI docs (c0ef270, 5564e01); fixed reviewer sentence-length and placeholder findings (9a2840c, 0b0032d, cbf97b7).' },
+  { project: 'psearch', agent: 'frontend', wave: 'wave-6', issue_number: 49, step_type: 'UI_IMPL', commit_sha: '6509c0b', event_timestamp: '2026-11-03T18:30:52Z', status: 'PASS', title: 'Implement Brasileirão Club (#49, 00039-x8j) & World Country (#50, 00040-r2j) Storefront Themes', detail: 'Delivered CSS custom-property theme palettes in 6509c0b (00039-x8j) and d482744 (00040-r2j), verified by @reviewer and @deployer.' },
+  { project: 'psearch', agent: 'frontend', wave: 'wave-6', issue_number: 51, step_type: 'UI_IMPL', commit_sha: '28cdac1', event_timestamp: '2026-11-05T14:51:27Z', status: 'PASS', title: 'Build Self-Contained Interactive Cloud Architecture Diagram at GET /diagram (#51)', detail: 'Implemented interactive SVG architecture diagram at /diagram (28cdac1), verified by @reviewer (8a25c90) and deployed on 00041-x6r (c9419c1).' },
+  { project: 'psearch', agent: 'backend', wave: 'wave-6', issue_number: 52, step_type: 'BACKEND_IMPL', commit_sha: '28f121a', event_timestamp: '2026-11-05T15:37:45Z', status: 'PASS', title: 'Remove Real GCP Project IDs, Numbers & SA Emails from Tracked Files + Add Repo-Root Test Guard (#52)', detail: 'Redacted all real GCP identifiers across 35 tracked files (28f121a, 3eb8d7a), added whole-repo forbidden-ID test guard (f4730ea), and deployed 00042-mbh (35e1183).' },
+  { project: 'psearch', agent: 'frontend', wave: 'wave-6', issue_number: 53, step_type: 'UI_IMPL', commit_sha: 'ed578f3', event_timestamp: '2026-11-05T17:00:25Z', status: 'PASS', title: 'Remove Demo Theme Picker from Storefront (#53) & Publish Complete #1–#52 Feature Matrix (#54)', detail: 'Removed #theme-select and theme CSS blocks (ed578f3), updated README/USAGE feature matrix (fdcfdc3, e7b5015), and deployed psearch-serving-00043-p87 (575b3fc).' },
+  { project: 'psearch', agent: 'deployer', wave: 'wave-6', issue_number: 53, step_type: 'CLOUD_RUN_DEPLOY', commit_sha: '575b3fc', event_timestamp: '2026-11-05T17:32:02Z', status: 'PASS', title: 'Deploy Production Revision psearch-serving-00043-p87 (--to-latest) for Issues #53 & #54', detail: 'Built clean git archive at 014b6df, passed 48/48 sqlcheck gate, deployed 00043-p87, and verified zero theme picker and /diagram HTTP 200.' },
+  // Wave 7 (#55-#61): Lead Cost Controller Rollout, Live Gate Drills, Search Eval Refresh (#58-#59), Factory Analysis (#60) & Dashboard Rebuild (#61)
+  { project: 'psearch', agent: 'lead', wave: 'wave-7', issue_number: 55, step_type: 'ORCHESTRATE', commit_sha: 'ce580b6', event_timestamp: '2026-11-11T11:54:07Z', status: 'PASS', title: 'Deploy Lead Cost Controller (Context Ceiling + R1–R5 Wake Gate) & Pass Drills #55, #56, #57', detail: 'Implemented lead_controller.py (295401d..2ff8fd1) with 200k input-eq /compact ceiling, 5-min deterministic wake gate, and 4h safety-net heartbeat; verified r1:55, r1:56, r2:56, and r1:57 live.' },
+  { project: 'psearch-eval', agent: 'search-evaluator', wave: 'wave-7', issue_number: 58, step_type: 'EVAL_SWEEP', commit_sha: '4233707', event_timestamp: '2026-11-11T14:57:05Z', status: 'PASS', title: 'Re-Run Live Search Evaluation on psearch-serving-00043-p87 (014b6df) & Record Provenance (#58)', detail: 'Executed live probe sweep (run_id probe-1794409025-cbca4f) against psearch-serving-00043-p87 (014b6df, deploy 575b3fc): NDCG@10=0.985, MRR@10=1.000, p50=151.0ms, p95=239.0ms.' },
+  { project: 'psearch-eval', agent: 'search-evaluator', wave: 'wave-7', issue_number: 59, step_type: 'EVAL_SWEEP', commit_sha: 'ef2bd60', event_timestamp: '2026-11-11T15:21:55Z', status: 'PASS', title: 'Extend Requirements (30/30 PASS) & 5-Layer Pyramid (100/100 PASS) to Issues #35 and #39–#54 (#59)', detail: 'Extended probe_search.py to 30 requirements (4.1.1..4.1.30), 16-entry #39–#54 Build Issue Mapping, and 100 5-Layer Pyramid scenarios (17 L1, 25 L2, 19 L3, 31 L4, 8 L5); recorded run_id probe-1794413079-f6782c at 2026-11-11T15:21:55Z on psearch-serving-00043-p87 (014b6df).' },
+  { project: 'psearch-eval', agent: 'factory-analyst', wave: 'wave-7', issue_number: 60, step_type: 'TELEMETRY_SYNC', commit_sha: 'e449fa7', event_timestamp: '2026-11-11T15:00:00Z', status: 'PASS', title: 'Audit Issues #36–#57 & Quantify Lead Cost Controller Savings via Cloud Monitoring (#60)', detail: 'Queried gen_ai.api.calls & scion.usage.tokens on <HUB_PROJECT>: verified psearch/lead daily Opus calls dropped 199 -> 13 (-93.5%), cache_write 53.89M -> 764.7k (-98.6%), and input-eq 73.36M -> 1.14M (-98.45%, 64.5x reduction).' },
+  { project: 'psearch-eval', agent: 'ui-craftsman', wave: 'wave-7', issue_number: 61, step_type: 'UI_IMPL', commit_sha: 'issue-61-ui', event_timestamp: '2026-11-11T16:15:00Z', status: 'PASS', title: 'Rebuild Eval Dashboard for 30/30 Reqs, 100/100 Pyramid, Run Provenance Badges & Lead Cost Controller (#61)', detail: 'Updated /api/eval, /api/trajectories, /api/backlog, and public UI with Standing Rule 2 run-provenance badges (psearch-serving-00043-p87 @ 014b6df, 2026-11-11T15:21:55Z), #39–#54 Build Issue Mapping, and Cloud Monitoring Lead Cost Controller Before vs. After comparison.' }
 ];
 
 for (const extra of EXTRA_PR_AND_ISSUE_STEPS) {
@@ -1189,12 +1247,32 @@ const COMMIT_SHA_MAP = {
   '8bbd2f4': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'deployer',        step_type: 'CLOUD_RUN_DEPLOY' },
   'c9d8436': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'ISSUE_ACCEPTED_CLOSED' },
   '508867f': { issue_number: 35, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'DOCS_SYNC' },
+  'f059c6e': { issue_number: 36, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'DOCS_SYNC' },
   'c148a6f': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'ADR_PLAN' },
   '0a850c9': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'BACKEND_IMPL' },
   'adc37f7': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-deployer', step_type: 'CLOUD_RUN_DEPLOY' },
   '18449ec': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'eval-lead',     step_type: 'TELEMETRY_SYNC' },
   'ea9d6e4': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
   '2f2702a': { issue_number: 36, pr_number: null, project: 'psearch-eval', agent: 'ui-craftsman',  step_type: 'UI_IMPL' },
+  'e0581d4': { issue_number: 37, pr_number: null, project: 'psearch-eval', agent: 'ui-craftsman',  step_type: 'UI_IMPL' },
+  'd926319': { issue_number: 39, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'ADR_PLAN' },
+  '75cb289': { issue_number: 39, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'ORCHESTRATE' },
+  '295401d': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'ADR_PLAN' },
+  '622842e': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'ADR_PLAN' },
+  '2bd716f': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'BACKEND_IMPL' },
+  '57a9bcb': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'BACKEND_IMPL' },
+  '06de811': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'BACKEND_IMPL' },
+  'd318f35': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'BACKEND_IMPL' },
+  '4efc37a': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'BACKEND_IMPL' },
+  'ce580b6': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'ORCHESTRATE' },
+  '9c46a03': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'BACKEND_IMPL' },
+  'd15f4c8': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'BACKEND_IMPL' },
+  'cbca1cb': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'BACKEND_IMPL' },
+  '2ff8fd1': { issue_number: 55, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'DOCS_SYNC' },
+  '4233707': { issue_number: 58, pr_number: null, project: 'psearch-eval', agent: 'search-evaluator', step_type: 'EVAL_SWEEP' },
+  'ef2bd60': { issue_number: 59, pr_number: null, project: 'psearch-eval', agent: 'search-evaluator', step_type: 'EVAL_SWEEP' },
+  'aa57e8b': { issue_number: 60, pr_number: null, project: 'psearch',    agent: 'lead',            step_type: 'DOCS_SYNC' },
+  'e449fa7': { issue_number: 60, pr_number: null, project: 'psearch-eval', agent: 'factory-analyst', step_type: 'TELEMETRY_SYNC' },
   '24d62c2': { issue_number: 11, pr_number: 12, project: 'psearch',      agent: 'lead',            step_type: 'ADR_PLAN' },
   '29ad7ea': { issue_number: 11, pr_number: null, project: 'psearch',    agent: 'deployer',        step_type: 'CLOUD_RUN_DEPLOY' },
   'c4b3368': { issue_number: 11, pr_number: null, project: 'psearch',    agent: 'deployer',        step_type: 'CLOUD_RUN_DEPLOY' },
@@ -1290,7 +1368,23 @@ const REWORK_COMMIT_SHAS = new Set([
   '1fad8cf', // Wave 5 Spanner optimizer_version=6 hint fix
   '2442093', // Wave 6 []*variantRow pointer slice decode fix
   '12cec7a', // PR #24 provision.py f-string escaping fix
-  'c148a6f'  // Cloud Run 32MB response size limit fix
+  'c148a6f', // Cloud Run 32MB response size limit fix
+  '64cee37', // Wave 6 #39 ScaNN STORING-only ANN CTE hotfix after 00031-n6v catch
+  '5076d80', // Wave 6 #40 concurrent COUNT hotfix after 00032-46c catch
+  '1923d3b', // Wave 6 #40 fixed candidate window fix-2 after 00034-wnr catch
+  'fb3a00b', // Wave 6 #40 page-independent candidate window fix-3 after 00035-x4l catch
+  'd1e3f9b', // Wave 6 #42 Spanner FARM_FINGERPRINT 025b seed fix
+  'ae3f046', // Wave 6 #45 OOS reachability Stage-1 relevance fix
+  'b28f6b4', // Wave 6 #45 drop OOS page-1 trim heuristic fix
+  '884dbab', // Wave 6 #46 reviewer rejection of initial count cache key
+  '2450195', // Wave 6 #46 canonical count cache key rework
+  '10f6761', // Wave 6 #46 Go-side SQL specialization hotfix after 00036-b6f catch
+  'faf3321', // Wave 6 #47 reviewer rejection of non-idempotent rollup blending
+  'bbe6bc5', // Wave 6 #47 idempotent rollup over frozen signal baseline (027) rework
+  'b1f5231', // Wave 6 #48 reviewer rejection of STE sentence lengths & placeholders
+  '9a2840c', // Wave 6 #48 root docs STE & placeholder rework
+  '0b0032d', // Wave 6 #48 UI README contract & placeholder rework
+  'f4730ea'  // Wave 6 #52 repo-root forbidden-ID test guard follow-up
 ]);
 
 function classifyStepOrTurnCostBucket(item = {}) {
@@ -1346,11 +1440,15 @@ function extractSmartIssueOrPrNumber(text, options = {}) {
   let m;
   while ((m = re.exec(s)) !== null) {
     const n = Number(m[1]);
-    if (n >= 1 && n <= 50 && !PR_NUMBERS_SET.has(n)) matches.push(n);
+    if (n >= 1 && n <= 65 && !PR_NUMBERS_SET.has(n)) matches.push(n);
   }
   if (matches.length > 0) {
     return matches[matches.length - 1];
   }
+  if (/query-token-metrics|before and after the lead cost controller|issue #60/i.test(s)) return 60;
+  if (/extend requirements and probes|issue #59/i.test(s)) return 59;
+  if (/re-run the search evaluation|issue #58/i.test(s)) return 58;
+  if (/lead-controller|lead cost controller|drill 1|issue #55/i.test(s)) return 55;
   if (/marimekko|swimlane waterfall|context-bloat|observability workbench|issue #37/i.test(s)) return 37;
   if (/finops|stateful turn attribution|ship-cursor|issue #36/i.test(s)) return 36;
   if (/sponsored|retail media|00030/i.test(s)) return 35;
@@ -1498,19 +1596,19 @@ function classifyGithubCommit(commitObj, branch) {
     let stepType = 'ORCHESTRATE';
     if (/^docs\(review\)/i.test(msg)) {
       agentName = 'reviewer';
-      stepType = 'PEER_REVIEW';
+      stepType = /changes requested/i.test(msg) ? 'REVIEW_REJECTED' : 'PEER_REVIEW';
     } else if (/^docs\(deploy\)/i.test(msg)) {
       agentName = 'deployer';
       stepType = 'CLOUD_RUN_DEPLOY';
-    } else if (/^(feat|fix)\((ui|storefront)\)/i.test(msg)) {
+    } else if (/^(feat|fix|docs)\((ui|storefront)\)/i.test(msg)) {
       agentName = 'frontend';
       stepType = 'UI_IMPL';
-    } else if (/^(feat|fix)\((search|vector|ranking|delivery|autocomplete|ltr|pricing|personalization|variants|config|ads|serving|genai|api|backend)\)/i.test(msg) || /^test\(sqlcheck\)/i.test(msg)) {
+    } else if (/^(feat|fix|perf|test)\((search|vector|ranking|delivery|autocomplete|ltr|pricing|personalization|variants|config|ads|serving|genai|api|backend|facets|attributes|analytics|recs|security)\)/i.test(msg) || /^test\(sqlcheck\)/i.test(msg)) {
       agentName = 'backend';
       stepType = /^test\(sqlcheck\)/i.test(msg) ? 'SQLCHECK_GATE' : 'BACKEND_IMPL';
-    } else if (/^docs\((adr|index|knowledge-plane|readme|issues|scion)\)/i.test(msg) || /^docs:/i.test(msg)) {
+    } else if (/^docs\((adr|index|knowledge-plane|readme|issues|scion|plans|telemetry)\)/i.test(msg) || /^docs:/i.test(msg)) {
       agentName = 'lead';
-      stepType = /^docs\(adr\)/i.test(msg) ? 'ADR_PLAN' : 'DOCS_SYNC';
+      stepType = /^docs\((adr|knowledge-plane|plans)\)/i.test(msg) ? 'ADR_PLAN' : 'DOCS_SYNC';
     }
     return {
       project: 'psearch',
@@ -1521,20 +1619,20 @@ function classifyGithubCommit(commitObj, branch) {
       step_type: stepType,
       commit_sha: sha,
       event_timestamp: ts,
-      status: 'PASS',
+      status: stepType === 'REVIEW_REJECTED' ? 'REJECTED' : 'PASS',
       title: msg,
       detail: `Live git commit ${sha} on branch main (${ts}) attributed via Scion Factory workflow rules.`
     };
   } else {
     let agentName = 'eval-lead';
     let stepType = 'EVAL_APPROVAL';
-    if (/ui-craftsman|redesign|Impeccable/i.test(msg)) {
+    if (/ui-craftsman|redesign|Impeccable|observability workbench|Marimekko/i.test(msg)) {
       agentName = 'ui-craftsman';
       stepType = 'UI_IMPL';
-    } else if (/factory-analyst|consolidate|telemetry|diagnostics/i.test(msg)) {
+    } else if (/factory-analyst|consolidate|telemetry|diagnostics|before and after/i.test(msg)) {
       agentName = 'factory-analyst';
       stepType = 'TELEMETRY_SYNC';
-    } else if (/search-evaluator|Golden Query|golden benchmark/i.test(msg)) {
+    } else if (/search-evaluator|Golden Query|golden benchmark|probe_search/i.test(msg)) {
       agentName = 'search-evaluator';
       stepType = 'EVAL_SWEEP';
     } else if (/eval-deployer|Cloud Run revision/i.test(msg)) {
@@ -1564,7 +1662,8 @@ function inferWaveFromIssue(issueNum) {
   if ([7, 8].includes(issueNum)) return 'wave-3';
   if ([9, 10, 16, 18].includes(issueNum)) return 'wave-4';
   if ([19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31].includes(issueNum)) return 'wave-5';
-  if ([32, 33, 34, 35, 36, 37].includes(issueNum)) return 'wave-6';
+  if (issueNum >= 55 && issueNum <= 65) return 'wave-7';
+  if (issueNum >= 32 && issueNum <= 54) return 'wave-6';
   return 'wave-6';
 }
 
@@ -1582,12 +1681,20 @@ function classifyGithubComment(commentObj) {
   const wave = inferWaveFromIssue(issueNum);
   const commentKey = `comment-${commentObj.id}`;
 
-  let project = [18, 26, 29, 31, 36, 37].includes(issueNum) ? 'psearch-eval' : 'psearch';
+  let project = [18, 26, 29, 31, 36, 37, 58, 59, 60, 61].includes(issueNum) ? 'psearch-eval' : 'psearch';
   let agent = 'lead';
   let stepType = 'ISSUE_COMMENT';
   let status = 'PASS';
 
-  if (/Evaluation & Deployment Approval|Claimed by `@eval-lead`|Evaluation & Observability Plan|Live Verification Sweep|Verification Complete: All 10|Final Deployment & Complete 22\/22|5-Layer Product Evaluation Methodology Pyramid|Empirical Verification & Delivery Summary \(Issue #29\)|Completed & Verified Live on Cloud Run \(Issue #31\)|Completed & Verified Live on Cloud Run \(Issue #36\)|Completed & Verified Live on Cloud Run \(Issue #37\)/i.test(rawBody)) {
+  if (/factory-analyst|Cloud Monitoring.*gen_ai\.api\.calls|Before vs\. After the Lead Cost Controller/i.test(rawBody) && issueNum === 60) {
+    project = 'psearch-eval';
+    agent = 'factory-analyst';
+    stepType = 'TELEMETRY_SYNC';
+  } else if (/search-evaluator|Live Probe Execution Report|Requirements Matrix \(#39-#47/i.test(rawBody) && [58, 59].includes(issueNum)) {
+    project = 'psearch-eval';
+    agent = 'search-evaluator';
+    stepType = 'EVAL_SWEEP';
+  } else if (/Evaluation & Deployment Approval|Claimed by `@eval-lead`|Evaluation & Observability Plan|Live Verification Sweep|Verification Complete: All 10|Final Deployment & Complete 22\/22|5-Layer Product Evaluation Methodology Pyramid|Empirical Verification & Delivery Summary \(Issue #29\)|Completed & Verified Live on Cloud Run \(Issue #31\)|Completed & Verified Live on Cloud Run \(Issue #36\)|Completed & Verified Live on Cloud Run \(Issue #37\)|eval-lead — Execution Plan/i.test(rawBody)) {
     project = 'psearch-eval';
     agent = 'eval-lead';
     stepType = /Approval/i.test(firstLine) ? 'EVAL_APPROVAL_GATE' : 'EVAL_REPORT';
@@ -2558,12 +2665,148 @@ function buildCostAndWorkItemRollups(allSteps, agentsSummary, liveSpannerTurns =
       total_issues_tracked: issueRollups.length,
       avg_cost_per_issue_usd: issueRollups.length > 0 ? Number((overallAgg.cost_usd / issueRollups.length).toFixed(4)) : 0,
       agents_breakdown: overallAgg.agents_involved,
-      pricing_model_note: 'Calibrated per-1M token rates: Claude Opus 4.6 ($15 in / $75 out), Claude Sonnet 4.6 ($3 in / $15 out), Gemini 4 Argon ($1.25 in / $5 out)'
+      pricing_model_note: 'Calibrated per-1M token rates: Claude Opus 4.6 ($15 in / $75 out), Claude Sonnet 4.6 ($3 in / $15 out), Gemini 4 Argon ($1.25 in / $5 out)',
+      lead_cost_controller_comparison: LEAD_COST_CONTROLLER_COMPARISON
     },
     pr_rollups: prRollups,
     issue_rollups: issueRollups
   };
 }
+
+// Empirical Cloud Monitoring Before (< 2026-11-06) vs. After (>= 2026-11-11) Comparison for the Lead Cost Controller (Issue #60)
+const LEAD_COST_CONTROLLER_COMPARISON = {
+  hub_project: '<HUB_PROJECT>',
+  calls_query: 'GET https://monitoring.googleapis.com/v3/projects/<HUB_PROJECT>/timeSeries?filter=metric.type%3D%22workload.googleapis.com/gen_ai.api.calls%22&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.scion_agent_slug,metric.label.harness,metric.label.model,metric.label.status',
+  tokens_query: 'GET https://monitoring.googleapis.com/v3/projects/<HUB_PROJECT>/timeSeries?filter=metric.type%3D%22workload.googleapis.com/scion.usage.tokens%22&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.scion_agent_slug,metric.label.harness,metric.label.model,metric.label.token_type',
+  input_eq_formula: 'eq = 1.0 * input + 1.25 * cache_write + 0.1 * cache_read + 5.0 * (output + reasoning)',
+  spec_ref_cost_per_1m_eq_usd: 5.0,
+  controller_rollout: {
+    step_0_manual_compact_utc: '2026-11-06T21:54:00Z',
+    stage_1_compact_cron_live_utc: '2026-11-10T16:35:00Z',
+    stage_2_wake_gate_live_utc: '2026-11-11T11:45:00Z',
+    heartbeat_rescheduled_15m_to_4h_utc: '2026-11-11T11:45:00Z'
+  },
+  pre_controller_12d_baseline: {
+    window_label: 'Pre-Controller 12-Day Baseline (2026-10-25..2026-11-06)',
+    start_time_utc: '2026-10-25T00:00:00Z',
+    end_time_utc: '2026-11-06T00:00:00Z',
+    alignment_period_s: 1036800,
+    duration_hours: 288.0,
+    by_agent_model: [
+      { agent: 'lead', harness: 'claude', model: 'claude-opus-5-5', calls_success: 2776, calls_error: 2, input_tokens: 72600, cache_write_tokens: 684353394, cache_read_tokens: 859705482, output_tokens: 382611, reasoning_tokens: 0, total_tokens: 1544514087, input_token_equiv: 943397946, est_cost_at_5_per_mtok_eq: 4716.99 },
+      { agent: 'lead', harness: 'claude', model: 'claude-haiku-4-5', calls_success: 0, calls_error: 1299, input_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, output_tokens: 0, reasoning_tokens: 0, total_tokens: 0, input_token_equiv: 0, est_cost_at_5_per_mtok_eq: 0.0 },
+      { agent: 'deployer', harness: 'claude', model: 'claude-opus-5-5', calls_success: 345, calls_error: 0, input_tokens: 15396, cache_write_tokens: 3126499, cache_read_tokens: 63684707, output_tokens: 229689, reasoning_tokens: 0, total_tokens: 67056291, input_token_equiv: 11440436, est_cost_at_5_per_mtok_eq: 57.20 },
+      { agent: 'deployer', harness: 'claude', model: 'claude-haiku-4-5', calls_success: 0, calls_error: 26, input_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, output_tokens: 0, reasoning_tokens: 0, total_tokens: 0, input_token_equiv: 0, est_cost_at_5_per_mtok_eq: 0.0 },
+      { agent: 'backend', harness: 'opencode', model: 'google-vertex/gemini-4-argon', calls_success: 278, calls_error: 0, input_tokens: 17940843, cache_write_tokens: 0, cache_read_tokens: 106007549, output_tokens: 429005, reasoning_tokens: 141772, total_tokens: 124519169, input_token_equiv: 31395483, est_cost_at_5_per_mtok_eq: 156.98 }
+    ]
+  },
+  pre_controller_idle_24h: {
+    window_label: 'Pre-Controller 24h Pure Idle Day (2026-11-04, 0 issues closed)',
+    start_time_utc: '2026-11-04T00:00:00Z',
+    end_time_utc: '2026-11-05T00:00:00Z',
+    alignment_period_s: 86400,
+    duration_hours: 24.0,
+    lead_opus_calls: 199,
+    lead_haiku_error_calls: 95,
+    lead_input_tokens: 4934,
+    lead_cache_write_tokens: 53894851,
+    lead_cache_read_tokens: 58983126,
+    lead_output_tokens: 18209,
+    lead_total_tokens: 112901120,
+    lead_input_token_equiv: 73362855,
+    lead_est_cost_at_5_per_mtok_eq: 366.81
+  },
+  pre_controller_active_24h: {
+    window_label: 'Pre-Controller 24h Active Build Day (2026-11-05, Issues #51-#54 closed)',
+    start_time_utc: '2026-11-05T00:00:00Z',
+    end_time_utc: '2026-11-06T00:00:00Z',
+    alignment_period_s: 86400,
+    duration_hours: 24.0,
+    by_agent_model: [
+      { agent: 'lead', harness: 'claude', model: 'claude-opus-5-5', calls_success: 264, calls_error: 0, input_tokens: 6576, cache_write_tokens: 61439604, cache_read_tokens: 110269626, output_tokens: 47343, total_tokens: 171763149, input_token_equiv: 88069759, est_cost_at_5_per_mtok_eq: 440.35 },
+      { agent: 'lead', harness: 'claude', model: 'claude-haiku-4-5', calls_success: 0, calls_error: 123, input_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, output_tokens: 0, total_tokens: 0, input_token_equiv: 0, est_cost_at_5_per_mtok_eq: 0.0 },
+      { agent: 'deployer', harness: 'claude', model: 'claude-opus-5-5', calls_success: 60, calls_error: 0, input_tokens: 3440, cache_write_tokens: 1412031, cache_read_tokens: 19181428, output_tokens: 48371, total_tokens: 20645270, input_token_equiv: 3928477, est_cost_at_5_per_mtok_eq: 19.64 },
+      { agent: 'deployer', harness: 'claude', model: 'claude-haiku-4-5', calls_success: 0, calls_error: 5, input_tokens: 0, cache_write_tokens: 0, cache_read_tokens: 0, output_tokens: 0, total_tokens: 0, input_token_equiv: 0, est_cost_at_5_per_mtok_eq: 0.0 },
+      { agent: 'backend', harness: 'opencode', model: 'google-vertex/gemini-4-argon', calls_success: 34, calls_error: 0, input_tokens: 6953316, cache_write_tokens: 0, cache_read_tokens: 18862460, output_tokens: 34834, reasoning_tokens: 11222, total_tokens: 25861832, input_token_equiv: 9069842, est_cost_at_5_per_mtok_eq: 45.35 }
+    ]
+  },
+  post_controller_window: {
+    window_label: 'Post-Controller Window (2026-11-11T00:00:00Z..14:45:00Z, incl. Drills #55-#57)',
+    start_time_utc: '2026-11-11T00:00:00Z',
+    end_time_utc: '2026-11-11T14:45:00Z',
+    alignment_period_s: 53100,
+    duration_hours: 14.75,
+    lead_opus_calls: 13,
+    lead_haiku_error_calls: 4,
+    lead_input_tokens: 26,
+    lead_cache_write_tokens: 764748,
+    lead_cache_read_tokens: 1714803,
+    lead_output_tokens: 1912,
+    lead_total_tokens: 2481489,
+    lead_input_token_equiv: 1137001,
+    lead_est_cost_at_5_per_mtok_eq: 5.69,
+    w5_sub_windows: [
+      { sub_window_id: 'W5a', label: 'Overnight Idle + Compact Cron (00:00Z..11:45Z, 11.75h)', start_time_utc: '2026-11-11T00:00:00Z', end_time_utc: '2026-11-11T11:45:00Z', alignment_period_s: 42300, lead_opus_calls: 4, lead_haiku_error_calls: 2, lead_input_tokens: 15, lead_cache_write_tokens: 280702, lead_cache_read_tokens: 468482, lead_output_tokens: 1039, lead_input_token_equiv: 402935, est_cost_usd: 2.01 },
+      { sub_window_id: 'W5b', label: 'Stage 2 Wake-Gate Drills #55, #56, #57 (11:45Z..12:45Z, 1.0h)', start_time_utc: '2026-11-11T11:45:00Z', end_time_utc: '2026-11-11T12:45:00Z', alignment_period_s: 3600, lead_opus_calls: 9, lead_haiku_error_calls: 2, lead_input_tokens: 11, lead_cache_write_tokens: 484046, lead_cache_read_tokens: 1246321, lead_output_tokens: 873, lead_input_token_equiv: 734066, est_cost_usd: 3.67 },
+      { sub_window_id: 'W5c', label: 'Post-Drill Steady-State Idle (12:45Z..14:45Z, 2.0h)', start_time_utc: '2026-11-11T12:45:00Z', end_time_utc: '2026-11-11T14:45:00Z', alignment_period_s: 7200, lead_opus_calls: 0, lead_haiku_error_calls: 0, lead_input_tokens: 0, lead_cache_write_tokens: 0, lead_cache_read_tokens: 0, lead_output_tokens: 0, lead_input_token_equiv: 0, est_cost_usd: 0.00 }
+    ],
+    post_drill_idle_window: {
+      start_time_utc: '2026-11-11T12:45:00Z',
+      end_time_utc: '2026-11-11T14:45:00Z',
+      alignment_period_s: 7200,
+      duration_hours: 2.0,
+      lead_opus_calls: 0,
+      lead_total_tokens: 0,
+      lead_input_token_equiv: 0
+    }
+  },
+  w4_transition_daily_buckets: [
+    { date_utc: '2026-11-06', phase: 'Step 0 manual /compact at 21:54Z', lead_opus_calls: 203, lead_haiku_err: 96, input_tokens: 4990, cache_write_tokens: 64370058, cache_read_tokens: 77465902, output_tokens: 44232, input_token_equiv: 88430321, est_cost_usd: 442.15, note: 'Pre-compact 684k context growth until 21:54Z' },
+    { date_utc: '2026-11-07', phase: 'Day 1 post-Step-0 /compact (15m idle)', lead_opus_calls: 203, lead_haiku_err: 96, input_tokens: 4925, cache_write_tokens: 4680254, cache_read_tokens: 5279325, output_tokens: 17906, input_token_equiv: 6472704, est_cost_usd: 32.36, note: '13.7x drop in cache_write immediately after Step 0 /compact' },
+    { date_utc: '2026-11-08', phase: 'Day 2 post-Step-0 regrowth (15m idle)', lead_opus_calls: 204, lead_haiku_err: 96, input_tokens: 5000, cache_write_tokens: 10478250, cache_read_tokens: 11732510, output_tokens: 17768, input_token_equiv: 14364904, est_cost_usd: 71.82, note: 'Uncompacted 15m heartbeats regrew context 2.24x vs Day 1' },
+    { date_utc: '2026-11-09', phase: 'Day 3 regrowth -> heartbeat paused 19:01:24Z', lead_opus_calls: 163, lead_haiku_err: 77, input_tokens: 4001, cache_write_tokens: 12449329, cache_read_tokens: 14306075, output_tokens: 14557, input_token_equiv: 17069054, est_cost_usd: 85.35, note: 'Paused 15m schedule a171d8a3 at 19:01:24Z (0 calls after 19:01Z)' },
+    { date_utc: '2026-11-10', phase: 'Stage 1 --apply-compact cron live at 16:35Z', lead_opus_calls: 0, lead_haiku_err: 0, deployer_opus_calls: 2, input_tokens: 6, cache_write_tokens: 309855, cache_read_tokens: 248312, output_tokens: 68, input_token_equiv: 412496, est_cost_usd: 2.06, note: 'lead 0 calls; deployer 2 calls for Stage 1 verification' }
+  ],
+  unmeasured_harnesses_in_cloud_monitoring: [
+    {
+      harness: 'antigravity',
+      agents: ['frontend', 'eval-lead', 'factory-analyst', 'search-evaluator', 'ui-craftsman'],
+      cloud_monitoring_status: 'not measured',
+      cloud_monitoring_series_count: 0,
+      reason: 'Antigravity harness did not export workload.googleapis.com/gen_ai.api.calls or workload.googleapis.com/scion.usage.tokens OTel series to <HUB_PROJECT> during 2026-10-25..2026-11-11.',
+      spanner_trajectory_fallback: 'Persisted in Spanner agent_trajectories & pull_request_metrics (frontend: 6 issues #8-#10, #22, #46, #47, 5 PRs; psearch-eval team: 20 eval issues #11-#18, #23-#31, #36-#38, #58-#61)'
+    },
+    {
+      harness: 'hermes',
+      agents: ['reviewer'],
+      cloud_monitoring_status: 'not measured',
+      cloud_monitoring_series_count: 0,
+      reason: 'Hermes harness did not export workload.googleapis.com/gen_ai.api.calls or workload.googleapis.com/scion.usage.tokens OTel series to <HUB_PROJECT> during 2026-10-25..2026-11-11.',
+      spanner_trajectory_fallback: 'Persisted in Spanner agent_trajectories & pull_request_metrics (reviewer: 9 PR gate reviews PR #1-#9, 2 remediation loops caught on PR #1 and PR #7)'
+    }
+  ],
+  factory_issue_flow_through_57: {
+    total_issues: 61,
+    closed_issues: 48,
+    open_issues: 13,
+    merged_prs: 9,
+    cohorts: [
+      { cohort: 'Wave 4 Eval Refresh (#36-#38)', issues: '#36, #37, #38', closed_count: 3, mean_cycle_hours: 1.54, median_cycle_hours: 1.57, prs: 'eval-dashboard commits', highlight: '17/17 reqs, 54 pyramid scenarios, 35-issue audit' },
+      { cohort: 'Wave 6 Catalog Parity & Filter Correctness (#39-#47)', issues: '#39-#47', closed_count: 9, mean_cycle_hours: 1.56, median_cycle_hours: 1.46, prs: 'PR #8 (a431954), PR #9 (575b3fc)', highlight: '15,000 products seeded, dynamically faceted filters, reviewer caught 2 HIGH bugs on PR #7' },
+      { cohort: 'Post-Wave 6 Security, Auth & Idle Burn Diagnosis (#48-#54)', issues: '#48-#54', closed_count: 3, superseded_count: 2, open_count: 2, mean_cycle_hours: 4.53, median_cycle_hours: 3.16, prs: 'Runtime config & Cloud Monitoring audit', highlight: '#52 zero secret leak verified; #53 proved 199 calls/day ($366.81/d) idle burn (#49/#50 superseded)' },
+      { cohort: 'Wave 7 Lead Cost Controller Gate Drills (#55-#57)', issues: '#55, #56, #57', closed_count: 3, mean_cycle_hours: 0.72, median_cycle_hours: 0.67, prs: 'lead_wake_controller.py drills', highlight: 'Drill A gated NOOP (0 calls), Drill B true wake -> gate=noop, Drill C stage_1_compact_ok' },
+      { cohort: 'Wave 7 Refreshed Eval & Dashboard (#58-#61)', issues: '#58, #59, #60, #61', closed_count: 3, open_count: 1, mean_cycle_hours: 1.18, median_cycle_hours: 1.15, prs: 'eval-dashboard (4233707, ef2bd60)', highlight: '30/30 requirements, 100/100 5-Layer Pyramid, #39-#54 mapping, before/after cost controller panel' }
+    ]
+  },
+  reduction_summary: {
+    opus_calls_reduction_pct: 93.47,
+    cache_write_reduction_pct: 98.58,
+    input_token_equiv_reduction_pct: 98.45,
+    input_token_equiv_speedup_factor: 64.5,
+    post_drill_idle_burn_reduction_pct: 100.0,
+    spec_targets_met: true
+  }
+};
 
 // Build the Directed Inter-Agent Communication & Handoff Graph across psearch and psearch-eval
 function buildInterAgentGraph(allSteps, agentsSummary) {
@@ -3258,6 +3501,7 @@ function buildTrajectoriesPayload(liveMainCommits = [], liveEvalCommits = [], li
     spanner_turns_total: Array.isArray(liveSpannerTurns) ? liveSpannerTurns.length : 0,
     live_harness_turns_total: liveHarnessTurnsTotal,
     cost_summary: costAndWorkItemRollups.cost_summary,
+    lead_cost_controller_comparison: LEAD_COST_CONTROLLER_COMPARISON,
     pr_rollups: costAndWorkItemRollups.pr_rollups,
     issue_rollups: costAndWorkItemRollups.issue_rollups,
     agent_graph: agentGraph,
@@ -3331,6 +3575,7 @@ module.exports = {
   PR_METADATA,
   ISSUE_METADATA,
   BASELINE_TRAJECTORIES,
+  LEAD_COST_CONTROLLER_COMPARISON,
   buildTrajectoriesPayload,
   buildCostAndWorkItemRollups,
   attributeSpannerTurnsStatefully,

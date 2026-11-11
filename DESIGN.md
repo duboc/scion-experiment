@@ -154,36 +154,33 @@ All colors are defined in the perceptual **OKLCH** color space to ensure linear 
 
 ## 4. Layout & Component Architecture
 
-### 4.1 Sticky Operational Topbar & Asymmetric Focal Strip
-- **Topbar**: Displays service identity (`psearch-eval`), live status dot, storefront link (`#link-storefront`), manual refresh trigger (`refreshAll()`), and Daylight/Carbon theme toggle (`#theme-toggle`).
+### 4.1 Sticky Operational Topbar, Provenance Badges & Asymmetric Focal Strip
+- **Topbar**: Displays service identity (`psearch-eval`), live status dot, storefront link (`#link-storefront`), manual refresh trigger (`triggerLiveEvaluation()`), and Daylight/Carbon theme toggle (`#btn-theme`).
+- **Standing Rule 2 — Run Timestamp & Service Revision Provenance Badges (`.prov-badge`)**:
+  - Every panel fed by an evaluation run displays a visible provenance badge (`[data-eval-provenance-badge]`) showing WHEN the run happened (`evaluated_at` UTC `2026-11-11T15:21:55Z` + `run_id` `probe-1794413079-f6782c`) and WHICH service revision it measured (`psearch-serving-00043-p87` @ `014b6df`, deploy `575b3fc`).
 - **Asymmetric Focal Strip**:
-  - **Primary Metric Readout**: `NDCG@10` (`#val-ndcg`), `MRR@10` (`#val-mrr`), optimal hybrid weight (`#val-opt-alpha`), backend mode (`#lbl-backend-mode`), and UTC probe timestamp (`#val-timestamp`).
+  - **Primary Metric Readout**: `NDCG@10` (`#val-ndcg`), `MRR@10` (`#val-mrr`), optimal hybrid weight (`#val-opt-alpha`), backend mode (`#lbl-backend-mode`), UTC probe timestamp (`#val-timestamp`), and measured revision (`#val-service-revision`).
   - **Secondary Telemetry Strip**:
     - `p50 Latency` (`#val-p50`) & `p95 / p99 Latency` (`#val-p95`)
-    - `Requirements Status` (`#val-reqs-pass` $\to$ `14 / 14 PASS · 0 PARTIAL`)
-    - `5-Layer Pyramid Status` (`#val-pyramid-pass` $\to$ `76 / 76 PASS (100%)`)
-    - `Active Agents` (`#val-agents-cnt` $\to$ `10 / 10 running`)
-  - **Inline SVG Alpha Parameter Sweep (`#svg-alpha-curve`)**: Plots live `NDCG@10` across $\alpha \in \{0.00, 0.25, 0.50, 0.65, 0.80, 1.00\}$ with peak annotation.
+    - `Requirements Status` (`#val-reqs-pass` $\to$ `30 / 30 PASS`)
+    - `5-Layer Pyramid Status` (`#val-pyramid-pass` $\to$ `100 / 100 PASS (100%)`)
+    - `Catalog Scale` (`#val-catalog-scale` $\to$ `20,535 SKUs · 2,515 Vecs`)
+  - **Inline SVG Alpha Parameter Sweep (`#svg-alpha-curve`)**: Plots live `NDCG@10` across $\alpha \in \{0.00, 0.25, 0.50, 0.65, 0.80, 1.00\}$ with peak annotation and `#prov-badge-alpha`.
 
 ### 4.2 5-Layer Product Evaluation Methodology Pyramid (`#section-pyramid`)
-- **Pyramid Stack (`#pyramid-stack` & `.pyramid-layer-card`)**:
-  - Renders 5 horizontal tier rows (`L1` through `L5`), each displaying:
-    - Tier badge (`L1`–`L5`) and layer title (`L1. Trajectory & State Sequence`, `L2. Policy & Business Guardrails`, `L3. Adversarial & Red-Team Robustness`, `L4. Multi-Mode Routing & Engine Parity`, `L5. Live Vertex AI & Factory Telemetry`).
-    - Progress bar track (`.pyramid-bar-track` / `.pyramid-bar-fill`) proportional to `scenarios_passed / scenarios_count` (`100%` fill in `--status-pass`).
-    - Tabular scenario counter (`12/12`, `15/15`, `16/16`, `28/28`, `5/5`) and `PASS` status badge.
+- **Pyramid Stack (`#pyramid-stack` & `.pyramid-row`)**:
+  - Renders 5 horizontal tier rows (`L1` through `L5` · `100` scenarios total: `17 L1`, `25 L2`, `19 L3`, `31 L4`, `8 L5`), each displaying tier badge, layer title, progress bar track (`100%` fill in `--status-pass`), tabular scenario counter (`17/17`, `25/25`, `19/19`, `31/31`, `8/8`), and `PASS` status badge.
 - **Interactive Scenario Drilldown Ledger (`#tbody-pyramid-scenarios`)**:
-  - Filterable via layer buttons (`All Layers (76)`, `L1 (12)`, `L2 (15)`, `L3 (16)`, `L4 (28)`, `L5 (5)`) bound to `setPyramidLayerFilter(layerId, btn)`.
-  - Columns: `Layer`, `Scenario ID`, `Scenario Name`, `Status Badge`, `Latency (ms)`, and `Empirical Evidence`.
+  - Columns: `ID`, `Scenario Name`, `Status`, `Latency`, and `Empirical Evidence`, accompanied by `#prov-badge-pyramid` and `#prov-badge-pyramid-detail`.
 
-### 4.3 14 Biggy Search Requirements Compliance Ledger (`#section-requirements`)
-- **Wave Filter Bar**: Interactive filter buttons (`All`, `Wave 1`, `Wave 2`, `Wave 3`, `Wave 4`, `Wave 5`) bound to `setWaveFilter(wave, btn)`.
-- **Ledger Table (`#tbody-reqs`)**: Renders all 14 requirements (`4.1.1`–`4.1.14`, Issues `#1`–`#10` and `#19`–`#22`) with clickable GitHub issue links, wave tags, owner agents, `PASS` badges, and live probe evidence.
+### 4.3 30 Biggy Search / IS 2.0 Requirements Matrix & Build Issues #39–#54 Mapping (`#section-requirements`)
+- **Wave Filter Bar**: Interactive filter buttons (`All (30)`, `Wave 1`, `Wave 2`, `Wave 3`, `Wave 4`, `Wave 5`, `Wave 6 (16)`) bound to `setWaveFilter(wave, btn)`.
+- **Ledger Table (`#tbody-reqs`)**: Renders all 30 requirements (`4.1.1`–`4.1.30`, including `#35` Sponsored Products and `#39`–`#53` Wave 6 runtime requirements) with clickable GitHub issue links, wave tags, owner agents, `PASS` badges, and live probe evidence.
+- **Build Issues #39–#54 Runtime Verification & Disposition Mapping (`#tbody-issue-39-54-mapping`)**: Renders all 16 build issues `#39`–`#54` (`12` Runtime-Probed `PASS`, `2` Docs-Only `NOT_RUNTIME_TESTABLE` `#48`/`#54`, and `2` Theme Issues `SUPERSEDED` by `#53` `#49`/`#50`).
 
-### 4.4 Interactive Hybrid RRF Query Workbench & Multi-Agent Topology
-- **Query Workbench (`runWorkbenchQuery()`)**: Live query input (`#wb-query`), hybrid $\alpha$ selector (`#wb-alpha`), and locale selector (`#wb-locale`) executing real-time proxy probes via `/api/workbench` and displaying stock badges and hybrid scores in `#tbody-workbench`.
-- **Multi-Agent Factory Topology & Diagnostics**:
-  - Interactive topology node pills for both `psearch` (`lead`, `backend`, `frontend`, `reviewer`, `deployer`) and `psearch-eval` (`eval-lead`, `search-evaluator`, `factory-analyst`, `ui-craftsman`, `eval-deployer`), bound to `#tbody-agents`.
-  - Factory Diagnostics Ledger (`#diag-container`) and Git Commit Ledger (`#tbody-commits`).
+### 4.4 Interactive Hybrid RRF Query Workbench, Multi-Agent Topology & Lead Cost Controller Audit
+- **Query Workbench (`runWorkbenchQuery()`)**: Live query input (`#wb-query`), hybrid $\alpha$ selector (`#wb-alpha`), locale/department filters, and `#prov-badge-workbench` / `#prov-badge-golden`.
+- **Lead Cost Controller Panel (`#lead-cost-controller-panel`)**: Dedicated Factory FinOps panel comparing Cloud Monitoring (`<HUB_PROJECT>`) model calls and token burn Before (`< 2026-11-06`) vs. After (`>= 2026-11-11`), showing exact MQL/REST queries, UTC windows W1–W5 (`199 -> 13` Opus calls `-93.47%`, `73.36M -> 1.14M eq` `-98.45%` / `64.5x` reduction, `0` post-drill idle calls), W4 daily transition buckets, and explicit `'not measured'` status in Cloud Monitoring `<HUB_PROJECT>` for `antigravity` and `hermes` harnesses alongside Spanner trajectory metrics.
 
 ---
 
@@ -191,11 +188,13 @@ All colors are defined in the perceptual **OKLCH** color space to ensure linear 
 
 | HTTP Route | Method | Data Source | Response Contract |
 |---|---|---|---|
-| **`GET /api/eval`** | `GET` | Cloud Spanner `eval_runs` (`ORDER BY created_at DESC LIMIT 1`) | Returns `run_id`, `overall_ndcg_at_10`, `overall_mrr_at_10`, `p50_latency_ms`, `p95_latency_ms`, `p99_latency_ms`, `optimal_alpha`, `pass_count` (`14`), `requirements` (`14` items), `pyramid_layers` (`5` layers), `pyramid_summary` (`76/76 PASS`), `alpha_curve`, `golden_queries`, and `diagnostics`. |
-| **`GET /api/agents`** | `GET` | Cloud Spanner `factory_agent_status` | Returns `source: "spanner"` and `agents` array (`10` agents across `psearch` and `psearch-eval`) with `phase`, `activity`, `current_turns`, `model_calls`, and `last_summary`. |
-| **`GET /api/backlog`** | `GET` | GitHub REST API (`duboc/scion-experiment`) | Returns `issues`, `main_commits`, and `eval_commits` authenticated via Secret Manager `github-token`. |
-| **`GET /api/workbench`** | `GET` | Live HTTP proxy to `psearch-serving` (`/api/search`) | Proxies `q`, `alpha`, and `locale` to `psearch-serving`, returning `results`, `facets`, `effective_alpha`, and `probe_latency_ms`. |
-| **`GET /api/info`** | `GET` | Service runtime configuration | Returns `service: "psearch-eval-dashboard"`, `spanner_instance: "psearch-instance"`, `spanner_database: "psearch-db"`, and `serving_url`. |
+| **`GET /api/eval`** | `GET` | Cloud Spanner `eval_runs` (`ORDER BY created_at DESC LIMIT 1`) | Returns `run_id`, `evaluated_at`, `service_revision` (`psearch-serving-00043-p87`), `serving_git_commit` (`014b6df`), `deploy_commit` (`575b3fc`), `eval_branch_commit` (`ef2bd60`), `overall_ndcg_at_10`, `overall_mrr_at_10`, `p50_latency_ms`, `p95_latency_ms`, `p99_latency_ms`, `optimal_alpha`, `pass_count` (`30`), `requirements` (`30` items), `issue_39_54_mapping` (`16` items), `pyramid_layers` (`5` layers), `pyramid_summary` (`100/100 PASS`), `alpha_curve`, `golden_queries`, and `diagnostics`. |
+| **`POST /api/eval/run`** | `POST` | `scripts/probe_search.py` + Spanner `eval_runs` | Executes live 30-requirement + 100-scenario pyramid probe against `psearch-serving` and persists a new row in `eval_runs`. |
+| **`GET /api/trajectories`** | `GET` | Cloud Spanner `factory_agent_trajectories` + Firestore | Returns `agents`, `chronological_timeline`, `cost_summary`, `pr_rollups` (`PR #1–#9`), `issue_rollups` (`Issues #1–#61`), and `lead_cost_controller_comparison`. |
+| **`GET /api/agents`** | `GET` | Cloud Spanner `factory_agent_status` | Returns `source: "spanner"`, `agents` array (`10` agents), and `lead_cost_controller_comparison`. |
+| **`GET /api/backlog`** | `GET` | GitHub REST API (`duboc/scion-experiment`, `per_page=100`) | Returns all 61 `issues` (`#1`–`#61`), `main_commits`, and `eval_commits` authenticated via Secret Manager `github-token`. |
+| **`GET /api/workbench`** | `GET` | Live HTTP proxy to `psearch-serving` (`/api/search`) | Proxies `q`, `alpha`, `category`, and `locale` to `psearch-serving`, returning `results`, `facets`, `effective_alpha`, and `probe_latency_ms`. |
+| **`GET /api/info`** | `GET` | Service runtime configuration | Returns `service: "psearch-eval-dashboard"`, `sandbox: "production"`, `spanner_instance: "psearch-instance"`, `spanner_database: "psearch-db"`, and redacted `psearch_serving_url`. |
 | **`GET /health`** | `GET` | Container health probe | Returns `200 OK` with `{"status": "ok"}`. |
 
 ---

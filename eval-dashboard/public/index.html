@@ -678,6 +678,44 @@
       max-height: 185px;
       overflow-y: auto;
     }
+    /* Issue #61 Standing Rule 2: Run Timestamp & Measured Service Revision Provenance Badge */
+    .prov-badge {
+      display: inline-flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.35rem;
+      font-family: var(--font-mono);
+      font-size: 0.69rem;
+      line-height: 1.35;
+      padding: 0.22rem 0.55rem;
+      border-radius: 3px;
+      background: var(--accent-tint);
+      border: 1px solid var(--border-strong);
+      color: var(--text-primary);
+      margin-top: 0.32rem;
+    }
+    .prov-badge strong {
+      color: var(--accent-primary);
+      font-weight: 700;
+    }
+    .cost-kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-bottom: 1px solid var(--border-hairline);
+      background: var(--bg-surface);
+    }
+    @media (max-width: 1100px) {
+      .cost-kpi-strip {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    .cost-kpi-cell {
+      padding: 0.65rem 1rem;
+      border-right: 1px solid var(--border-hairline);
+    }
+    .cost-kpi-cell:last-child {
+      border-right: none;
+    }
   </style>
 </head>
 <body>
@@ -693,17 +731,17 @@
       </div>
     </div>
     <div class="toolbar-actions">
-      <a id="link-storefront" href="https://psearch-serving-mhjw244bgq-uc.a.run.app" target="_blank" class="btn">
+      <a id="link-storefront" href="#section-workbench" class="btn" title="Measured Cloud Run revision psearch-serving-00043-p87 (commit 014b6df)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M7 17L17 7M17 7H8M17 7V16"/></svg>
-        <span>Open psearch-serving</span>
+        <span id="lbl-storefront-btn">psearch-serving (00043-p87 @ 014b6df)</span>
       </a>
       <a href="#section-trajectories" class="btn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        <span>Agent Trajectories</span>
+        <span>Factory &amp; Cost Controller</span>
       </a>
       <a href="https://github.com/duboc/scion-experiment/issues" target="_blank" class="btn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><circle cx="12" cy="16" r="0.8" fill="currentColor"/></svg>
-        <span>Backlog (Waves 1–6 · 17 Reqs)</span>
+        <span>Backlog (Waves 1–7 · 30 Reqs · 61 Issues)</span>
       </a>
       <button type="button" id="btn-theme" class="btn" onclick="toggleTheme()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2"/></svg>
@@ -721,8 +759,8 @@
     <div class="lens-tabs" role="group" aria-label="Select Workspace Lens">
       <span class="mono" style="font-size:0.72rem;font-weight:700;color:var(--text-muted);margin-right:0.25rem;">LENS:</span>
       <button type="button" class="lens-tab" data-lens="all" aria-pressed="true" onclick="switchWorkspaceLens('all')">All Views (Executive)</button>
-      <button type="button" class="lens-tab" data-lens="finops" aria-pressed="false" onclick="switchWorkspaceLens('finops')">1. FinOps, Swimlane &amp; Trajectories</button>
-      <button type="button" class="lens-tab" data-lens="pyramid" aria-pressed="false" onclick="switchWorkspaceLens('pyramid')">2. 5-Layer Pyramid &amp; Search Workbench</button>
+      <button type="button" class="lens-tab" data-lens="finops" aria-pressed="false" onclick="switchWorkspaceLens('finops')">1. FinOps, Cost Controller &amp; Trajectories</button>
+      <button type="button" class="lens-tab" data-lens="pyramid" aria-pressed="false" onclick="switchWorkspaceLens('pyramid')">2. 5-Layer Pyramid &amp; 30 Reqs (#1–#54)</button>
       <button type="button" class="lens-tab" data-lens="topology" aria-pressed="false" onclick="switchWorkspaceLens('topology')">3. Factory Topology &amp; Diagnostics</button>
     </div>
     <div id="active-crossfilter-pills" class="crossfilter-strip">
@@ -737,6 +775,11 @@
         <div>
           <h2>Hybrid Relevance &amp; Ranking Quality</h2>
           <p style="font-size:0.8125rem;margin-top:0.2rem;">Evaluated live against <code id="lbl-backend-mode">spanner</code> across 16 golden queries (Pharma · Dermo · Retail · 20,535 SKUs).</p>
+          <div id="prov-badge-focal-1" class="prov-badge" data-eval-provenance-badge="hero">
+            <span>Evaluated: <strong id="prov-hero-ts">2026-11-11T15:21:55Z</strong></span>
+            <span>·</span>
+            <span>Revision: <strong id="prov-hero-rev">psearch-serving-00043-p87</strong> (<code id="prov-hero-sha">014b6df</code>)</span>
+          </div>
         </div>
         <div class="primary-readout">
           <div>
@@ -750,14 +793,19 @@
         </div>
         <div class="kv-list">
           <div class="kv-item"><span class="kv-key">Optimal RRF &alpha;</span><span class="kv-val mono" id="val-opt-alpha">0.65</span></div>
-          <div class="kv-item"><span class="kv-key">Last Probe</span><span class="kv-val mono" id="val-timestamp">--</span></div>
+          <div class="kv-item"><span class="kv-key">Evaluated At (UTC)</span><span class="kv-val mono" id="val-timestamp">2026-11-11T15:21:55Z</span></div>
+          <div class="kv-item"><span class="kv-key">Measured Revision</span><span class="kv-val mono" id="val-service-revision">psearch-serving-00043-p87 @ 014b6df</span></div>
+          <div class="kv-item"><span class="kv-key">Spanner Eval Run ID</span><span class="kv-val mono" id="val-run-id">probe-1794413079-f6782c</span></div>
         </div>
       </div>
 
       <div class="focal-cell">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:0.3rem;">
           <h2>RRF &alpha; Sensitivity Curve (Lexical vs. Vector Fusion)</h2>
           <span class="mono" style="font-size:0.75rem;color:var(--text-muted);">&alpha;=0.0 FTS &rarr; &alpha;=1.0 Vector</span>
+        </div>
+        <div id="prov-badge-alpha" class="prov-badge" data-eval-provenance-badge="alpha" style="margin-bottom:0.35rem;">
+          <span>Run: <strong>probe-1794413079-f6782c</strong> · <strong>2026-11-11T15:21:55Z</strong> · Target: <strong>psearch-serving-00043-p87</strong> (<code>014b6df</code>)</span>
         </div>
         <svg id="svg-alpha-curve" viewBox="0 0 460 118" style="width:100%;height:118px;display:block;overflow:visible;" aria-label="Alpha sensitivity curve"></svg>
       </div>
@@ -765,28 +813,34 @@
       <div class="focal-cell">
         <div>
           <h2>Factory &amp; Spanner Operational Ledger</h2>
-          <p style="font-size:0.8125rem;margin-top:0.2rem;">Latency percentiles, 20,535-SKU catalog scale, Waves 1–6 (17 Reqs), and 5-Layer Pyramid.</p>
+          <p style="font-size:0.8125rem;margin-top:0.2rem;">Latency SLA percentiles, 20,535-SKU catalog scale, Waves 1–6 (30 Reqs), and 100-Scenario Pyramid.</p>
+          <div id="prov-badge-ledger" class="prov-badge" data-eval-provenance-badge="latency-sla">
+            <span>SLA Measured: <strong>2026-11-11T15:21:55Z</strong> on <strong>psearch-serving-00043-p87</strong> (<code>014b6df</code> · deploy <code>575b3fc</code>)</span>
+          </div>
         </div>
         <div class="kv-list" style="border-top:none;padding-top:0;">
           <div class="kv-item"><span class="kv-key">Latency p50</span><span class="kv-val mono" id="val-p50">-- ms</span></div>
           <div class="kv-item"><span class="kv-key">Latency p95 / p99</span><span class="kv-val mono" id="val-p95">-- ms</span></div>
-          <div class="kv-item"><span class="kv-key">Requirements Passing</span><span class="kv-val mono" id="val-reqs-pass">17 / 17</span></div>
-          <div class="kv-item"><span class="kv-key">5-Layer Eval Pyramid</span><span class="kv-val mono" id="val-pyramid-pass">92 / 92 (100%)</span></div>
+          <div class="kv-item"><span class="kv-key">Requirements Passing</span><span class="kv-val mono" id="val-reqs-pass">30 / 30 PASS</span></div>
+          <div class="kv-item"><span class="kv-key">5-Layer Eval Pyramid</span><span class="kv-val mono" id="val-pyramid-pass">100 / 100 (100%)</span></div>
           <div class="kv-item"><span class="kv-key">Spanner Catalog Scale</span><span class="kv-val mono" id="val-catalog-scale">20,535 SKUs · 2,515 Vecs</span></div>
           <div class="kv-item"><span class="kv-key">Agent Trajectories</span><span class="kv-val mono" id="val-traj-steps">10 Agents · Rebuilt</span></div>
         </div>
       </div>
     </section>
 
-    <!-- 5-Layer Product Evaluation Methodology Pyramid (L1–L5 · 92 Scenarios · 100% Threshold) — Above the Fold -->
+    <!-- 5-Layer Product Evaluation Methodology Pyramid (L1–L5 · 100 Scenarios · 100% Threshold) — Above the Fold -->
     <section class="ledger-frame split-2" id="section-pyramid" aria-label="5-Layer Product Evaluation Methodology Pyramid">
       <div class="zone">
-        <div class="zone-header">
+        <div class="zone-header" style="flex-wrap:wrap;gap:0.5rem;">
           <div>
             <h2>5-Layer Product Evaluation Methodology Pyramid</h2>
-            <div class="mono" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">L1–L5 · 92 Scenarios (Retail + Pharma/Dermocosmetics/Compounding) · 100% Threshold</div>
+            <div class="mono" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">L1–L5 · 100 Scenarios (17 L1 · 25 L2 · 19 L3 · 31 L4 · 8 L5 · Retail + Pharma/Dermo + Wave 6 #35/#39–#53) · 100% Threshold</div>
+            <div id="prov-badge-pyramid" class="prov-badge" data-eval-provenance-badge="pyramid">
+              <span>Evaluated: <strong>2026-11-11T15:21:55Z</strong> · Run: <strong>probe-1794413079-f6782c</strong> · Revision: <strong>psearch-serving-00043-p87</strong> (<code>014b6df</code>)</span>
+            </div>
           </div>
-          <span id="pyramid-summary-badge" class="badge badge--pass"><span class="badge-dot"></span>92 / 92 PASS (100%)</span>
+          <span id="pyramid-summary-badge" class="badge badge--pass"><span class="badge-dot"></span>100 / 100 PASS (100%)</span>
         </div>
         <div class="pyramid-stack" id="pyramid-stack">
           <!-- Populated dynamically: L5 (Apex) down to L1 (Foundation) -->
@@ -794,10 +848,13 @@
       </div>
 
       <div class="zone">
-        <div class="zone-header">
+        <div class="zone-header" style="flex-wrap:wrap;gap:0.5rem;">
           <div>
             <h2 id="pyramid-detail-title">Layer Scenarios &amp; Live Verification Evidence</h2>
             <div class="mono" id="pyramid-detail-meta" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;">Click any tier on the left to inspect scenario assertions</div>
+            <div id="prov-badge-pyramid-detail" class="prov-badge" data-eval-provenance-badge="pyramid-detail">
+              <span>Measured Against: <strong>psearch-serving-00043-p87</strong> (<code>014b6df</code> · deploy <code>575b3fc</code>) at <strong>2026-11-11T15:21:55Z</strong></span>
+            </div>
           </div>
           <span id="pyramid-layer-badge" class="badge badge--pass"><span class="badge-dot"></span>PASS (100%)</span>
         </div>
@@ -818,27 +875,32 @@
       </div>
     </section>
 
-    <!-- Section 4.1 Functional Requirements Matrix (17/17 PASS across Waves 1-6) + GitHub Commits -->
-    <section class="ledger-frame split-2" id="section-requirements" aria-label="Section 4.1 Functional Requirements and GitHub Activity">
+    <!-- Section 4.1 Functional Requirements Matrix (30/30 PASS across Waves 1-6) + #39-#54 Build Issue Mapping & GitHub Commits -->
+    <section class="ledger-frame split-2" id="section-requirements" aria-label="Section 4.1 Functional Requirements, Issue 39-54 Mapping, and GitHub Activity">
       <div class="zone">
-        <div class="zone-header">
-          <h2>Section 4.1 Functional Requirements Matrix (17/17 PASS · Waves 1–6)</h2>
+        <div class="zone-header" style="flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <h2 id="reqs-matrix-title">Section 4.1 Functional Requirements Matrix (30/30 PASS · Waves 1–6)</h2>
+            <div id="prov-badge-requirements" class="prov-badge" data-eval-provenance-badge="requirements">
+              <span>Evaluated: <strong>2026-11-11T15:21:55Z</strong> · Run: <strong>probe-1794413079-f6782c</strong> · Revision: <strong>psearch-serving-00043-p87</strong> (<code>014b6df</code>)</span>
+            </div>
+          </div>
           <div class="filter-group" role="group" aria-label="Filter requirements by wave">
-            <button type="button" class="filter-btn" aria-pressed="true" onclick="setWaveFilter('all', this)">All (17)</button>
+            <button type="button" class="filter-btn" id="btn-wave-all" aria-pressed="true" onclick="setWaveFilter('all', this)">All (30)</button>
             <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-1', this)">Wave 1</button>
             <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-2', this)">Wave 2</button>
             <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-3', this)">Wave 3</button>
             <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-4', this)">Wave 4</button>
             <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-5', this)">Wave 5</button>
-            <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-6', this)">Wave 6</button>
+            <button type="button" class="filter-btn" aria-pressed="false" onclick="setWaveFilter('wave-6', this)">Wave 6 (16)</button>
           </div>
         </div>
-        <div class="zone-body table-wrap">
+        <div class="zone-body table-wrap" style="max-height:660px;">
           <table>
             <thead>
               <tr>
                 <th>Issue</th>
-                <th>Requirement (Biggy Search / IS 2.0)</th>
+                <th>Requirement (Biggy Search / IS 2.0 · 4.1.1–4.1.30)</th>
                 <th>Wave</th>
                 <th>Assigned</th>
                 <th>Status</th>
@@ -850,15 +912,40 @@
         </div>
       </div>
 
-      <div class="zone">
-        <div class="zone-header">
-          <h2>GitHub Repository &amp; Branch Telemetry</h2>
+      <div class="zone" style="display:flex;flex-direction:column;">
+        <div class="zone-header" style="flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <h2>Build Issues #39–#54 Runtime Verification &amp; Disposition Mapping (16 Issues)</h2>
+            <div class="mono" style="font-size:0.73rem;color:var(--text-muted);margin-top:0.15rem;">12 Runtime-Probed PASS (4.1.19–4.1.30) · 2 Docs-Only (<code>NOT_RUNTIME_TESTABLE</code> #48, #54) · 2 Theme Issues (<code>SUPERSEDED</code> by #53)</div>
+            <div id="prov-badge-mapping-39-54" class="prov-badge" data-eval-provenance-badge="mapping-39-54">
+              <span>Evaluated: <strong>2026-11-11T15:21:55Z</strong> · Revision: <strong>psearch-serving-00043-p87</strong> (<code>014b6df</code> · deploy <code>575b3fc</code>)</span>
+            </div>
+          </div>
+          <span class="badge badge--pass"><span class="badge-dot"></span>16 / 16 Accounted</span>
+        </div>
+        <div class="zone-body table-wrap" style="max-height:385px;border-bottom:1px solid var(--border-hairline);">
+          <table>
+            <thead>
+              <tr>
+                <th>Issue</th>
+                <th>Req Code &amp; ADR</th>
+                <th>Endpoint / Artifact Probed</th>
+                <th>Disposition</th>
+                <th>Empirical Verification Result</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-issue-39-54-mapping"></tbody>
+          </table>
+        </div>
+
+        <div class="zone-header" style="background:var(--bg-subtle);padding:0.55rem 1.25rem;">
+          <h3 style="margin:0;font-size:0.84rem;font-weight:600;">GitHub Repository &amp; Branch Telemetry</h3>
           <div style="display:flex;align-items:center;gap:0.75rem;">
             <span id="backlog-error" class="badge badge--pending" style="display:none;"></span>
             <a href="https://github.com/duboc/scion-experiment" target="_blank" class="mono" style="font-size:0.75rem;">duboc/scion-experiment &rarr;</a>
           </div>
         </div>
-        <div class="zone-body table-wrap">
+        <div class="zone-body table-wrap" style="max-height:225px;">
           <table>
             <thead>
               <tr>
@@ -877,8 +964,13 @@
     <!-- Interactive Hybrid RRF Query Workbench + Golden Benchmark Table -->
     <section class="ledger-frame split-2" id="section-workbench" aria-label="Interactive Hybrid Search Workbench and Golden Queries">
       <div class="zone">
-        <div class="zone-header">
-          <h2>Interactive Hybrid RRF Query Workbench &amp; 20,535-SKU Catalog Explorer</h2>
+        <div class="zone-header" style="flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <h2>Interactive Hybrid RRF Query Workbench &amp; 20,535-SKU Catalog Explorer</h2>
+            <div id="prov-badge-workbench" class="prov-badge" data-eval-provenance-badge="workbench">
+              <span>Live Target: <strong>psearch-serving-00043-p87</strong> (<code>014b6df</code>) · Last Sweep: <strong>2026-11-11T15:21:55Z</strong></span>
+            </div>
+          </div>
           <span class="mono" style="font-size:0.75rem;color:var(--text-muted);" id="wb-meta">Live probe against psearch-serving (20,535 products)</span>
         </div>
         <form class="workbench-bar" style="grid-template-columns: 1.3fr 0.85fr 0.6fr 0.9fr auto;" onsubmit="runWorkbenchQuery(event)">
@@ -952,8 +1044,13 @@
       </div>
 
       <div class="zone">
-        <div class="zone-header">
-          <h2>Golden Query Benchmark Suite (Cloud Spanner · 20,535 SKUs)</h2>
+        <div class="zone-header" style="flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <h2>Golden Query Benchmark Suite (Cloud Spanner · 20,535 SKUs)</h2>
+            <div id="prov-badge-golden" class="prov-badge" data-eval-provenance-badge="golden-queries">
+              <span>Evaluated: <strong>2026-11-11T15:21:55Z</strong> · Run: <strong>probe-1794413079-f6782c</strong> · Revision: <strong>psearch-serving-00043-p87</strong> (<code>014b6df</code>)</span>
+            </div>
+          </div>
           <span class="mono" id="golden-suite-meta" style="font-size:0.75rem;color:var(--text-muted);">16 Queries (Pharma · Dermo · Retail) · NDCG@10 &amp; MRR@10</span>
         </div>
         <div class="zone-body table-wrap">
@@ -990,12 +1087,12 @@
         <!-- Interactive Topology SVG -->
         <svg class="topo-canvas" viewBox="0 0 760 240" aria-label="Agent delegation graph">
           <!-- psearch tree (left) -->
-          <text x="195" y="20" text-anchor="middle" fill="var(--text-secondary)" font-size="12" font-weight="600">Project: psearch (main · Gemini 4 Argon (High) · gemini-4-argon)</text>
+          <text x="195" y="20" text-anchor="middle" fill="var(--text-secondary)" font-size="12" font-weight="600">Project: psearch (main · Opus 5.5 / Gemini 4 Argon)</text>
           <path class="topo-edge" d="M195,62 L65,112 M195,62 L152,112 M195,62 L238,112 M195,62 L325,112" />
           <g class="topo-node is-active" onclick="selectAgentNode('psearch','lead',this)" transform="translate(135,28)">
             <rect width="120" height="34" />
             <text x="60" y="15" text-anchor="middle">@lead</text>
-            <text x="60" y="27" text-anchor="middle" class="sub">claude · gemini-4-argon</text>
+            <text x="60" y="27" text-anchor="middle" class="sub">claude · opus-5-5</text>
           </g>
           <g class="topo-node" onclick="selectAgentNode('psearch','backend',this)" transform="translate(22,112)">
             <rect width="84" height="36" />
@@ -1015,7 +1112,7 @@
           <g class="topo-node" onclick="selectAgentNode('psearch','deployer',this)" transform="translate(286,112)">
             <rect width="84" height="36" />
             <text x="42" y="15" text-anchor="middle">@deployer</text>
-            <text x="42" y="28" text-anchor="middle" class="sub">claude · Argon</text>
+            <text x="42" y="28" text-anchor="middle" class="sub">claude · opus-5-5</text>
           </g>
 
           <!-- Divider -->
@@ -1053,12 +1150,12 @@
           <!-- Shared Sandbox Target -->
           <rect x="60" y="176" width="640" height="44" fill="var(--bg-subtle)" stroke="var(--border-hairline)" />
           <text x="380" y="195" text-anchor="middle" fill="var(--text-primary)" font-family="JetBrains Mono, monospace" font-size="12" font-weight="600">Cloud Spanner (psearch-instance / psearch-db) · Vertex AI Global (gemini-4-argon · gemini-3.8-flash)</text>
-          <text x="380" y="211" text-anchor="middle" fill="var(--text-muted)" font-size="12">psearch-eval observes psearch agents in Spanner, rebuilds agent trajectories, and audits 17/17 requirements</text>
+          <text x="380" y="211" text-anchor="middle" fill="var(--text-muted)" font-size="12">psearch-eval observes psearch agents in Spanner, rebuilds agent trajectories, and audits 30/30 requirements &amp; 100 pyramid scenarios</text>
         </svg>
 
         <div class="inspector-strip" id="node-inspector">
           <span>Selected Agent: <strong class="mono">@lead (psearch)</strong> — Factory Tech Lead &amp; Backlog Orchestrator</span>
-          <span class="mono">Model: Gemini 4 Argon (High) · Focus: Waves 1–6 (17/17 PASS)</span>
+          <span class="mono">Model: Claude Opus 5.5 · Focus: Waves 1–7 (30/30 Reqs PASS · Cost Controller Live)</span>
         </div>
 
         <div class="zone-body table-wrap">
@@ -1080,22 +1177,27 @@
       </div>
 
       <div class="zone">
-        <div class="zone-header">
-          <h2>Antigravity Factory Analyst — Actionable Diagnostics</h2>
+        <div class="zone-header" style="flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <h2>Antigravity Factory Analyst — Actionable Diagnostics</h2>
+            <div id="prov-badge-diagnostics" class="prov-badge" data-eval-provenance-badge="diagnostics">
+              <span>Evaluated: <strong>2026-11-11T15:21:55Z</strong> · Run: <strong>probe-1794413079-f6782c</strong> · Revision: <strong>psearch-serving-00043-p87</strong> (<code>014b6df</code>)</span>
+            </div>
+          </div>
           <span class="mono" style="font-size:0.75rem;color:var(--text-muted);">By @factory-analyst &amp; @search-evaluator</span>
         </div>
         <div class="diag-list" id="diag-container"></div>
       </div>
     </section>
 
-    <!-- Per-Agent Execution Trajectory Inspector, PR/Issue Cost & Turn Drill-Down, Inter-Agent Graph & Conversational Explorer (psearch + psearch-eval) -->
-    <section class="ledger-frame" id="section-trajectories" aria-label="Agent Execution Trajectory Inspector, PR and Issue Cost Analytics, Inter-Agent Graph, and Conversational Explorer">
+    <!-- Per-Agent Execution Trajectory Inspector, Lead Cost Controller Before/After Comparison, PR/Issue Cost & Turn Drill-Down, Inter-Agent Graph & Conversational Explorer -->
+    <section class="ledger-frame" id="section-trajectories" aria-label="Agent Execution Trajectory Inspector, Lead Cost Controller Comparison, PR and Issue Cost Analytics, Inter-Agent Graph, and Conversational Explorer">
       <div class="zone">
         <div class="zone-header" style="flex-wrap:wrap;gap:0.75rem;">
           <div>
-            <h2>Agent Conversation Trajectory, PR &amp; Issue Cost Ledger, Tool Usage &amp; Inter-Agent Graph</h2>
+            <h2>Factory FinOps, Lead Cost Controller Before vs. After (<code class="mono">&lt; 2026-11-06</code> vs. <code class="mono">&ge; 2026-11-11</code>), PR &amp; Issue Cost Ledger (#1–#61) &amp; Trajectories</h2>
             <div class="mono" style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem;" id="traj-subtitle">
-              Evaluate agent turns &amp; USD cost across Issues (#1–#35) and Pull Requests (PR #12–#27), inspect per-PR/Issue agent involvement, and explore full prompts, thinking traces &amp; tool calls in Cloud Spanner
+              Empirical Cloud Monitoring token/call audit (<code class="mono">&lt;HUB_PROJECT&gt;</code>), Wave 6–7 factory flow (#39–#57 · 48 closed issues · 9 merged PRs), and multi-harness conversation turns in Cloud Spanner
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
@@ -1110,21 +1212,26 @@
           </div>
         </div>
 
-        <!-- NEW: PR & Issue Cost, Turns & Multi-Agent Drill-Down Explorer -->
+        <!-- Issue #60/#61: Dedicated Lead Cost Controller Before (< 2026-11-06) vs. After (>= 2026-11-11) & Wave 6-7 Factory Cohort Panel -->
+        <div id="lead-cost-controller-panel" style="border-bottom:1px solid var(--border-strong);background:var(--bg-canvas);">
+          <!-- Populated dynamically by renderLeadCostControllerPanel() in app.js -->
+        </div>
+
+        <!-- PR & Issue Cost, Turns & Multi-Agent Drill-Down Explorer -->
         <div id="traj-cost-explorer" style="border-bottom:1px solid var(--border-hairline);background:var(--bg-canvas);">
           <!-- Cost & Turn Summary Banner + PR / Issue Ledger Mode Switcher -->
           <div style="padding:0.65rem 1.25rem;border-bottom:1px solid var(--border-hairline);background:var(--bg-subtle);display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0.75rem;">
             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.85rem;">
               <span class="mono" style="font-size:0.78rem;font-weight:700;color:var(--text-primary);">💰 PR &amp; Issue Cost, Turns &amp; Agent Involvement Explorer</span>
               <span class="mono" id="traj-cost-banner-summary" style="font-size:0.74rem;color:var(--text-secondary);">
-                Total Factory Cost: -- · Total Turns: -- · Tracked PRs: 9 (PR #12–#27) · Tracked Issues: 27 (#1–#37)
+                Total Factory Cost: -- · Total Turns: -- · Tracked PRs: 9 (PR #1–#9) · Tracked Issues: 61 (#1–#61 · 48 Closed)
               </span>
             </div>
             <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
               <span class="mono" style="font-size:0.72rem;color:var(--text-muted);">Drill-Down Ledger:</span>
               <div class="filter-group" role="group" aria-label="Switch between Pull Request Cost Ledger and Issue Cost Ledger">
-                <button type="button" id="btn-cost-mode-pr" class="filter-btn" aria-pressed="true" onclick="switchCostLedgerMode('pr')">Pull Requests (9 PRs · #12–#27)</button>
-                <button type="button" id="btn-cost-mode-issue" class="filter-btn" aria-pressed="false" onclick="switchCostLedgerMode('issue')">GitHub Issues (27 Issues · #1–#37)</button>
+                <button type="button" id="btn-cost-mode-pr" class="filter-btn" aria-pressed="true" onclick="switchCostLedgerMode('pr')">Pull Requests (9 PRs · #1–#9)</button>
+                <button type="button" id="btn-cost-mode-issue" class="filter-btn" aria-pressed="false" onclick="switchCostLedgerMode('issue')">GitHub Issues (61 Issues · #1–#61)</button>
               </div>
             </div>
           </div>
@@ -1195,7 +1302,7 @@
           <div class="zone" style="border-right:1px solid var(--border-hairline);">
             <div class="zone-header" style="background:var(--bg-subtle);padding:0.55rem 1.15rem;">
               <div>
-                <h3 style="margin:0;font-size:0.84rem;font-weight:600;">10-Agent Swimlane Execution Waterfall (Waves 0–6 · Click Any Step Block to Inspect)</h3>
+                <h3 style="margin:0;font-size:0.84rem;font-weight:600;">10-Agent Swimlane Execution Waterfall (Waves 0–7 · Click Any Step Block to Inspect)</h3>
                 <div class="mono" style="font-size:0.69rem;color:var(--text-muted);margin-top:0.12rem;">Synchronized chronological execution spans colored by FinOps bucket: Productive (Emerald) · Rework/Rollback (Amber) · Heartbeat Tax (Slate)</div>
               </div>
               <div class="filter-group" role="group" aria-label="Filter by FinOps Cost Bucket">
@@ -1244,18 +1351,18 @@
           <div class="zone" style="display:flex;flex-direction:column;">
             <div class="zone-header" style="background:var(--bg-subtle);padding:0.6rem 1.25rem;">
               <h3 style="margin:0;font-size:0.85rem;font-weight:600;">Converse with the Trajectory — Inspect PR/Issue Cost, Prompts, Thinking &amp; Tools</h3>
-              <span class="mono" style="font-size:0.72rem;color:var(--accent-primary);">Grounded on All PRs (#12–#27) &amp; Issues (#1–#37)</span>
+              <span class="mono" style="font-size:0.72rem;color:var(--accent-primary);">Grounded on All PRs (#1–#9) &amp; Issues (#1–#61)</span>
             </div>
             <div style="padding:0.65rem 1rem;border-bottom:1px solid var(--border-hairline);background:var(--bg-surface);display:flex;flex-direction:column;gap:0.5rem;">
               <div style="display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;">
                 <span class="mono" style="font-size:0.7rem;color:var(--text-muted);">Quick Queries:</span>
-                <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('How much did PR #17, PR #25, and Issue #35 cost, and how many turns and agents were involved?')">💰 PR #17, PR #25 &amp; #35 Cost &amp; Agents</button>
+                <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('How much did PR #8, PR #9, and Issues #39-#57 cost, and how many turns and agents were involved?')">💰 PR #8, PR #9 &amp; #39–#57 Cost &amp; Agents</button>
                 <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Show @lead, @reviewer, and @deployer prompts, thinking and tool calls on #34 clickable facets')">#34 Clickable Facets (Prompts &amp; Tools)</button>
                 <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Show @backend and @frontend thinking, cost and tool usage on #35 sponsored products')">#35 Sponsored Products (@backend/@frontend)</button>
                 <button type="button" class="btn" style="padding:0.2rem 0.5rem;font-size:0.72rem;" onclick="askTrajectoryPreset('Why did @reviewer reject #2 API key leak and @deployer roll back Wave 1 00010?')">Wave 1 Rollback &amp; #2 Review Gate</button>
               </div>
               <form onsubmit="submitTrajectoryChat(event)" style="display:flex;gap:0.5rem;">
-                <input id="traj-chat-input" class="input" type="text" value="How much did PR #17, PR #25, and Issue #35 cost, and how many turns and agents were involved?" placeholder="Ask how much a PR or Issue cost, how many turns/agents were involved, or inspect prompts/thinking..." style="flex:1;" />
+                <input id="traj-chat-input" class="input" type="text" value="How much did PR #8, PR #9, and Issues #39-#57 cost, and how many turns and agents were involved?" placeholder="Ask how much a PR or Issue cost, how many turns/agents were involved, or inspect prompts/thinking..." style="flex:1;" />
                 <button type="submit" id="btn-traj-chat" class="btn btn-primary">Ask Trajectory</button>
               </form>
             </div>
@@ -1298,13 +1405,13 @@
               <div style="display:flex;align-items:center;gap:0.4rem;">
                 <label for="traj-filter-pr" class="mono" style="font-size:0.74rem;font-weight:700;color:var(--text-primary);white-space:nowrap;">Filter by PR:</label>
                 <select id="traj-filter-pr" class="mono" style="font-size:0.74rem;padding:0.28rem 0.55rem;min-width:250px;" onchange="onTrajectoryPrFilterChange(this.value)">
-                  <option value="all">All Pull Requests (PR #12–#27)</option>
+                  <option value="all">All Pull Requests (PR #1–#9)</option>
                 </select>
               </div>
               <div style="display:flex;align-items:center;gap:0.4rem;">
                 <label for="traj-filter-issue" class="mono" style="font-size:0.74rem;font-weight:700;color:var(--text-primary);white-space:nowrap;">Filter by Issue:</label>
                 <select id="traj-filter-issue" class="mono" style="font-size:0.74rem;padding:0.28rem 0.55rem;min-width:270px;" onchange="onTrajectoryIssueFilterChange(this.value)">
-                  <option value="all">All GitHub Issues (#1–#37)</option>
+                  <option value="all">All GitHub Issues (#1–#61)</option>
                 </select>
               </div>
               <button type="button" id="btn-clear-traj-workitem-filters" class="btn mono" style="padding:0.24rem 0.55rem;font-size:0.72rem;display:none;" onclick="clearTrajectoryWorkItemFilters()">Clear PR / Issue Filter &times;</button>
@@ -1318,7 +1425,7 @@
         <!-- Selected Agent / PR / Issue Summary Strip -->
         <div class="inspector-strip" id="trajectory-agent-summary">
           <span>Viewing Trajectory: <strong class="mono">@lead (psearch)</strong> — Factory Tech Lead &amp; Architecture Orchestrator</span>
-          <span class="mono">Steps: -- · Issues: #1–#37 · PRs: #12–#27 · Cost &amp; Tool Traces</span>
+          <span class="mono">Steps: -- · Issues: #1–#61 · PRs: #1–#9 · Cost &amp; Tool Traces</span>
         </div>
 
         <!-- Issue #37: Pinned Turn & Attribution Inspector Drawer (Details-on-Demand) -->
@@ -1346,6 +1453,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=20261015-v6"></script>
+  <script src="app.js?v=20261111-v7"></script>
 </body>
 </html>

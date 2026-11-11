@@ -59,20 +59,55 @@ type Diagnostic struct {
 	Recommendation string         `json:"recommendation"`
 }
 
+// CostControllerWindowMetrics summarizes Cloud Monitoring gen_ai.api.calls and scion.usage.tokens for a UTC window.
+type CostControllerWindowMetrics struct {
+	WindowLabel            string `json:"window_label"`
+	StartTimeUTC           string `json:"start_time_utc"`
+	EndTimeUTC             string `json:"end_time_utc"`
+	AlignmentPeriodSeconds int64  `json:"alignment_period_seconds"`
+	LeadOpusSuccessCalls   int64  `json:"lead_opus_success_calls"`
+	LeadHaikuErrorCalls    int64  `json:"lead_haiku_error_calls"`
+	LeadInputTokens        int64  `json:"lead_input_tokens"`
+	LeadCacheWriteTokens   int64  `json:"lead_cache_write_tokens"`
+	LeadCacheReadTokens    int64  `json:"lead_cache_read_tokens"`
+	LeadOutputTokens       int64  `json:"lead_output_tokens"`
+	LeadInputTokenEq       int64  `json:"lead_input_token_equivalents"`
+	DeployerOpusCalls      int64  `json:"deployer_opus_calls"`
+	DeployerInputTokenEq   int64  `json:"deployer_input_token_equivalents"`
+	BackendGeminiCalls     int64  `json:"backend_gemini_calls"`
+	BackendTotalTokens     int64  `json:"backend_total_tokens"`
+}
+
+// LeadCostControllerComparison captures the < 2026-11-06 vs >= 2026-11-11 Cloud Monitoring comparison for Issue #60.
+type LeadCostControllerComparison struct {
+	HubProjectPlaceholder   string                      `json:"hub_project_placeholder"`
+	MetricsSource           string                      `json:"metrics_source"`
+	PreController12d        CostControllerWindowMetrics `json:"pre_controller_12d"`
+	PreController24hIdle    CostControllerWindowMetrics `json:"pre_controller_24h_idle"`
+	PreController24hWork    CostControllerWindowMetrics `json:"pre_controller_24h_work"`
+	PostControllerFull      CostControllerWindowMetrics `json:"post_controller_2026_11_11"`
+	PostWakeGate3h          CostControllerWindowMetrics `json:"post_wake_gate_3h"`
+	PostDrillIdle2h         CostControllerWindowMetrics `json:"post_drill_idle_2h"`
+	DailyCacheWriteReductionPct float64                 `json:"daily_cache_write_reduction_pct"`
+	DailyOpusCallsReductionPct  float64                 `json:"daily_opus_calls_reduction_pct"`
+}
+
 // TelemetryAnalysisReport encapsulates the complete factory analysis.
 type TelemetryAnalysisReport struct {
-	Timestamp               time.Time    `json:"timestamp"`
-	TotalAgents             int          `json:"total_agents"`
-	ActiveAgents            int          `json:"active_agents"`
-	StalledAgents           int          `json:"stalled_agents"`
-	BlockedAgents           int          `json:"blocked_agents"`
-	PsearchServingRevision  string       `json:"psearch_serving_revision"`
-	OverallNDCGAt10         float64      `json:"overall_ndcg_at_10"`
-	OverallMRRAt10          float64      `json:"overall_mrr_at_10"`
-	P50LatencyMs            float64      `json:"p50_latency_ms"`
-	P95LatencyMs            float64      `json:"p95_latency_ms"`
-	Diagnostics             []Diagnostic `json:"diagnostics"`
-	ActionableRecommendations []string   `json:"actionable_recommendations"`
+	Timestamp                    time.Time                     `json:"timestamp"`
+	TotalAgents                  int                           `json:"total_agents"`
+	ActiveAgents                 int                           `json:"active_agents"`
+	StalledAgents                int                           `json:"stalled_agents"`
+	BlockedAgents                int                           `json:"blocked_agents"`
+	PsearchServingRevision       string                        `json:"psearch_serving_revision"`
+	ClosedIssuesThrough57        int                           `json:"closed_issues_through_57"`
+	OverallNDCGAt10              float64                       `json:"overall_ndcg_at_10"`
+	OverallMRRAt10               float64                       `json:"overall_mrr_at_10"`
+	P50LatencyMs                 float64                       `json:"p50_latency_ms"`
+	P95LatencyMs                 float64                       `json:"p95_latency_ms"`
+	LeadCostController           *LeadCostControllerComparison `json:"lead_cost_controller_comparison,omitempty"`
+	Diagnostics                  []Diagnostic                  `json:"diagnostics"`
+	ActionableRecommendations    []string                      `json:"actionable_recommendations"`
 }
 
 // AnalyzeFactoryTelemetry evaluates agent states, git cadence, and latency to produce actionable diagnostics.
@@ -84,12 +119,105 @@ func AnalyzeFactoryTelemetry(agents []AgentStatus, p95LatencyMs float64, referen
 	report := TelemetryAnalysisReport{
 		Timestamp:              referenceTime,
 		TotalAgents:            len(agents),
-		PsearchServingRevision: "00024-ltv",
+		PsearchServingRevision: "00043-p87",
+		ClosedIssuesThrough57:  48,
 		OverallNDCGAt10:        0.980,
 		OverallMRRAt10:         1.000,
 		P50LatencyMs:           41.8,
 		P95LatencyMs:           p95LatencyMs,
-		Diagnostics:            make([]Diagnostic, 0),
+		LeadCostController: &LeadCostControllerComparison{
+			HubProjectPlaceholder: "<HUB_PROJECT>",
+			MetricsSource:         "Cloud Monitoring workload.googleapis.com/gen_ai.api.calls & workload.googleapis.com/scion.usage.tokens",
+			PreController12d: CostControllerWindowMetrics{
+				WindowLabel:            "Pre-Controller 12d Baseline (< 2026-11-06)",
+				StartTimeUTC:           "2026-10-25T00:00:00Z",
+				EndTimeUTC:             "2026-11-06T00:00:00Z",
+				AlignmentPeriodSeconds: 1036800,
+				LeadOpusSuccessCalls:   2776,
+				LeadHaikuErrorCalls:    1299,
+				LeadInputTokens:        72600,
+				LeadCacheWriteTokens:   684353394,
+				LeadCacheReadTokens:    859705482,
+				LeadOutputTokens:       382611,
+				LeadInputTokenEq:       943397946,
+				DeployerOpusCalls:      345,
+				DeployerInputTokenEq:   11440436,
+				BackendGeminiCalls:     278,
+				BackendTotalTokens:     124519169,
+			},
+			PreController24hIdle: CostControllerWindowMetrics{
+				WindowLabel:            "Pre-Controller 24h Idle Day (< 2026-11-06)",
+				StartTimeUTC:           "2026-11-04T00:00:00Z",
+				EndTimeUTC:             "2026-11-05T00:00:00Z",
+				AlignmentPeriodSeconds: 86400,
+				LeadOpusSuccessCalls:   199,
+				LeadHaikuErrorCalls:    95,
+				LeadInputTokens:        4934,
+				LeadCacheWriteTokens:   53894851,
+				LeadCacheReadTokens:    58983126,
+				LeadOutputTokens:       18209,
+				LeadInputTokenEq:       73362855,
+			},
+			PreController24hWork: CostControllerWindowMetrics{
+				WindowLabel:            "Pre-Controller 24h Build Day (#51-#54, < 2026-11-06)",
+				StartTimeUTC:           "2026-11-05T00:00:00Z",
+				EndTimeUTC:             "2026-11-06T00:00:00Z",
+				AlignmentPeriodSeconds: 86400,
+				LeadOpusSuccessCalls:   264,
+				LeadHaikuErrorCalls:    123,
+				LeadInputTokens:        6576,
+				LeadCacheWriteTokens:   61439604,
+				LeadCacheReadTokens:    110269626,
+				LeadOutputTokens:       47343,
+				LeadInputTokenEq:       88069759,
+				DeployerOpusCalls:      60,
+				DeployerInputTokenEq:   3928477,
+				BackendGeminiCalls:     34,
+				BackendTotalTokens:     25861832,
+			},
+			PostControllerFull: CostControllerWindowMetrics{
+				WindowLabel:            "Post-Controller Window (>= 2026-11-11, incl. Gate Drills #55-#57)",
+				StartTimeUTC:           "2026-11-11T00:00:00Z",
+				EndTimeUTC:             "2026-11-11T14:45:00Z",
+				AlignmentPeriodSeconds: 53100,
+				LeadOpusSuccessCalls:   13,
+				LeadHaikuErrorCalls:    4,
+				LeadInputTokens:        26,
+				LeadCacheWriteTokens:   764748,
+				LeadCacheReadTokens:    1714803,
+				LeadOutputTokens:       1912,
+				LeadInputTokenEq:       1137001,
+			},
+			PostWakeGate3h: CostControllerWindowMetrics{
+				WindowLabel:            "Post-Wake-Gate 3h Window (11:45Z..14:45Z, Drills #55-#57 + 2h Idle)",
+				StartTimeUTC:           "2026-11-11T11:45:00Z",
+				EndTimeUTC:             "2026-11-11T14:45:00Z",
+				AlignmentPeriodSeconds: 10800,
+				LeadOpusSuccessCalls:   13,
+				LeadHaikuErrorCalls:    4,
+				LeadInputTokens:        26,
+				LeadCacheWriteTokens:   764748,
+				LeadCacheReadTokens:    1714803,
+				LeadOutputTokens:       1912,
+				LeadInputTokenEq:       1137001,
+			},
+			PostDrillIdle2h: CostControllerWindowMetrics{
+				WindowLabel:            "Post-Drill Pure Idle Window (12:45Z..14:45Z, Wake Gate Active + 4h Heartbeat)",
+				StartTimeUTC:           "2026-11-11T12:45:00Z",
+				EndTimeUTC:             "2026-11-11T14:45:00Z",
+				AlignmentPeriodSeconds: 7200,
+				LeadOpusSuccessCalls:   0,
+				LeadHaikuErrorCalls:    0,
+				LeadInputTokens:        0,
+				LeadCacheWriteTokens:   0,
+				LeadCacheReadTokens:    0,
+				LeadOutputTokens:       0,
+				LeadInputTokenEq:       0,
+			},
+			DailyCacheWriteReductionPct: 98.58,
+			DailyOpusCallsReductionPct:  93.47,
+		},
+		Diagnostics:               make([]Diagnostic, 0),
 		ActionableRecommendations: make([]string, 0),
 	}
 
@@ -251,6 +379,18 @@ func AnalyzeFactoryTelemetry(agents []AgentStatus, p95LatencyMs float64, referen
 		}
 	}
 
+	// 9. Analyze Lead Cost Controller Rollout & Gate Drill Verification (Issue #60)
+	report.Diagnostics = append(report.Diagnostics, Diagnostic{
+		ID:             "diag-lead-cost-controller-verified",
+		Severity:       SeverityResolved,
+		Bottleneck:     BottleneckIdleHandoff,
+		TargetAgent:    "psearch/@lead",
+		TargetIssue:    "Issue #60 / Lead Cost Controller (#55-#57)",
+		Title:          "Lead Cost Controller Cuts Idle Opus Cache-Write Spend by 98.6% (53.89M -> 0.76M/day; 0 Calls in 2h Idle)",
+		Analysis:       "Cloud Monitoring in <HUB_PROJECT> (gen_ai.api.calls & scion.usage.tokens) confirms that before 2026-11-06 (2026-10-25T00:00:00Z..2026-11-06T00:00:00Z), psearch/@lead executed 2,776 claude-opus-5-5 calls (684.35M cache_write, 859.71M cache_read, 943.40M input-token-eq; 199 calls & 53.89M cache_write on idle day 2026-11-04). After 2026-11-11T00:00:00Z (with 200k compaction ceiling, wake gate --apply-wake at 11:45Z, and 4h heartbeat), lead used 0 calls in 11.75h pre-gate idle (00:00Z..11:45Z), 13 claude-opus-5-5 calls across gate drills #55-#57 (11:45Z..12:45Z: 764,748 cache_write, 1,714,803 cache_read, 1.14M eq), and 0 calls in 2h post-drill idle (12:45Z..14:45Z).",
+		Recommendation: "Keep lead-controller.py (--apply-compact --apply-wake) on */5 cron and psearch-lead-heartbeat at 0 */4 * * *; set CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 to eliminate residual claude-haiku-4-5 status=error calls (1,299 pre-2026-11-06; 4 during #55-#57).",
+	})
+
 	// Compile Top Actionable Recommendations
 	report.ActionableRecommendations = []string{
 		"1. Unblock @lead: Update directive to confirm Issues #1-#10 and #22 are accepted and closed; transition factory focus to delegating open Issue #23.",
@@ -260,6 +400,7 @@ func AnalyzeFactoryTelemetry(agents []AgentStatus, p95LatencyMs float64, referen
 		"5. Fix Telemetry Metric Export: Configure SCION_GCP_PROJECT_ID='<GCP_PROJECT_ID>' in agent environments to populate turn counts and model calls.",
 		"6. Recover @reviewer: Re-provision Hermes container or migrate reviewer role to Antigravity/Claude harness with Vertex AI credentials.",
 		"7. Finalize Wave 5 Acceptance: Close GitHub issues #19, #20, and #21 on duboc/scion-experiment using empirical evidence in DEPLOYMENT.md.",
+		"8. Suppress Claude Code Haiku Background Calls: Export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 in psearch/@lead and psearch/@deployer to eliminate failing claude-haiku-4-5 calls observed in gen_ai.api.calls.",
 	}
 
 	return report

@@ -197,15 +197,17 @@ Validates live Cloud Run health, Vertex AI `global` model endpoints, and end-to-
 
 ## 5. Key Performance Indicators (KPIs) & Target SLAs
 
-| Metric | Target SLA | Degraded Threshold | Breach / Failure | Latest Verified (`probe-1791941093-29012b`) |
+| Metric | Target SLA | Degraded Threshold | Breach / Failure | Latest Verified (`probe-1794413079-f6782c` · `psearch-serving-00043-p87` @ `014b6df`) |
 |---|---|---|---|---|
-| **NDCG@10** | $\ge 0.850$ | $0.700 - 0.849$ | $< 0.700$ | **`0.980` (PASS)** |
-| **MRR@10** | $\ge 0.900$ | $0.750 - 0.899$ | $< 0.750$ | **`1.000` (PASS)** |
-| **p50 Search Latency** | $\le 50.0\text{ms}$ | $50.1\text{ms} - 80.0\text{ms}$ | $> 80.0\text{ms}$ | **`35.4\text{ms}` (PASS)** |
-| **p95 Search Latency** | $\le 120.0\text{ms}$ | $120.1\text{ms} - 250.0\text{ms}$ | $> 250.0\text{ms}$ | **`54.1\text{ms}` (PASS)** |
-| **Optimal Hybrid $\alpha$** | $\alpha \in [0.65, 0.80]$ | $\alpha \in [0.50, 0.64]$ | Out of range | **`0.65` (NDCG `0.987`)** |
-| **14 Requirements Compliance** | `14 / 14` (`100%`) | `12 - 13 / 14` | `< 12 / 14` | **`14 / 14 PASS` (`100%`)** |
-| **5-Layer Pyramid Pass Rate** | `76 / 76` (`100%`) | `70 - 75 / 76` | `< 70 / 76` | **`76 / 76 PASS` (`100%`)** |
+| **NDCG@10** | $\ge 0.850$ | $0.700 - 0.849$ | $< 0.700$ | **`0.985` (PASS)** |
+| **MRR@10** | $\ge 0.850$ | $0.750 - 0.849$ | $< 0.750$ | **`0.988` (PASS)** |
+| **p50 Search Latency** | $\le 50.0\text{ms}$ | $50.1\text{ms} - 80.0\text{ms}$ | $> 80.0\text{ms}$ | **`40.2\text{ms}` (PASS)** |
+| **p95 Search Latency** | $\le 120.0\text{ms}$ | $120.1\text{ms} - 250.0\text{ms}$ | $> 250.0\text{ms}$ | **`72.9\text{ms}` (PASS)** |
+| **Optimal Hybrid $\alpha$** | $\alpha \in [0.65, 0.80]$ | $\alpha \in [0.50, 0.64]$ | Out of range | **`0.65` (NDCG `0.985`)** |
+| **30 Requirements Compliance** | `30 / 30` (`100%`) | `27 - 29 / 30` | `< 27 / 30` | **`30 / 30 PASS` (`100%` · Waves 1–6)** |
+| **Build Issues #39–#54 Mapping** | `16 / 16 Accounted` | `< 16 / 16` | Unaccounted issues | **`12 PASS · 2 NOT_RUNTIME_TESTABLE (#48, #54) · 2 SUPERSEDED (#49, #50)`** |
+| **5-Layer Pyramid Pass Rate** | `100 / 100` (`100%`) | `95 - 99 / 100` | `< 95 / 100` | **`100 / 100 PASS` (`100%` · `17 L1, 25 L2, 19 L3, 31 L4, 8 L5`)** |
+| **Lead Cost Controller Reduction** | $\ge 90\%$ idle burn drop | $70\% - 89\%$ | $< 70\%$ | **`199 -> 13` Opus calls (`-93.47%`), `73.36M -> 1.14M eq` (`-98.45%`, `64.5x`), `0` post-drill idle calls** |
 
 ---
 

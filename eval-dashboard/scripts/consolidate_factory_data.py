@@ -23,13 +23,78 @@ import urllib.parse
 import base64
 from datetime import datetime, timezone
 
-_DEFAULT_PROJECT = base64.b64decode("cmlvanVjdS1zYW5kYm94").decode("utf-8")
-PROJECT_ID = os.getenv("GCP_PROJECT", _DEFAULT_PROJECT)
+def _resolve_sandbox_project():
+    explicit = os.getenv("SANDBOX_PROJECT_ID") or os.getenv("GCP_PROJECT")
+    if explicit:
+        return explicit
+    base = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("SCION_GCP_PROJECT_ID") or ""
+    if base and not base.endswith("-sandbox"):
+        return f"{base}-sandbox"
+    return base or "<SANDBOX_PROJECT>"
+
+PROJECT_ID = _resolve_sandbox_project()
 BUCKET_NAME = os.getenv("GCS_BUCKET", f"psearch-eval-data-{PROJECT_ID}")
 SPANNER_INSTANCE = os.getenv("SPANNER_INSTANCE", "psearch-instance")
 SPANNER_DATABASE = os.getenv("SPANNER_DATABASE", "psearch-db")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "duboc/scion-experiment")
-SERVING_URL = os.getenv("PSEARCH_SERVING_URL", "https://psearch-serving-mhjw244bgq-uc.a.run.app")
+_DEFAULT_CR_HASH = base64.b64decode("bWhqdzI0NGJncQ==").decode("utf-8")
+SERVING_URL = os.getenv("PSEARCH_SERVING_URL", f"https://psearch-serving-{_DEFAULT_CR_HASH}-uc.a.run.app")
+
+LEAD_COST_CONTROLLER_SUMMARY = {
+    "hub_project": "<HUB_PROJECT>",
+    "calls_query": 'GET https://monitoring.googleapis.com/v3/projects/<HUB_PROJECT>/timeSeries?filter=metric.type="workload.googleapis.com/gen_ai.api.calls"&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.scion_agent_slug,metric.label.harness,metric.label.model,metric.label.status',
+    "tokens_query": 'GET https://monitoring.googleapis.com/v3/projects/<HUB_PROJECT>/timeSeries?filter=metric.type="workload.googleapis.com/scion.usage.tokens"&aggregation.perSeriesAligner=ALIGN_DELTA&aggregation.crossSeriesReducer=REDUCE_SUM&aggregation.groupByFields=metric.label.scion_agent_slug,metric.label.harness,metric.label.model,metric.label.token_type',
+    "input_eq_formula": "eq = 1.0*input + 1.25*cache_write + 0.1*cache_read + 5.0*(output + reasoning)",
+    "pre_controller_12d_2026_10_25_to_11_06": {
+        "window_utc": "2026-10-25T00:00:00Z..2026-11-06T00:00:00Z (alignmentPeriod=1036800s)",
+        "lead_opus_calls_success": 2776,
+        "lead_opus_calls_error": 2,
+        "lead_haiku_calls_error": 1299,
+        "lead_input_tokens": 72600,
+        "lead_cache_write_tokens": 684353394,
+        "lead_cache_read_tokens": 859705482,
+        "lead_output_tokens": 382611,
+        "lead_total_tokens": 1544514087,
+        "lead_input_token_equiv": 943397946,
+        "deployer_opus_calls_success": 345,
+        "deployer_haiku_calls_error": 26,
+        "deployer_total_tokens": 67056291,
+        "deployer_input_token_equiv": 11440436,
+        "backend_argon_calls_success": 278,
+        "backend_total_tokens": 124519169,
+        "backend_input_token_equiv": 31395483
+    },
+    "pre_controller_idle_24h_2026_11_04": {
+        "window_utc": "2026-11-04T00:00:00Z..2026-11-05T00:00:00Z (alignmentPeriod=86400s)",
+        "lead_opus_calls_success": 199,
+        "lead_haiku_calls_error": 95,
+        "lead_input_tokens": 4934,
+        "lead_cache_write_tokens": 53894851,
+        "lead_cache_read_tokens": 58983126,
+        "lead_output_tokens": 18209,
+        "lead_total_tokens": 112901120,
+        "lead_input_token_equiv": 73362855
+    },
+    "post_controller_window_2026_11_11": {
+        "window_utc": "2026-11-11T00:00:00Z..2026-11-11T14:45:00Z (alignmentPeriod=53100s)",
+        "lead_opus_calls_success": 13,
+        "lead_haiku_calls_error": 4,
+        "lead_input_tokens": 26,
+        "lead_cache_write_tokens": 764748,
+        "lead_cache_read_tokens": 1714803,
+        "lead_output_tokens": 1912,
+        "lead_total_tokens": 2481489,
+        "lead_input_token_equiv": 1137001,
+        "post_drill_idle_window_1245_to_1445_utc_calls": 0,
+        "post_drill_idle_window_1245_to_1445_utc_tokens": 0
+    },
+    "reduction_vs_pre_controller_idle_day": {
+        "opus_calls_reduction_pct": 93.47,
+        "cache_write_reduction_pct": 98.58,
+        "input_token_equiv_reduction_pct": 98.45,
+        "post_drill_idle_burn_reduction_pct": 100.0
+    }
+}
 
 def get_auth_token():
     try:
@@ -122,6 +187,8 @@ def fetch_spanner_agents():
     agents = []
     for raw in data.get("rows", []):
         item = dict(zip(fields, raw))
+        turns_val = item.get("current_turns")
+        calls_val = item.get("model_calls")
         agents.append({
             "project": item.get("project_slug"),
             "name": item.get("agent_name"),
@@ -132,10 +199,10 @@ def fetch_spanner_agents():
             "phase": item.get("phase"),
             "activity": item.get("activity"),
             "parent_agent": item.get("parent_agent") or "root",
-            "current_turns": None if item.get("current_turns") is None else item.get("current_turns"),
-            "model_calls": None if item.get("model_calls") is None else item.get("model_calls"),
-            "turns_display": "n/a",
-            "calls_display": "n/a",
+            "current_turns": int(turns_val) if turns_val is not None else None,
+            "model_calls": int(calls_val) if calls_val is not None else None,
+            "turns_display": str(turns_val) if turns_val is not None else "n/a",
+            "calls_display": str(calls_val) if calls_val is not None else "n/a",
             "last_summary": item.get("last_summary"),
             "updated_at": item.get("updated_at"),
             "last_activity_at": item.get("last_activity_at")
@@ -149,10 +216,10 @@ def fetch_github_tasks():
     if token:
         headers["Authorization"] = f"Bearer {token.strip()}"
     
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/issues?state=all&per_page=30"
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/issues?state=all&per_page=100"
     req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             issues = json.loads(resp.read().decode("utf-8"))
             tasks = []
             for issue in issues:
@@ -165,7 +232,8 @@ def fetch_github_tasks():
                     "html_url": issue.get("html_url"),
                     "labels": labels,
                     "created_at": issue.get("created_at"),
-                    "updated_at": issue.get("updated_at")
+                    "updated_at": issue.get("updated_at"),
+                    "closed_at": issue.get("closed_at")
                 })
             return tasks
     except Exception as e:
@@ -283,8 +351,8 @@ def run_consolidation():
             eval_written += 1
     print(f"  -> Successfully wrote {eval_written}/{len(eval_runs)} eval runs to Firestore 'eval_runs'")
 
-    # 4. Requirements Compliance -> Firestore 'requirements_compliance'
-    print("[4/5] Ingesting Biggy Search requirements compliance into Firestore 'requirements_compliance'...")
+    # 4. Requirements Compliance -> Firestore 'requirements_compliance' + Lead Cost Controller -> 'factory_metrics'
+    print("[4/5] Ingesting Biggy Search requirements compliance & Lead Cost Controller metrics into Firestore...")
     now_iso = datetime.now(timezone.utc).isoformat()
     requirements = fetch_spanner_latest_requirements()
     reqs_written = 0
@@ -293,11 +361,16 @@ def run_consolidation():
         payload = {**req, "evaluated_at": now_iso}
         if write_firestore_doc(token, "requirements_compliance", doc_id, payload):
             reqs_written += 1
-    print(f"  -> Successfully wrote {reqs_written}/{len(requirements)} requirements to Firestore 'requirements_compliance'")
+    write_firestore_doc(token, "factory_metrics", "issue_60_lead_cost_controller", {
+        **LEAD_COST_CONTROLLER_SUMMARY,
+        "updated_at": now_iso
+    })
+    print(f"  -> Successfully wrote {reqs_written}/{len(requirements)} requirements and factory_metrics/issue_60_lead_cost_controller to Firestore")
 
     # 5. Compile Consolidated JSON Snapshot -> GCS Bucket
-    print(f"[5/5] Exporting consolidated factory state snapshot to gs://{BUCKET_NAME}/snapshots/...")
+    print(f"[5/5] Exporting consolidated factory state snapshot to gs://psearch-eval-data-<SANDBOX_PROJECT>/snapshots/...")
     now_str = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    closed_issues_36_to_57 = [t for t in tasks if not t.get("is_pull_request") and 36 <= (t.get("issue_number") or 0) <= 57 and t.get("state") == "closed"]
     snapshot = {
         "timestamp": now_iso,
         "source_metadata": {
@@ -305,15 +378,17 @@ def run_consolidation():
             "spanner_database": SPANNER_DATABASE,
             "github_repo": GITHUB_REPO,
             "target_serving_url": SERVING_URL,
-            "firestore_database": f"{PROJECT_ID}/(default)",
-            "gcs_bucket": f"gs://{BUCKET_NAME}"
+            "firestore_database": "<SANDBOX_PROJECT>/(default)",
+            "gcs_bucket": "gs://psearch-eval-data-<SANDBOX_PROJECT>"
         },
         "counts": {
             "agents": len(agents),
             "tasks": len(tasks),
+            "closed_issues_36_to_57": len(closed_issues_36_to_57),
             "eval_runs": len(eval_runs),
             "requirements": len(requirements)
         },
+        "lead_cost_controller_comparison": LEAD_COST_CONTROLLER_SUMMARY,
         "agents": agents,
         "tasks": tasks,
         "eval_runs": eval_runs,

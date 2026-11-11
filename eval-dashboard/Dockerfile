@@ -8,7 +8,7 @@ RUN npm install --production
 COPY . .
 
 ENV PORT=8080
-ENV PSEARCH_SERVING_URL=https://psearch-serving-mhjw244bgq-uc.a.run.app
+ENV PSEARCH_SERVING_URL=""
 
 EXPOSE 8080
 

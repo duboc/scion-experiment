@@ -12,7 +12,16 @@ import json
 import subprocess
 from datetime import datetime, timezone
 
-PROJECT_ID = os.getenv("GCP_PROJECT", "<GCP_PROJECT_ID>")
+def _resolve_sandbox_project():
+    explicit = os.getenv("SANDBOX_PROJECT_ID") or os.getenv("GCP_PROJECT")
+    if explicit:
+        return explicit
+    base = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("SCION_GCP_PROJECT_ID") or ""
+    if base and not base.endswith("-sandbox"):
+        return f"{base}-sandbox"
+    return base or "<GCP_PROJECT_ID>"
+
+PROJECT_ID = _resolve_sandbox_project()
 INSTANCE_ID = os.getenv("SPANNER_INSTANCE", "psearch-instance")
 DATABASE_ID = os.getenv("SPANNER_DATABASE", "psearch-db")
 OUTPUT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "public", "telemetry.json")
@@ -34,6 +43,8 @@ def fetch_agents_from_spanner():
         agents = []
         for raw_row in data.get("rows", []):
             item = dict(zip(fields, raw_row))
+            turns_val = item.get("current_turns")
+            calls_val = item.get("model_calls")
             agents.append({
                 "project": item.get("project_slug"),
                 "name": item.get("agent_name"),
@@ -44,8 +55,8 @@ def fetch_agents_from_spanner():
                 "phase": item.get("phase"),
                 "activity": item.get("activity"),
                 "parent_agent": item.get("parent_agent"),
-                "current_turns": "n/a" if item.get("current_turns") is None else item.get("current_turns"),
-                "model_calls": "n/a" if item.get("model_calls") is None else item.get("model_calls"),
+                "current_turns": "n/a" if turns_val is None else int(turns_val),
+                "model_calls": "n/a" if calls_val is None else int(calls_val),
                 "active_issue": item.get("last_summary") or "Standby",
                 "last_summary": item.get("last_summary"),
                 "updated_at": item.get("updated_at"),
@@ -68,7 +79,7 @@ def sync_telemetry():
     payload = {
         "timestamp": now_iso,
         "source": "spanner:factory_agent_status",
-        "database": f"{PROJECT_ID}/{INSTANCE_ID}/{DATABASE_ID}",
+        "database": f"<GCP_PROJECT_ID>/{INSTANCE_ID}/{DATABASE_ID}",
         "projects": projects,
         "agents": agents
     }

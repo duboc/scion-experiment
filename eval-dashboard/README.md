@@ -2,9 +2,9 @@
 
 > **Application package for the `psearch-eval` Observability, Continuous Search Evaluation & Antigravity Factory Analysis Control Tower.**
 
-[![Eval Pyramid](https://img.shields.io/badge/5--Layer_Pyramid-76%2F76_PASS_(100%25)-10b981)](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app)
-[![Requirements](https://img.shields.io/badge/Requirements_4.1.1--4.1.14-14%2F14_PASS-10b981)](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app)
-[![Harness](https://img.shields.io/badge/Harness-Antigravity_%C2%B7_Gemini_4_Argon_(High)-3b82f6)](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app)
+[![Eval Pyramid](https://img.shields.io/badge/5--Layer_Pyramid-100%2F100_PASS_(100%25)-10b981)](https://psearch-eval-dashboard-<CLOUD_RUN_HASH>-uc.a.run.app)
+[![Requirements](https://img.shields.io/badge/Requirements_4.1.1--4.1.30-30%2F30_PASS-10b981)](https://psearch-eval-dashboard-<CLOUD_RUN_HASH>-uc.a.run.app)
+[![Harness](https://img.shields.io/badge/Harness-Antigravity_%C2%B7_Gemini_4_Argon_(High)-3b82f6)](https://psearch-eval-dashboard-<CLOUD_RUN_HASH>-uc.a.run.app)
 
 ---
 
@@ -42,13 +42,13 @@ Key capabilities implemented in this package:
 
 | Service | Cloud Run URL | Description |
 | :--- | :--- | :--- |
-| **`psearch-eval-dashboard` (Control Tower UI)** | [`https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app`](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app) | Above-the-fold 5-Layer Pyramid (`#section-pyramid`), 14-Requirement Matrix (`#section-requirements`), Interactive Hybrid RRF & 15-SKU Catalog Workbench (`#section-workbench`), and Scion Multi-Agent Topology (`#section-agents`) |
-| **`POST /api/eval/run`** | `https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/eval/run` | Triggers a live evaluation probe against `psearch-serving`, persists a new `run_id` to Cloud Spanner `eval_runs`, and returns the full 14-requirement + 5-layer pyramid payload |
-| **`GET /api/catalog`** | [`https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/catalog`](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/catalog) | Returns all 15 bilingual catalog SKUs (`prod-001`–`prod-015`) across `en-US` and `pt-BR` with stock status and B2B pricing |
-| **`GET /api/eval`** | [`https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/eval`](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/eval) | Latest Spanner evaluation run (`14/14` requirements PASS, `76/76` pyramid scenarios PASS) |
-| **`GET /api/workbench`** | [`https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/workbench?q=running+shoes`](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/workbench?q=running+shoes) | Live query proxy to `psearch-serving` supporting all 14 requirement parameters plus `mode=catalog` |
-| **`GET /api/factory`** | [`https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/factory`](https://psearch-eval-dashboard-mhjw244bgq-uc.a.run.app/api/factory) | Live GitHub branch/commit/issue telemetry + 9-agent Scion roster + Antigravity Factory diagnostics |
-| **`psearch-serving` (SUT)** | [`https://psearch-serving-mhjw244bgq-uc.a.run.app`](https://psearch-serving-mhjw244bgq-uc.a.run.app) | Production Go 1.22 + AlloyDB pgvector + Vertex AI `text-embedding-004` search engine under test |
+| **`psearch-eval-dashboard` (Control Tower UI)** | `https://psearch-eval-dashboard-<CLOUD_RUN_HASH>-uc.a.run.app` | Above-the-fold 5-Layer Pyramid (`#section-pyramid`), 30-Requirement Matrix & `#39`–`#54` Mapping (`#section-requirements`), Interactive Hybrid RRF & 20,535-SKU Catalog Workbench (`#section-workbench`), Scion Multi-Agent Topology (`#section-topology`), and Lead Cost Controller Before/After Audit (`#section-trajectories`) |
+| **`POST /api/eval/run`** | `https://psearch-eval-dashboard-<CLOUD_RUN_HASH>-uc.a.run.app/api/eval/run` | Triggers a live evaluation probe against `psearch-serving`, persists a new `run_id` to Cloud Spanner `eval_runs`, and returns the full 30-requirement + 100-scenario 5-layer pyramid payload |
+| **`GET /api/catalog`** | `https://psearch-eval-dashboard-<CLOUD_RUN_HASH>-uc.a.run.app/api/catalog` | Returns catalog SKUs across `pt-BR` and `en-US` with stock status and B2B pricing |
+| **`GET /api/eval`** | `https://psearch-eval-dashboard-<CLOUD_RUN_HASH>-uc.a.run.app/api/eval` | Latest Spanner evaluation run (`30/30` requirements PASS, `100/100` pyramid scenarios PASS, `issue_39_54_mapping`, `service_revision: psearch-serving-00043-p87`, `evaluated_at`) |
+| **`GET /api/workbench`** | `https://psearch-eval-dashboard-<CLOUD_RUN_HASH>-uc.a.run.app/api/workbench?q=protetor+solar+fps+60` | Live query proxy to `psearch-serving` supporting all 30 requirement parameters plus `mode=catalog` |
+| **`GET /api/trajectories`** | `https://psearch-eval-dashboard-<CLOUD_RUN_HASH>-uc.a.run.app/api/trajectories` | Spanner-backed agent trajectories (`#1`–`#61`, PR `#1`–`#9`) + `lead_cost_controller_comparison` (`< 2026-11-06` vs `>= 2026-11-11`) |
+| **`psearch-serving` (SUT)** | `https://psearch-serving-<CLOUD_RUN_HASH>-uc.a.run.app` | Production Go 1.24 + Cloud Spanner 100 PU + Vertex AI `gemini-3.8-flash` search engine under test (`psearch-serving-00043-p87` @ `014b6df`) |
 
 ---
 
@@ -56,14 +56,16 @@ Key capabilities implemented in this package:
 
 | Metric / Dimension | Latest Verified Value | Target / Gate | Status |
 | :--- | :--- | :--- | :--- |
-| **5-Layer Methodology Pyramid (L1–L5)** | **76 / 76 Scenarios PASS (100.0%)** | `100%` across L1–L5 | `PASS` |
-| **Section 4.1 Functional Requirements** | **14 / 14 Requirements PASS (Waves 1–5)** | `14 / 14 PASS` | `PASS` |
-| **Overall nDCG@10** | **0.979** | `>= 0.850` | `PASS` |
-| **Overall MRR@10** | **1.000** | `>= 0.850` | `PASS` |
-| **Overall Recall@20** | **1.000** | `>= 0.900` | `PASS` |
+| **5-Layer Methodology Pyramid (L1–L5)** | **100 / 100 Scenarios PASS (100.0%)** | `100%` across L1–L5 | `PASS` |
+| **Section 4.1 Functional Requirements** | **30 / 30 Requirements PASS (Waves 1–6)** | `30 / 30 PASS` | `PASS` |
+| **Build Issues #39–#54 Mapping** | **16 / 16 Accounted (12 PASS · 2 Docs-Only · 2 Superseded)** | `100% Accounted` | `PASS` |
+| **Measured Service Revision** | **`psearch-serving-00043-p87` (`014b6df` · deploy `575b3fc`)** | `Evaluated 2026-11-11T15:21:55Z` | `PASS` |
+| **Lead Cost Controller Reduction** | **199 -> 13 Opus calls (-93.47%), 73.36M -> 1.14M eq (-98.45%, 64.5x)** | `0 post-drill idle calls` | `PASS` |
+| **Overall nDCG@10** | **0.985** | `>= 0.850` | `PASS` |
+| **Overall MRR@10** | **0.988** | `>= 0.850` | `PASS` |
 | **Zero-Result Rate (ZRR)** | **0.000** | `<= 0.050` | `PASS` |
-| **Serving Latency (`p50` / `p95` / `p99`)** | **26 ms / 73 ms / 79 ms** | `p95 <= 300 ms` | `PASS` |
-| **Product Catalog Coverage** | **15 / 15 Bilingual SKUs (`prod-001`–`prod-015`)** | `10 `en-US` + 5 `pt-BR`` | `PASS` |
+| **Serving Latency (`p50` / `p95` / `p99`)** | **40.2 ms / 72.9 ms / 89.2 ms** | `p95 <= 300 ms` | `PASS` |
+| **Product Catalog Coverage** | **20,535 Bilingual SKUs (`20,526 pt-BR` + `9 en-US`)** | `>= 15,000 SKUs (#40)` | `PASS` |
 
 ---
 
