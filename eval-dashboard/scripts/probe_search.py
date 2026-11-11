@@ -1340,10 +1340,9 @@ def run_5_layer_pyramid():
 
     # 3.11 Extreme limit bound enforcement (Issue #40: HTTP 400 limit validation 1..100)
     st, ms, d = probe_url(f"{SERVING_URL}/api/search?q=shoes&limit=10000")
-    res = d.get("results", []) if (d and isinstance(d, dict)) else []
     err_msg = d.get("error", "") if (d and isinstance(d, dict)) else ""
-    passed = ((st == 400 and "limit" in err_msg) or (st == 200 and 0 < len(res) <= 2520))
-    l3_scenarios.append({"id": "l3_s11", "name": "redteam_11_extreme_limit_clamping", "status": "PASS" if passed else "FAIL", "latency_ms": round(ms, 1), "evidence": f"limit=10000 rejected with HTTP {st} ('{err_msg}') per Issue #40 bound [1..100]"})
+    passed = (st == 400 and err_msg == "limit must be between 1 and 100")
+    l3_scenarios.append({"id": "l3_s11", "name": "redteam_11_extreme_limit_clamping", "status": "PASS" if passed else "FAIL", "latency_ms": round(ms, 1), "evidence": f"GET /api/search?q=shoes&limit=10000 rejected with HTTP {st} ({json.dumps(d) if d else err_msg}) per Issue #40 bound [1..100]"})
 
     # 3.12 Negative limit handling
     st, ms, d = probe_url(f"{SERVING_URL}/api/search?q=shoes&limit=-5")
