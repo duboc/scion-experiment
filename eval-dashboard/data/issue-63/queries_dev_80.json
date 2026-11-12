@@ -1,0 +1,670 @@
+{
+  "dataset_id": "psearch-issue-63-dev-80",
+  "version": "1.0",
+  "created_at": "2026-11-12T17:10:00Z",
+  "description": "80 stratified development queries targeting the 20,520-item real pharmacy/dermocosmetics catalog (med-*) in Spanner psearch-instance/psearch-db across 6 strata. Holdout queries (40) are intentionally excluded per PO instruction #2 and supplied externally via --queries.",
+  "strata_counts": {
+    "head_pt_br": 16,
+    "tail_pt_br": 16,
+    "nl_multi_constraint_pt_br": 12,
+    "typo_pt_br": 12,
+    "cross_lingual_en_es": 14,
+    "negative_control_zero_results": 10
+  },
+  "queries": [
+    {
+      "query_id": "q01",
+      "query": "protetor solar facial",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Facial sunscreen in-stock dermocosmetics (FPS 30/50/60/70)"
+    },
+    {
+      "query_id": "q02",
+      "query": "vitamina c adcos",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Adcos Derma Complex Vitamin C antioxidant serum/cream"
+    },
+    {
+      "query_id": "q03",
+      "query": "shampoo antiqueda klorane",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Klorane quinine anti-hair-loss shampoo"
+    },
+    {
+      "query_id": "q04",
+      "query": "agua termal avene",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Avene thermal spring water spray"
+    },
+    {
+      "query_id": "q05",
+      "query": "hidratante corporal cetaphil",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Cetaphil body moisturizing lotion/cream"
+    },
+    {
+      "query_id": "q06",
+      "query": "colageno hidrolisado sanavita",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Sanavita hydrolyzed collagen supplement"
+    },
+    {
+      "query_id": "q07",
+      "query": "oleo essencial lavanda wnf",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "WNF lavender essential oil"
+    },
+    {
+      "query_id": "q08",
+      "query": "sabonete em barra nesti dante",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Nesti Dante bar soap"
+    },
+    {
+      "query_id": "q09",
+      "query": "dipirona 500mg comprimido",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Medicamentos",
+      "intent_notes": "Dipirona 500mg tablets/analgesic medication"
+    },
+    {
+      "query_id": "q10",
+      "query": "zoloft 100mg 30cp",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Medicamentos",
+      "intent_notes": "Zoloft 100mg 30 tablets"
+    },
+    {
+      "query_id": "q11",
+      "query": "solucao lentes opti free express",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Medicamentos",
+      "intent_notes": "Opti-Free Express contact lens solution"
+    },
+    {
+      "query_id": "q12",
+      "query": "minoxidil base manipulacao",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Minoxidil compounding base active ingredient"
+    },
+    {
+      "query_id": "q13",
+      "query": "glutationa insumo",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Glutathione compounding active ingredient"
+    },
+    {
+      "query_id": "q14",
+      "query": "frasco ambar 500ml pet",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Embalagens & Insumos",
+      "intent_notes": "500ml amber PET bottle packaging"
+    },
+    {
+      "query_id": "q15",
+      "query": "blister cristal goma",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Embalagens & Insumos",
+      "intent_notes": "Crystal blister packaging for compounding gummies"
+    },
+    {
+      "query_id": "q16",
+      "query": "touca sanfonada descartavel",
+      "stratum": "head_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Higiene & Uso Geral",
+      "intent_notes": "Disposable pleated hygiene cap"
+    },
+    {
+      "query_id": "q17",
+      "query": "akkermat ativo manipulacao",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Akkermat compounding active (med-38216)"
+    },
+    {
+      "query_id": "q18",
+      "query": "ata 60% 12,5ml",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Trichloroacetic acid ATA 60% 12.5ml solution (med-16266)"
+    },
+    {
+      "query_id": "q19",
+      "query": "nitrato estroncio",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Strontium nitrate compounding raw material (med-1430)"
+    },
+    {
+      "query_id": "q20",
+      "query": "sinapis alba",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Sinapis alba botanical/homeopathic input (med-16637)"
+    },
+    {
+      "query_id": "q21",
+      "query": "pilocarpus jabor tm",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Pilocarpus jaborandi mother tincture (med-18604)"
+    },
+    {
+      "query_id": "q22",
+      "query": "base pomada tetraciclina",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Tetracycline ointment compounding base (med-27587)"
+    },
+    {
+      "query_id": "q23",
+      "query": "ergotamina tartarato",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Ergotamine tartrate OOS compounding active (med-2246)"
+    },
+    {
+      "query_id": "q24",
+      "query": "dispersao pharmacolor bege",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Pharmacolor beige pigment dispersion OOS tail item (med-22749)"
+    },
+    {
+      "query_id": "q25",
+      "query": "ada tina biosole bb cake fps70",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Ada Tina Biosole BB Cake FPS 70 compact sunscreen (med-27559)"
+    },
+    {
+      "query_id": "q26",
+      "query": "pilexil shampoo anti queda 150ml",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Pilexil anti-hair-loss shampoo 150ml OOS tail item (med-7902)"
+    },
+    {
+      "query_id": "q27",
+      "query": "pura vida curcumax pack",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Pura Vida Curcumax Pack OOS tail item (med-25469)"
+    },
+    {
+      "query_id": "q28",
+      "query": "ictus 12,5mg 30 comprimidos",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Medicamentos",
+      "intent_notes": "Ictus 12.5mg box of 30 tablets (med-29969)"
+    },
+    {
+      "query_id": "q29",
+      "query": "amytril 75mg 20 comp",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Medicamentos",
+      "intent_notes": "Amytril 75mg 20 tablets (med-28320)"
+    },
+    {
+      "query_id": "q30",
+      "query": "mydropper luxury 30ml dourada",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Embalagens & Insumos",
+      "intent_notes": "MyDropper Luxury 30ml gold dropper cap (med-35326)"
+    },
+    {
+      "query_id": "q31",
+      "query": "kit aplicador vaginal gestrinona",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Embalagens & Insumos",
+      "intent_notes": "Vaginal applicator kit for gestrinone 60u OOS item (med-38906)"
+    },
+    {
+      "query_id": "q32",
+      "query": "bobina maquina calcular 57mm",
+      "stratum": "tail_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Higiene & Uso Geral",
+      "intent_notes": "57mm paper roll for calculator (med-39430)"
+    },
+    {
+      "query_id": "q33",
+      "query": "protetor solar adcos fps 50 pele oleosa",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Brand=Adcos + attr.fps=FPS 50 + attr.skin_type=Pele Oleosa"
+    },
+    {
+      "query_id": "q34",
+      "query": "protetor solar facial abaixo de 80 reais",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Facial sunscreen with explicit max_price <= 80 BRL"
+    },
+    {
+      "query_id": "q35",
+      "query": "protetor solar gel creme fps 30 pele mista",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Sunscreen with form=Gel-Creme, fps=FPS 30, skin_type=Pele Mista"
+    },
+    {
+      "query_id": "q36",
+      "query": "protetor solar fluido fps 70 todos os tipos de pele",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Sunscreen with form=Fluido, fps=FPS 70, skin_type=Todos os Tipos"
+    },
+    {
+      "query_id": "q37",
+      "query": "hidratante facial vichy ate 150 reais",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Vichy facial moisturizer with price <= 150 BRL"
+    },
+    {
+      "query_id": "q38",
+      "query": "colageno sanavita abaixo de 100 reais",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Sanavita collagen supplement with price <= 100 BRL"
+    },
+    {
+      "query_id": "q39",
+      "query": "camiseta protecao solar uvline infantil ate 120 reais",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "UV.Line kids UV-protection shirt/cap <= 120 BRL"
+    },
+    {
+      "query_id": "q40",
+      "query": "sabonete liquido eucerin pele sensivel abaixo de 90 reais",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Eucerin cleanser/soap <= 90 BRL"
+    },
+    {
+      "query_id": "q41",
+      "query": "analgesico comprimido abaixo de 25 reais",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Medicamentos",
+      "intent_notes": "Analgesic tablet medication <= 25 BRL"
+    },
+    {
+      "query_id": "q42",
+      "query": "melatonina pastilha 1mg manipulacao",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Melatonin 1mg sublingual lozenge/pastille (med-18171)"
+    },
+    {
+      "query_id": "q43",
+      "query": "pote plastico para creme 50g com tampa ate 20 reais",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Embalagens & Insumos",
+      "intent_notes": "50g cream jar with lid <= 20 BRL"
+    },
+    {
+      "query_id": "q44",
+      "query": "saco para lixo 20 litros cinza",
+      "stratum": "nl_multi_constraint_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Higiene & Uso Geral",
+      "intent_notes": "20L gray trash bag (med-39421)"
+    },
+    {
+      "query_id": "q45",
+      "query": "protetor solr facial adcos",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Typo: 'solr' -> 'solar' for Adcos facial sunscreen"
+    },
+    {
+      "query_id": "q46",
+      "query": "vitamina c adocs derma",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Typo: 'adocs' -> 'adcos' Vitamin C"
+    },
+    {
+      "query_id": "q47",
+      "query": "shampo klorane quinine",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Typo: 'shampo' -> 'shampoo' Klorane Quinine"
+    },
+    {
+      "query_id": "q48",
+      "query": "hidratante cerave 200gr",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Unit/orthographic variant: '200gr' -> '200g' CeraVe moisturizer"
+    },
+    {
+      "query_id": "q49",
+      "query": "colageno verizol po",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Phonetic typo: 'verizol' -> 'verisol' collagen"
+    },
+    {
+      "query_id": "q50",
+      "query": "agua termal avenne spray",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Typo: 'avenne' -> 'avene' thermal water"
+    },
+    {
+      "query_id": "q51",
+      "query": "minoxdil base capilar",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Manipulação & Insumos",
+      "intent_notes": "Typo: 'minoxdil' -> 'minoxidil' compounding base"
+    },
+    {
+      "query_id": "q52",
+      "query": "dipirona sodica 500mgg",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Medicamentos",
+      "intent_notes": "Typo: '500mgg' -> '500mg' dipirona"
+    },
+    {
+      "query_id": "q53",
+      "query": "cetafil locao hidratante",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Phonetic typo: 'cetafil' -> 'cetaphil' moisturizing lotion"
+    },
+    {
+      "query_id": "q54",
+      "query": "neutrojena protetor solar",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Phonetic typo: 'neutrojena' -> 'neutrogena' sunscreen"
+    },
+    {
+      "query_id": "q55",
+      "query": "frasco ambar 30ml contagota",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Embalagens & Insumos",
+      "intent_notes": "Merged compound typo: 'contagota' -> 'conta-gotas' 30ml amber bottle"
+    },
+    {
+      "query_id": "q56",
+      "query": "melatonina slep capsulas",
+      "stratum": "typo_pt_br",
+      "locale": "pt-BR",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Typo: 'slep' -> 'sleep' melatonin supplement"
+    },
+    {
+      "query_id": "q57",
+      "query": "tinted facial sunscreen spf 50 oily skin",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "en-US",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "English cross-lingual query for tinted FPS 50 facial sunscreen for oily skin"
+    },
+    {
+      "query_id": "q58",
+      "query": "vitamin c antioxidant facial serum",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "en-US",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "English cross-lingual query for Vitamin C antioxidant facial serum"
+    },
+    {
+      "query_id": "q59",
+      "query": "anti hair loss quinine shampoo",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "en-US",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "English cross-lingual query for quinine anti-hair-loss shampoo"
+    },
+    {
+      "query_id": "q60",
+      "query": "hydrolyzed collagen powder supplement",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "en-US",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "English cross-lingual query for hydrolyzed collagen powder"
+    },
+    {
+      "query_id": "q61",
+      "query": "lavender essential oil aromatherapy",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "en-US",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "English cross-lingual query for pure lavender essential oil"
+    },
+    {
+      "query_id": "q62",
+      "query": "amber glass dropper bottle 30ml",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "en-US",
+      "target_category": "Embalagens & Insumos",
+      "intent_notes": "English cross-lingual query for 30ml amber dropper packaging bottle"
+    },
+    {
+      "query_id": "q63",
+      "query": "melatonin sleep supplement tablets",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "en-US",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "English cross-lingual query for melatonin sleep supplement"
+    },
+    {
+      "query_id": "q64",
+      "query": "protector solar facial toque seco fps 50",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "es-MX",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Spanish cross-lingual query for dry-touch FPS 50 facial sunscreen"
+    },
+    {
+      "query_id": "q65",
+      "query": "suero facial antioxidante vitamina c",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "es-MX",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Spanish cross-lingual query for Vitamin C facial antioxidant serum"
+    },
+    {
+      "query_id": "q66",
+      "query": "champu anticaida cabello quinina",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "es-MX",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Spanish cross-lingual query for quinine anti-hair-loss shampoo"
+    },
+    {
+      "query_id": "q67",
+      "query": "colageno hidrolizado en polvo",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "es-MX",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Spanish cross-lingual query for hydrolyzed collagen powder"
+    },
+    {
+      "query_id": "q68",
+      "query": "crema hidratante corporal piel seca",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "es-MX",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Spanish cross-lingual query for dry skin body moisturizer"
+    },
+    {
+      "query_id": "q69",
+      "query": "frasco ambar gotero 30ml",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "es-MX",
+      "target_category": "Embalagens & Insumos",
+      "intent_notes": "Spanish cross-lingual query for 30ml amber dropper bottle"
+    },
+    {
+      "query_id": "q70",
+      "query": "aceite esencial de lavanda puro",
+      "stratum": "cross_lingual_en_es",
+      "locale": "",
+      "strict_locale": "es-MX",
+      "target_category": "Dermocosméticos & Perfumaria",
+      "intent_notes": "Spanish cross-lingual query for pure lavender essential oil"
+    },
+    {
+      "query_id": "q71",
+      "query": "pneu aro 17 michelin caminhonete",
+      "stratum": "negative_control_zero_results",
+      "locale": "pt-BR",
+      "target_category": "NONE_OUT_OF_DOMAIN",
+      "intent_notes": "Negative control: automotive tire (absent from pharmacy catalog; any match is grade 0)"
+    },
+    {
+      "query_id": "q72",
+      "query": "amortecedor dianteiro honda civic 2020",
+      "stratum": "negative_control_zero_results",
+      "locale": "pt-BR",
+      "target_category": "NONE_OUT_OF_DOMAIN",
+      "intent_notes": "Negative control: automotive shock absorber (absent from pharmacy catalog)"
+    },
+    {
+      "query_id": "q73",
+      "query": "geladeira frost free inox 500 litros brastemp",
+      "stratum": "negative_control_zero_results",
+      "locale": "pt-BR",
+      "target_category": "NONE_OUT_OF_DOMAIN",
+      "intent_notes": "Negative control: kitchen refrigerator appliance (absent from real med-* catalog)"
+    },
+    {
+      "query_id": "q74",
+      "query": "violao eletrico cordas de aco takamine",
+      "stratum": "negative_control_zero_results",
+      "locale": "pt-BR",
+      "target_category": "NONE_OUT_OF_DOMAIN",
+      "intent_notes": "Negative control: acoustic-electric guitar (absent from pharmacy catalog)"
+    },
+    {
+      "query_id": "q75",
+      "query": "sofa retratil reclinavel 3 lugares suede",
+      "stratum": "negative_control_zero_results",
+      "locale": "pt-BR",
+      "target_category": "NONE_OUT_OF_DOMAIN",
+      "intent_notes": "Negative control: living room sofa furniture (absent from pharmacy catalog)"
+    },
+    {
+      "query_id": "q76",
+      "query": "placa de video nvidia rtx 4090 24gb",
+      "stratum": "negative_control_zero_results",
+      "locale": "pt-BR",
+      "target_category": "NONE_OUT_OF_DOMAIN",
+      "intent_notes": "Negative control: GPU hardware (absent from pharmacy catalog)"
+    },
+    {
+      "query_id": "q77",
+      "query": "cimento portland cp ii saco 50kg",
+      "stratum": "negative_control_zero_results",
+      "locale": "pt-BR",
+      "target_category": "NONE_OUT_OF_DOMAIN",
+      "intent_notes": "Negative control: construction cement (absent from pharmacy catalog)"
+    },
+    {
+      "query_id": "q78",
+      "query": "passagem aerea ida e volta sao paulo lisboa",
+      "stratum": "negative_control_zero_results",
+      "locale": "pt-BR",
+      "target_category": "NONE_OUT_OF_DOMAIN",
+      "intent_notes": "Negative control: airline ticket (absent from pharmacy catalog)"
+    },
+    {
+      "query_id": "q79",
+      "query": "xzq991kLm77vW88pQ00z",
+      "stratum": "negative_control_zero_results",
+      "locale": "pt-BR",
+      "target_category": "NONE_OUT_OF_DOMAIN",
+      "intent_notes": "Negative control: synthetic gibberish token (should return 0 lexical results; any vector result is grade 0)"
+    },
+    {
+      "query_id": "q80",
+      "query": "kjh882mnbv991qwert00",
+      "stratum": "negative_control_zero_results",
+      "locale": "pt-BR",
+      "target_category": "NONE_OUT_OF_DOMAIN",
+      "intent_notes": "Negative control: synthetic gibberish token (should return 0 lexical results; any vector result is grade 0)"
+    }
+  ]
+}

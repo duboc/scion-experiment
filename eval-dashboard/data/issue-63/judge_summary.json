@@ -1,0 +1,21 @@
+{
+  "judged_at_utc": "2026-11-12T17:59:41.364080+00:00",
+  "queries_file": "eval-dashboard/data/issue-63/queries_dev_80.json",
+  "qrels_file": "eval-dashboard/data/issue-63/qrels_dev_80.tsv",
+  "blind_sample_csv": "eval-dashboard/data/issue-63/po_blind_sample_v1.csv",
+  "judge_model": "gemini-4-argon",
+  "thinking_level": "LOW",
+  "batch_size_queries": 5,
+  "total_llm_calls": 16,
+  "prompt_tokens": 126215,
+  "output_tokens": 40154,
+  "wall_time_sec": 296.18,
+  "total_judged_pairs": 1662,
+  "grade_distribution": {
+    "0": 394,
+    "1": 484,
+    "2": 506,
+    "3": 278
+  },
+  "blind_sample_count": 60
+}
