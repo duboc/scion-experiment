@@ -140,8 +140,10 @@ The cursor file is saved atomically after each successful load, with mode 0600, 
 4. Antigravity: export the JSONL transcripts only. The per-conversation SQLite files stay out of v1.
 5. No derived views in this change. All parsing is left to the study in #64.
 
-## 8. Open questions for the PO
+6. The eval agents may read this dataset. They run as the Hub VM service account, so the grant of §4.5 covers them
+   and the exporter needs no service account of its own.
 
-1. **Retention:** keep the rows forever, or set a partition expiry? Until decided, no expiry is set.
-2. **Readers:** should the eval agents read this dataset? They run as the Hub VM service account, so the write grant
-   of §4.5 would also let them read it. This has to be settled before the grant is made.
+## 8. Open question for the PO
+
+**Retention:** keep the exported records in BigQuery forever, or have BigQuery delete them after a set number of
+days? Until decided, no expiry is set.
