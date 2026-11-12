@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-11-12T17:59:43.640513+00:00",
+  "generated_at_utc": "2026-11-12T18:45:56.195981+00:00",
   "queries_file": "eval-dashboard/data/issue-63/queries_dev_80.json",
   "qrels_file": "eval-dashboard/data/issue-63/qrels_dev_80.tsv",
   "evaluation_engine": "pytrec_eval 0.5.11 + ir_measures 0.4.3",

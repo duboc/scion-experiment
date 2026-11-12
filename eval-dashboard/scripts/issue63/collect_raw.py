@@ -119,11 +119,21 @@ def redact_sensitive(text: str, project_id: str) -> str:
 def load_queries(queries_path: str) -> list:
     with open(queries_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    if isinstance(data, dict) and "queries" in data:
-        return data["queries"]
-    if isinstance(data, list):
-        return data
-    raise ValueError(f"Unsupported query file structure in {queries_path}")
+    raw_list = data["queries"] if isinstance(data, dict) and "queries" in data else data
+    if not isinstance(raw_list, list):
+        raise ValueError(f"Unsupported query file structure in {queries_path}")
+    normalized = []
+    for idx, item in enumerate(raw_list, 1):
+        if isinstance(item, str):
+            normalized.append({"query_id": f"q{idx:02d}", "query": item, "stratum": "holdout", "locale": "pt-BR"})
+        elif isinstance(item, dict):
+            q_obj = dict(item)
+            q_obj["query_id"] = str(item.get("query_id") or item.get("id") or f"q{idx:02d}")
+            q_obj["query"] = str(item.get("query") or item.get("q") or item.get("text") or "")
+            q_obj.setdefault("stratum", "holdout")
+            q_obj.setdefault("locale", "pt-BR")
+            normalized.append(q_obj)
+    return normalized
 
 
 def fetch_search(base_url: str, query_text: str, locale: str, extra_params: dict, limit: int, project_id: str) -> dict:

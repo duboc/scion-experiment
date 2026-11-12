@@ -537,6 +537,7 @@ def redact_sensitive_strings(obj: Any) -> Any:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Issue #63 Item 7 Fixed-Rate Open-Loop Latency Load Test")
+    parser.add_argument("--queries", default="", help="Optional path to queries JSON file")
     parser.add_argument("--duration", type=int, default=60, help="Duration in seconds per open-loop rate (default: 60)")
     parser.add_argument("--ablation-reps", type=int, default=8, help="Repetitions per stage-ablation mode (default: 8)")
     parser.add_argument(

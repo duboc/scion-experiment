@@ -24,9 +24,15 @@ Computes:
 import argparse
 import csv
 import json
+import math
 import sys
-import numpy as np
-from scipy.stats import spearmanr
+
+try:
+    import numpy as np
+    from scipy.stats import spearmanr as _scipy_spearmanr
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
 
 
 def load_llm_key(path: str) -> dict:
@@ -60,32 +66,70 @@ def load_po_labels(path: str) -> dict:
     return labels
 
 
-def compute_cohens_kappa(y1: np.ndarray, y2: np.ndarray, num_classes: int = 4, weighted: bool = False) -> float:
+def compute_cohens_kappa(y1: list[int], y2: list[int], num_classes: int = 4, weighted: bool = False) -> float:
     n = len(y1)
     if n == 0:
         return 0.0
-    conf = np.zeros((num_classes, num_classes), dtype=float)
+    conf = [[0.0] * num_classes for _ in range(num_classes)]
     for a, b in zip(y1, y2):
-        conf[int(a), int(b)] += 1.0
-    conf /= n
-
-    hist1 = np.sum(conf, axis=1)
-    hist2 = np.sum(conf, axis=0)
-    expected = np.outer(hist1, hist2)
-
-    if not weighted:
-        po = np.trace(conf)
-        pe = np.trace(expected)
-        return float((po - pe) / (1.0 - pe)) if (1.0 - pe) > 1e-12 else 1.0
-
-    weights = np.zeros((num_classes, num_classes), dtype=float)
+        conf[int(a)][int(b)] += 1.0
     for i in range(num_classes):
         for j in range(num_classes):
-            weights[i, j] = ((i - j) ** 2) / ((num_classes - 1) ** 2)
+            conf[i][j] /= n
 
-    obs_dis = float(np.sum(weights * conf))
-    exp_dis = float(np.sum(weights * expected))
+    hist1 = [sum(conf[i][j] for j in range(num_classes)) for i in range(num_classes)]
+    hist2 = [sum(conf[i][j] for i in range(num_classes)) for j in range(num_classes)]
+    expected = [[hist1[i] * hist2[j] for j in range(num_classes)] for i in range(num_classes)]
+
+    if not weighted:
+        po = sum(conf[i][i] for i in range(num_classes))
+        pe = sum(expected[i][i] for i in range(num_classes))
+        return float((po - pe) / (1.0 - pe)) if (1.0 - pe) > 1e-12 else 1.0
+
+    obs_dis = 0.0
+    exp_dis = 0.0
+    denom = float((num_classes - 1) ** 2)
+    for i in range(num_classes):
+        for j in range(num_classes):
+            w = ((i - j) ** 2) / denom
+            obs_dis += w * conf[i][j]
+            exp_dis += w * expected[i][j]
     return float(1.0 - (obs_dis / exp_dis)) if exp_dis > 1e-12 else 1.0
+
+
+def _rankdata_avg_ties(vals: list[int]) -> list[float]:
+    indexed = sorted(enumerate(vals), key=lambda x: x[1])
+    ranks = [0.0] * len(vals)
+    i = 0
+    while i < len(indexed):
+        j = i
+        while j < len(indexed) and indexed[j][1] == indexed[i][1]:
+            j += 1
+        avg_rank = (i + 1 + j) / 2.0
+        for k in range(i, j):
+            ranks[indexed[k][0]] = avg_rank
+        i = j
+    return ranks
+
+
+def compute_spearman(y1: list[int], y2: list[int]) -> tuple[float, float]:
+    if HAS_SCIPY:
+        rho, pval = _scipy_spearmanr(y1, y2)
+        return (0.0 if math.isnan(float(rho)) else float(rho), 1.0 if math.isnan(float(pval)) else float(pval))
+    n = len(y1)
+    if n < 2:
+        return 0.0, 1.0
+    r1 = _rankdata_avg_ties(y1)
+    r2 = _rankdata_avg_ties(y2)
+    m1 = sum(r1) / n
+    m2 = sum(r2) / n
+    cov = sum((a - m1) * (b - m2) for a, b in zip(r1, r2))
+    v1 = sum((a - m1) ** 2 for a in r1)
+    v2 = sum((b - m2) ** 2 for b in r2)
+    if v1 <= 1e-12 or v2 <= 1e-12:
+        return 0.0, 1.0
+    rho = cov / math.sqrt(v1 * v2)
+    return float(rho), 0.0
 
 
 def score_agreement(llm_key: dict, po_labels: dict) -> dict:
@@ -98,16 +142,15 @@ def score_agreement(llm_key: dict, po_labels: dict) -> dict:
             "message": "No filled po_grade_0_to_3 values found yet in --po-labels file.",
         }
 
-    llm_arr = np.array([int(llm_key[sid]["llm_grade"]) for sid in matched_ids], dtype=int)
-    po_arr = np.array([int(po_labels[sid]) for sid in matched_ids], dtype=int)
+    llm_arr = [int(llm_key[sid]["llm_grade"]) for sid in matched_ids]
+    po_arr = [int(po_labels[sid]) for sid in matched_ids]
+    n = len(matched_ids)
 
     kappa_w = compute_cohens_kappa(po_arr, llm_arr, num_classes=4, weighted=True)
     kappa_unw = compute_cohens_kappa(po_arr, llm_arr, num_classes=4, weighted=False)
-    rho, rho_pval = spearmanr(po_arr, llm_arr)
-    exact_acc = float(np.mean(po_arr == llm_arr))
-    bin_po = (po_arr >= 2).astype(int)
-    bin_llm = (llm_arr >= 2).astype(int)
-    binary_acc = float(np.mean(bin_po == bin_llm))
+    rho, rho_pval = compute_spearman(po_arr, llm_arr)
+    exact_acc = sum(1 for a, b in zip(po_arr, llm_arr) if a == b) / n
+    binary_acc = sum(1 for a, b in zip(po_arr, llm_arr) if (a >= 2) == (b >= 2)) / n
 
     conf = [[0] * 4 for _ in range(4)]
     disagreements = []
@@ -135,8 +178,8 @@ def score_agreement(llm_key: dict, po_labels: dict) -> dict:
         "total_blind_samples": len(llm_key),
         "quadratic_weighted_kappa": round(kappa_w, 4),
         "unweighted_kappa": round(kappa_unw, 4),
-        "spearman_rho": round(float(rho), 4) if not np.isnan(rho) else 0.0,
-        "spearman_pvalue": float(rho_pval) if not np.isnan(rho_pval) else 1.0,
+        "spearman_rho": round(float(rho), 4),
+        "spearman_pvalue": float(rho_pval),
         "exact_4class_agreement_pct": round(exact_acc * 100.0, 2),
         "binary_relevant_agreement_pct": round(binary_acc * 100.0, 2),
         "confusion_matrix_po_rows_llm_cols": conf,
@@ -149,6 +192,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Compute inter-rater agreement between PO blind labels and LLM judge.")
     parser.add_argument("--llm-key", required=True, help="Path to llm_grades_blind_60.json")
     parser.add_argument("--po-labels", required=True, help="Path to filled po_blind_sample_v1.csv or JSON")
+    parser.add_argument("--queries", default="", help="Optional path to queries JSON file")
     parser.add_argument("--out", default="", help="Optional output JSON file")
     args = parser.parse_args()
 

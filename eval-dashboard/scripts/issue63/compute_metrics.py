@@ -15,10 +15,29 @@ import argparse
 from datetime import datetime, timezone
 import json
 import os
-import numpy as np
-import pytrec_eval
-import ir_measures
-from ir_measures import nDCG, RR, R
+import subprocess
+import sys
+
+try:
+    import numpy as np
+    import pytrec_eval
+    import ir_measures
+    from ir_measures import nDCG, RR, R
+except ImportError:
+    if "-h" not in sys.argv and "--help" not in sys.argv:
+        import urllib.request
+        if subprocess.call([sys.executable, "-m", "pip", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
+            urllib.request.urlretrieve("https://bootstrap.pypa.io/get-pip.py", "/tmp/get-pip.py")
+            subprocess.check_call([sys.executable, "/tmp/get-pip.py", "--user", "--break-system-packages", "--quiet"])
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--user", "--quiet", "--break-system-packages", "numpy", "scipy", "pytrec-eval-terrier", "ir-measures"]
+        )
+        import site
+        site.main()
+        import numpy as np
+        import pytrec_eval
+        import ir_measures
+        from ir_measures import nDCG, RR, R
 
 CONFIG_SPECS = [
     ("C1", "c1_lexical", "C1: Pure Lexical FTS (alpha=0.0, no-LTR, no-ads) [00043-p87]"),
@@ -33,7 +52,19 @@ CONFIG_SPECS = [
 def load_queries(queries_path: str) -> list:
     with open(queries_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return data["queries"] if isinstance(data, dict) and "queries" in data else data
+    raw_list = data["queries"] if isinstance(data, dict) and "queries" in data else data
+    normalized = []
+    for idx, item in enumerate(raw_list, 1):
+        if isinstance(item, str):
+            normalized.append({"query_id": f"q{idx:02d}", "query": item, "stratum": "holdout", "locale": "pt-BR"})
+        elif isinstance(item, dict):
+            q_obj = dict(item)
+            q_obj["query_id"] = str(item.get("query_id") or item.get("id") or f"q{idx:02d}")
+            q_obj["query"] = str(item.get("query") or item.get("q") or item.get("text") or "")
+            q_obj.setdefault("stratum", "holdout")
+            q_obj.setdefault("locale", "pt-BR")
+            normalized.append(q_obj)
+    return normalized
 
 
 def load_qrels(qrels_path: str) -> tuple[dict, dict]:
@@ -255,8 +286,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Compute trec_eval / ir_measures metrics and bootstrap CIs.")
     parser.add_argument("--queries", required=True, help="Path to queries JSON file")
     parser.add_argument("--qrels", required=True, help="Path to TREC qrels TSV file")
-    parser.add_argument("--runs-dir", default="eval-dashboard/data/issue-63", help="Directory containing raw_responses_*.jsonl")
-    parser.add_argument("--out", default="", help="Output JSON metrics report path")
+    parser.add_argument("--runs-dir", "--data-dir", dest="runs_dir", default="eval-dashboard/data/issue-63", help="Directory containing raw_responses_*.jsonl")
+    parser.add_argument("--out", "--out-json", dest="out", default="", help="Output JSON metrics report path")
     args = parser.parse_args()
 
     out_path = args.out or os.path.join(args.runs_dir, "metrics_report_dev_80.json")
@@ -447,6 +478,8 @@ def main() -> None:
                     continue
                 row = json.loads(line)
                 qid = row["query_id"]
+                if qid not in per_config_per_query_combined.get("C5", {}):
+                    continue
                 results = ((row.get("response_body") or {}).get("results") or [])[:10]
                 med_cnt = sum(1 for r in results if str(r.get("id", "")).startswith("med-"))
                 prod_cnt = sum(1 for r in results if str(r.get("id", "")).startswith("prod-"))

@@ -652,6 +652,8 @@ def summarize_suite_across_defects(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Issue #63 Extensible Fault-Injection Proxy for probe_search.py")
     parser.add_argument("--defect", default=None, help="Defect ID to inject (e.g. D1..D8, or None for clean proxy)")
+    parser.add_argument("--extra-defects", default=None, help="Optional path to external Python file defining @register_defect functions")
+    parser.add_argument("--queries", default="", help="Optional path to queries JSON file")
     parser.add_argument("--port", type=int, default=18081, help="Port to bind when running standalone proxy daemon")
     parser.add_argument("--cache-file", default="/tmp/issue63_fault_proxy_cache.json", help="Upstream response cache path")
     parser.add_argument("--run-probe", action="store_true", help="Run probe_search.py --no-record against --defect and exit")
@@ -669,6 +671,10 @@ def main() -> None:
     )
     parser.add_argument("--list-defects", action="store_true", help="List all registered defects and exit")
     args = parser.parse_args()
+
+    if args.extra_defects:
+        with open(args.extra_defects, "r", encoding="utf-8") as ef:
+            exec(compile(ef.read(), args.extra_defects, "exec"), globals())
 
     if args.list_defects:
         for d_id, info in sorted(DEFECT_REGISTRY.items()):

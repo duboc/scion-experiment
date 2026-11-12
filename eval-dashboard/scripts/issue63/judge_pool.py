@@ -78,7 +78,19 @@ def get_deployer_token(project_id: str) -> str:
 def load_queries(queries_path: str) -> list:
     with open(queries_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return data["queries"] if isinstance(data, dict) and "queries" in data else data
+    raw_list = data["queries"] if isinstance(data, dict) and "queries" in data else data
+    normalized = []
+    for idx, item in enumerate(raw_list, 1):
+        if isinstance(item, str):
+            normalized.append({"query_id": f"q{idx:02d}", "query": item, "stratum": "holdout", "locale": "pt-BR"})
+        elif isinstance(item, dict):
+            q_obj = dict(item)
+            q_obj["query_id"] = str(item.get("query_id") or item.get("id") or f"q{idx:02d}")
+            q_obj["query"] = str(item.get("query") or item.get("q") or item.get("text") or "")
+            q_obj.setdefault("stratum", "holdout")
+            q_obj.setdefault("locale", "pt-BR")
+            normalized.append(q_obj)
+    return normalized
 
 
 def load_catalog_pool(catalog_jsonl_path: str) -> dict:
@@ -94,12 +106,14 @@ def load_catalog_pool(catalog_jsonl_path: str) -> dict:
 
 
 def build_pooled_pairs_from_raw(data_dir: str, queries: list, depth: int = 10) -> dict:
+    req_qids = {q["query_id"] for q in queries}
     manifest_path = os.path.join(data_dir, "pool_manifest.json")
     if os.path.exists(manifest_path):
         with open(manifest_path, "r", encoding="utf-8") as f:
             m = json.load(f)
-        if "pooled_by_query" in m:
-            return m["pooled_by_query"]
+        pbq = m.get("pooled_by_query")
+        if isinstance(pbq, dict) and req_qids.issubset(set(pbq.keys())):
+            return pbq
 
     pooled = {q["query_id"]: [] for q in queries}
     for fname in sorted(os.listdir(data_dir)):
@@ -381,9 +395,9 @@ def generate_blind_sample_60(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Grade pooled (query, product) candidates with gemini-4-argon (0-3 rubric).")
     parser.add_argument("--queries", required=True, help="Path to queries JSON file")
-    parser.add_argument("--data-dir", default="eval-dashboard/data/issue-63", help="Directory containing raw JSONL & catalog pool")
-    parser.add_argument("--qrels-out", default="", help="Output TREC qrels TSV path (default: <data-dir>/qrels_dev_80.tsv)")
-    parser.add_argument("--blind-csv-out", default="", help="Output blind CSV path for PO")
+    parser.add_argument("--data-dir", "--runs-dir", "--out-dir", dest="data_dir", default="eval-dashboard/data/issue-63", help="Directory containing raw JSONL & catalog pool")
+    parser.add_argument("--qrels-out", "--out-qrels", dest="qrels_out", default="", help="Output TREC qrels TSV path (default: <data-dir>/qrels_dev_80.tsv)")
+    parser.add_argument("--blind-csv-out", "--out-blind-sample", dest="blind_csv_out", default="", help="Output blind CSV path for PO")
     parser.add_argument("--blind-key-out", default="", help="Output secret LLM key JSON path")
     parser.add_argument("--batch-size", type=int, default=5, help="Queries per gemini-4-argon batch call (default: 5)")
     parser.add_argument("--max-calls", type=int, default=200, help="Hard ceiling on gemini-4-argon API calls (<= 200)")
