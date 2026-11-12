@@ -142,8 +142,5 @@ The cursor file is saved atomically after each successful load, with mode 0600, 
 
 6. The eval agents may read this dataset. They run as the Hub VM service account, so the grant of §4.5 covers them
    and the exporter needs no service account of its own.
-
-## 8. Open question for the PO
-
-**Retention:** keep the exported records in BigQuery forever, or have BigQuery delete them after a set number of
-days? Until decided, no expiry is set.
+7. Retention: no expiry for now, because the study in #64 needs the history since October. Revisit when that study
+   ends.
