@@ -1,0 +1,4445 @@
+{
+  "issue": 63,
+  "workstream": "Item 6 \u2014 Test-the-Test Fault-Injection Matrix & Unfalsifiable Scenario Removal",
+  "generated_at": "2026-11-12T18:13:32Z",
+  "registered_defects": {
+    "D1": {
+      "description": "Shuffle/reverse organic top-10 ranking order (ranking collapse)",
+      "target_issues": "#1, #2, #8, #39"
+    },
+    "D2": {
+      "description": "Demote IN_STOCK items behind OUT_OF_STOCK items and invert stock boost (#3/#45 defect)",
+      "target_issues": "#3, #11, #26, #45"
+    },
+    "D3": {
+      "description": "Ignore sort_by=price_asc and invert price ordering (#40 defect)",
+      "target_issues": "#40"
+    },
+    "D4": {
+      "description": "Leak page=1 item into page=2 and mismatch total_found across pages (#40 defect)",
+      "target_issues": "#40, #46"
+    },
+    "D5": {
+      "description": "Break disjunctive multi-brand OR filter (brands=Adidas,Nike) and strip facets.attributes (#41/#42 defect)",
+      "target_issues": "#41, #42"
+    },
+    "D6": {
+      "description": "Return retail basePrice (119.0 / 134.0) on b2b-corporate and strip cpc_micros/ad_relevance (#22/#35 defect)",
+      "target_issues": "#7, #8, #10, #22, #35"
+    },
+    "D7": {
+      "description": "Inject OUT_OF_STOCK item into /api/products/:id/similar?mode=substitutes (#44 defect)",
+      "target_issues": "#44"
+    },
+    "D8": {
+      "description": "Inject forbidden GCP project identifier and project number into /api/info and HTML endpoints (#52 defect)",
+      "target_issues": "#52"
+    }
+  },
+  "upstream_http_requests_used": 0,
+  "proxy_cache_hits": 4410,
+  "before_vs_after_per_defect": {
+    "D0": {
+      "description": "Clean baseline (no injected fault)",
+      "before_failed_scenarios": 0,
+      "after_failed_scenarios": 0,
+      "before_failed_requirements": 0,
+      "after_failed_requirements": 0,
+      "after_failed_scenario_ids": []
+    },
+    "D1": {
+      "description": "Shuffle/reverse organic top-10 ranking order (ranking collapse)",
+      "before_failed_scenarios": 12,
+      "after_failed_scenarios": 43,
+      "before_failed_requirements": 6,
+      "after_failed_requirements": 6,
+      "after_failed_scenario_ids": [
+        "l1_s01",
+        "l1_s02",
+        "l1_s03",
+        "l1_s04",
+        "l1_s05",
+        "l1_s06",
+        "l1_s07",
+        "l1_s08",
+        "l1_s09",
+        "l1_s10",
+        "l1_s11",
+        "l1_s12",
+        "l1_s13",
+        "l1_s14",
+        "l1_s15",
+        "l1_s16",
+        "l1_s17",
+        "l2_s02",
+        "l2_s03",
+        "l2_s04",
+        "l2_s08",
+        "l2_s09",
+        "l2_s10",
+        "l2_s11",
+        "l2_s16",
+        "l2_s18",
+        "l2_s20",
+        "l2_s21",
+        "l2_s22",
+        "l2_s25",
+        "l3_s14",
+        "l3_s16",
+        "l4_s01",
+        "l4_s02",
+        "l4_s03",
+        "l4_s04",
+        "l4_s05",
+        "l4_s06",
+        "l4_s07",
+        "l4_s08",
+        "l4_s09",
+        "l4_s10",
+        "l4_s30"
+      ]
+    },
+    "D2": {
+      "description": "Demote IN_STOCK items behind OUT_OF_STOCK items and invert stock boost (#3/#45 defect)",
+      "before_failed_scenarios": 6,
+      "after_failed_scenarios": 14,
+      "before_failed_requirements": 4,
+      "after_failed_requirements": 4,
+      "after_failed_scenario_ids": [
+        "l1_s01",
+        "l1_s02",
+        "l1_s05",
+        "l1_s08",
+        "l1_s13",
+        "l1_s14",
+        "l2_s04",
+        "l2_s06",
+        "l2_s07",
+        "l2_s08",
+        "l2_s09",
+        "l2_s10",
+        "l2_s25",
+        "l4_s09"
+      ]
+    },
+    "D3": {
+      "description": "Ignore sort_by=price_asc and invert price ordering (#40 defect)",
+      "before_failed_scenarios": 0,
+      "after_failed_scenarios": 1,
+      "before_failed_requirements": 1,
+      "after_failed_requirements": 1,
+      "after_failed_scenario_ids": [
+        "l1_s17"
+      ]
+    },
+    "D4": {
+      "description": "Leak page=1 item into page=2 and mismatch total_found across pages (#40 defect)",
+      "before_failed_scenarios": 2,
+      "after_failed_scenarios": 4,
+      "before_failed_requirements": 2,
+      "after_failed_requirements": 2,
+      "after_failed_scenario_ids": [
+        "l1_s12",
+        "l1_s16",
+        "l1_s17",
+        "l5_s07"
+      ]
+    },
+    "D5": {
+      "description": "Break disjunctive multi-brand OR filter (brands=Adidas,Nike) and strip facets.attributes (#41/#42 defect)",
+      "before_failed_scenarios": 2,
+      "after_failed_scenarios": 2,
+      "before_failed_requirements": 2,
+      "after_failed_requirements": 2,
+      "after_failed_scenario_ids": [
+        "l2_s23",
+        "l2_s24"
+      ]
+    },
+    "D6": {
+      "description": "Return retail basePrice (119.0 / 134.0) on b2b-corporate and strip cpc_micros/ad_relevance (#22/#35 defect)",
+      "before_failed_scenarios": 3,
+      "after_failed_scenarios": 4,
+      "before_failed_requirements": 2,
+      "after_failed_requirements": 2,
+      "after_failed_scenario_ids": [
+        "l2_s08",
+        "l2_s13",
+        "l2_s20",
+        "l4_s09"
+      ]
+    },
+    "D7": {
+      "description": "Inject OUT_OF_STOCK item into /api/products/:id/similar?mode=substitutes (#44 defect)",
+      "before_failed_scenarios": 1,
+      "after_failed_scenarios": 1,
+      "before_failed_requirements": 1,
+      "after_failed_requirements": 1,
+      "after_failed_scenario_ids": [
+        "l4_s31"
+      ]
+    },
+    "D8": {
+      "description": "Inject forbidden GCP project identifier and project number into /api/info and HTML endpoints (#52 defect)",
+      "before_failed_scenarios": 1,
+      "after_failed_scenarios": 8,
+      "before_failed_requirements": 1,
+      "after_failed_requirements": 1,
+      "after_failed_scenario_ids": [
+        "l2_s19",
+        "l3_s17",
+        "l3_s18",
+        "l3_s19",
+        "l5_s02",
+        "l5_s03",
+        "l5_s07",
+        "l5_s08"
+      ]
+    }
+  },
+  "before_suite_e47eb0c": {
+    "suite_name": "before_legacy_probe_100_e47eb0c",
+    "total_scenarios": 100,
+    "scenarios_failing_at_least_one_defect": 21,
+    "scenarios_never_failing_d1_d8_count": 79,
+    "scenarios_never_failing_d1_d8": [
+      {
+        "scenario_id": "l1_s01",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_01_nl_parser_intent_extraction"
+      },
+      {
+        "scenario_id": "l1_s02",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_02_nl_parser_opt_out"
+      },
+      {
+        "scenario_id": "l1_s03",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_03_spell_check_correction"
+      },
+      {
+        "scenario_id": "l1_s04",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_04_spell_check_bypass_when_exact"
+      },
+      {
+        "scenario_id": "l1_s06",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_06_synonym_weight_discount"
+      },
+      {
+        "scenario_id": "l1_s07",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_07_rrf_lexical_vector_fusion"
+      },
+      {
+        "scenario_id": "l1_s08",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_08_rrf_alpha_weighting"
+      },
+      {
+        "scenario_id": "l1_s09",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_09_ltr_stage2_reranking"
+      },
+      {
+        "scenario_id": "l1_s10",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_10_ltr_score_population"
+      },
+      {
+        "scenario_id": "l1_s11",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_11_session_affinity_boost"
+      },
+      {
+        "scenario_id": "l1_s12",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_12_metadata_envelope_integrity"
+      },
+      {
+        "scenario_id": "l1_s15",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "pharma_03_pharma_synonym_and_autocomplete"
+      },
+      {
+        "scenario_id": "l2_s01",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_01_tenant_isolation_acme"
+      },
+      {
+        "scenario_id": "l2_s02",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_02_tenant_default_isolation"
+      },
+      {
+        "scenario_id": "l2_s03",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_03_locale_pt_br_strict"
+      },
+      {
+        "scenario_id": "l2_s04",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_04_locale_en_us_strict"
+      },
+      {
+        "scenario_id": "l2_s05",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_05_locale_es_mx_strict"
+      },
+      {
+        "scenario_id": "l2_s12",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_12_cep_invalid_rejection"
+      },
+      {
+        "scenario_id": "l2_s13",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_13_merchandising_boost_cap"
+      },
+      {
+        "scenario_id": "l2_s14",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_14_pricing_negative_validation"
+      },
+      {
+        "scenario_id": "l2_s15",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_15_read_only_endpoint_protection"
+      },
+      {
+        "scenario_id": "l2_s17",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_33_visual_multimodal_search"
+      },
+      {
+        "scenario_id": "l2_s19",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_34_clickable_facets_dom_chips_and_a11y"
+      },
+      {
+        "scenario_id": "l2_s21",
+        "layer_id": "l2_policy_guardrails",
+        "name": "pharma_05_pharma_cep_regional_sla_delivery"
+      },
+      {
+        "scenario_id": "l2_s22",
+        "layer_id": "l2_policy_guardrails",
+        "name": "pharma_06_pharma_department_and_brand_facets"
+      },
+      {
+        "scenario_id": "l3_s01",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_01_sql_injection_union_select"
+      },
+      {
+        "scenario_id": "l3_s02",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_02_sql_injection_tautology"
+      },
+      {
+        "scenario_id": "l3_s03",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_03_prompt_injection_ignore_instructions"
+      },
+      {
+        "scenario_id": "l3_s04",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_04_fake_system_xml_tags"
+      },
+      {
+        "scenario_id": "l3_s05",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_05_fake_role_injection"
+      },
+      {
+        "scenario_id": "l3_s06",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_06_markdown_xss_payload"
+      },
+      {
+        "scenario_id": "l3_s07",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_07_unicode_homoglyph_obfuscation"
+      },
+      {
+        "scenario_id": "l3_s08",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_08_oversized_query_string"
+      },
+      {
+        "scenario_id": "l3_s09",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_09_negative_alpha_clamping"
+      },
+      {
+        "scenario_id": "l3_s10",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_10_oversized_alpha_clamping"
+      },
+      {
+        "scenario_id": "l3_s11",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_11_extreme_limit_clamping"
+      },
+      {
+        "scenario_id": "l3_s12",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_12_negative_limit_handling"
+      },
+      {
+        "scenario_id": "l3_s13",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_13_null_byte_injection"
+      },
+      {
+        "scenario_id": "l3_s14",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_14_concurrent_burst_invariance"
+      },
+      {
+        "scenario_id": "l3_s15",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_15_malformed_json_body"
+      },
+      {
+        "scenario_id": "l3_s16",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_16_state_immutability_idempotency"
+      },
+      {
+        "scenario_id": "l3_s17",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_17_multimodal_ssrf_inline_only"
+      },
+      {
+        "scenario_id": "l3_s18",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_18_facet_xss_textcontent_isolation"
+      },
+      {
+        "scenario_id": "l4_s01",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_01_pure_fts_alpha_0"
+      },
+      {
+        "scenario_id": "l4_s02",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_02_pure_vector_alpha_1"
+      },
+      {
+        "scenario_id": "l4_s03",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_03_balanced_hybrid_alpha_05"
+      },
+      {
+        "scenario_id": "l4_s04",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_04_vector_heavy_alpha_065"
+      },
+      {
+        "scenario_id": "l4_s05",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_05_ltr_active_rerank"
+      },
+      {
+        "scenario_id": "l4_s06",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_06_ltr_disabled_passthrough"
+      },
+      {
+        "scenario_id": "l4_s07",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_07_nl_intent_parsed_mode"
+      },
+      {
+        "scenario_id": "l4_s08",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_08_spelling_auto_correct_mode"
+      },
+      {
+        "scenario_id": "l4_s10",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_10_session_personalized_mode"
+      },
+      {
+        "scenario_id": "l4_s11",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_01_total_found_match"
+      },
+      {
+        "scenario_id": "l4_s12",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_02_result_count_match"
+      },
+      {
+        "scenario_id": "l4_s13",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_03_result_id_ordering"
+      },
+      {
+        "scenario_id": "l4_s14",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_04_title_field_match"
+      },
+      {
+        "scenario_id": "l4_s15",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_05_price_numeric_match"
+      },
+      {
+        "scenario_id": "l4_s16",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_06_price_currency_match"
+      },
+      {
+        "scenario_id": "l4_s17",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_07_availability_enum_match"
+      },
+      {
+        "scenario_id": "l4_s18",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_08_locale_tag_match"
+      },
+      {
+        "scenario_id": "l4_s19",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_09_tenant_id_match"
+      },
+      {
+        "scenario_id": "l4_s20",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_10_brand_array_match"
+      },
+      {
+        "scenario_id": "l4_s21",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_11_category_array_match"
+      },
+      {
+        "scenario_id": "l4_s22",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_12_score_boost_presence"
+      },
+      {
+        "scenario_id": "l4_s23",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_13_score_rule_multiplier"
+      },
+      {
+        "scenario_id": "l4_s24",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_14_effective_alpha_parity"
+      },
+      {
+        "scenario_id": "l4_s25",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_15_retrieval_mode_parity"
+      },
+      {
+        "scenario_id": "l4_s26",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_16_facets_categories_count"
+      },
+      {
+        "scenario_id": "l4_s27",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_17_facets_brands_count"
+      },
+      {
+        "scenario_id": "l4_s28",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_18_facets_price_ranges_count"
+      },
+      {
+        "scenario_id": "l4_s29",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_11_multimodal_photo_plus_facet_filter"
+      },
+      {
+        "scenario_id": "l5_s01",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_01_serving_live_health"
+      },
+      {
+        "scenario_id": "l5_s02",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_02_vertex_argon_models"
+      },
+      {
+        "scenario_id": "l5_s03",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_03_spanner_eval_run_persisted"
+      },
+      {
+        "scenario_id": "l5_s04",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_04_firestore_compliance_persisted"
+      },
+      {
+        "scenario_id": "l5_s05",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_05_gcs_snapshot_persisted"
+      },
+      {
+        "scenario_id": "l5_s06",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_06_spanner_conversation_turns_stream"
+      },
+      {
+        "scenario_id": "l5_s07",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_07_catalog_20535_scale_and_v2_coverage"
+      },
+      {
+        "scenario_id": "l5_s08",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "req_43_47_51_closed_loop_telemetry_and_diagram"
+      }
+    ],
+    "per_defect_summary": {
+      "D0": {
+        "description": "Clean baseline (no injected fault)",
+        "failed_scenarios_count": 0,
+        "failed_scenarios": [],
+        "failed_requirements_count": 0,
+        "failed_requirements": [],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D1": {
+        "description": "Shuffle/reverse organic top-10 ranking order (ranking collapse)",
+        "failed_scenarios_count": 12,
+        "failed_scenarios": [
+          "l1_s05",
+          "l1_s13",
+          "l1_s14",
+          "l2_s08",
+          "l2_s09",
+          "l2_s10",
+          "l2_s11",
+          "l2_s16",
+          "l2_s18",
+          "l2_s20",
+          "l2_s25",
+          "l4_s30"
+        ],
+        "failed_requirements_count": 6,
+        "failed_requirements": [
+          "#7 (4.1.7)",
+          "#21 (4.1.13)",
+          "#22 (4.1.14)",
+          "#32 (4.1.15)",
+          "#40 (4.1.20)",
+          "#45 (4.1.25)"
+        ],
+        "avg_ndcg": 0.479,
+        "avg_mrr": 0.3359
+      },
+      "D2": {
+        "description": "Demote IN_STOCK items behind OUT_OF_STOCK items and invert stock boost (#3/#45 defect)",
+        "failed_scenarios_count": 6,
+        "failed_scenarios": [
+          "l2_s06",
+          "l2_s07",
+          "l2_s08",
+          "l2_s09",
+          "l2_s10",
+          "l2_s25"
+        ],
+        "failed_requirements_count": 4,
+        "failed_requirements": [
+          "#3 (4.1.3)",
+          "#22 (4.1.14)",
+          "#35 (4.1.18)",
+          "#45 (4.1.25)"
+        ],
+        "avg_ndcg": 0.8826,
+        "avg_mrr": 0.875
+      },
+      "D3": {
+        "description": "Ignore sort_by=price_asc and invert price ordering (#40 defect)",
+        "failed_scenarios_count": 0,
+        "failed_scenarios": [],
+        "failed_requirements_count": 1,
+        "failed_requirements": [
+          "#40 (4.1.20)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D4": {
+        "description": "Leak page=1 item into page=2 and mismatch total_found across pages (#40 defect)",
+        "failed_scenarios_count": 2,
+        "failed_scenarios": [
+          "l1_s16",
+          "l1_s17"
+        ],
+        "failed_requirements_count": 2,
+        "failed_requirements": [
+          "#40 (4.1.20)",
+          "#46 (4.1.26)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D5": {
+        "description": "Break disjunctive multi-brand OR filter (brands=Adidas,Nike) and strip facets.attributes (#41/#42 defect)",
+        "failed_scenarios_count": 2,
+        "failed_scenarios": [
+          "l2_s23",
+          "l2_s24"
+        ],
+        "failed_requirements_count": 2,
+        "failed_requirements": [
+          "#41 (4.1.21)",
+          "#42 (4.1.22)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D6": {
+        "description": "Return retail basePrice (119.0 / 134.0) on b2b-corporate and strip cpc_micros/ad_relevance (#22/#35 defect)",
+        "failed_scenarios_count": 3,
+        "failed_scenarios": [
+          "l2_s08",
+          "l2_s20",
+          "l4_s09"
+        ],
+        "failed_requirements_count": 2,
+        "failed_requirements": [
+          "#22 (4.1.14)",
+          "#35 (4.1.18)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D7": {
+        "description": "Inject OUT_OF_STOCK item into /api/products/:id/similar?mode=substitutes (#44 defect)",
+        "failed_scenarios_count": 1,
+        "failed_scenarios": [
+          "l4_s31"
+        ],
+        "failed_requirements_count": 1,
+        "failed_requirements": [
+          "#44 (4.1.24)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D8": {
+        "description": "Inject forbidden GCP project identifier and project number into /api/info and HTML endpoints (#52 defect)",
+        "failed_scenarios_count": 1,
+        "failed_scenarios": [
+          "l3_s19"
+        ],
+        "failed_requirements_count": 1,
+        "failed_requirements": [
+          "#52 (4.1.29)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      }
+    },
+    "scenario_matrix": [
+      {
+        "scenario_id": "l1_s01",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_01_nl_parser_intent_extraction",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s02",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_02_nl_parser_opt_out",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s03",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_03_spell_check_correction",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s04",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_04_spell_check_bypass_when_exact",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s05",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_05_synonym_expansion",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s06",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_06_synonym_weight_discount",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s07",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_07_rrf_lexical_vector_fusion",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s08",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_08_rrf_alpha_weighting",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s09",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_09_ltr_stage2_reranking",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s10",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_10_ltr_score_population",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s11",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_11_session_affinity_boost",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s12",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_12_metadata_envelope_integrity",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s13",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "pharma_01_dermocosmetics_hybrid_rrf",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s14",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "pharma_02_compounding_actives_retrieval",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s15",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "pharma_03_pharma_synonym_and_autocomplete",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l1_s16",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "req_39_46_scann_ann_and_two_stage_count",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "FAIL",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D4"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s17",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "req_40_pagination_and_sort_non_overlap",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "FAIL",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D4"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s01",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_01_tenant_isolation_acme",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s02",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_02_tenant_default_isolation",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s03",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_03_locale_pt_br_strict",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s04",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_04_locale_en_us_strict",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s05",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_05_locale_es_mx_strict",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s06",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_06_stock_precedence_in_stock_first",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D2"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s07",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_07_out_of_stock_demotion_tail",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D2"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s08",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_08_b2b_price_table_corporate",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "FAIL",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2",
+          "D6"
+        ],
+        "failures_count": 3
+      },
+      {
+        "scenario_id": "l2_s09",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_09_b2b_price_table_isolation",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l2_s10",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_10_b2b_unauthorized_table_fallback",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l2_s11",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_11_cep_regional_cd_sla",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s12",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_12_cep_invalid_rejection",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s13",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_13_merchandising_boost_cap",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s14",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_14_pricing_negative_validation",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s15",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_15_read_only_endpoint_protection",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s16",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_32_variant_grouping_collapse",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s17",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_33_visual_multimodal_search",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s18",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_34_clickable_facets_category_brand_price",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s19",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_34_clickable_facets_dom_chips_and_a11y",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s20",
+        "layer_id": "l2_policy_guardrails",
+        "name": "pharma_04_otc_medicamentos_and_b2b_contract",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "FAIL",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D6"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l2_s21",
+        "layer_id": "l2_policy_guardrails",
+        "name": "pharma_05_pharma_cep_regional_sla_delivery",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s22",
+        "layer_id": "l2_policy_guardrails",
+        "name": "pharma_06_pharma_department_and_brand_facets",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s23",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_41_disjunctive_multiselect_facets",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "FAIL",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D5"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s24",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_42_dynamic_schema_free_attributes",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "FAIL",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D5"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s25",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_45_oos_reachability_in_hybrid_search",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l3_s01",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_01_sql_injection_union_select",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s02",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_02_sql_injection_tautology",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s03",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_03_prompt_injection_ignore_instructions",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s04",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_04_fake_system_xml_tags",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s05",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_05_fake_role_injection",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s06",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_06_markdown_xss_payload",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s07",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_07_unicode_homoglyph_obfuscation",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s08",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_08_oversized_query_string",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s09",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_09_negative_alpha_clamping",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s10",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_10_oversized_alpha_clamping",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s11",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_11_extreme_limit_clamping",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s12",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_12_negative_limit_handling",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s13",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_13_null_byte_injection",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s14",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_14_concurrent_burst_invariance",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s15",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_15_malformed_json_body",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s16",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_16_state_immutability_idempotency",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s17",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_17_multimodal_ssrf_inline_only",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s18",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_18_facet_xss_textcontent_isolation",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s19",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "req_52_53_redaction_and_theme_removal_guard",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "FAIL"
+        },
+        "failed_on_defects": [
+          "D8"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s01",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_01_pure_fts_alpha_0",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s02",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_02_pure_vector_alpha_1",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s03",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_03_balanced_hybrid_alpha_05",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s04",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_04_vector_heavy_alpha_065",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s05",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_05_ltr_active_rerank",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s06",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_06_ltr_disabled_passthrough",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s07",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_07_nl_intent_parsed_mode",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s08",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_08_spelling_auto_correct_mode",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s09",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_09_b2b_contract_pricing_mode",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "FAIL",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D6"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s10",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_10_session_personalized_mode",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s11",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_01_total_found_match",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s12",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_02_result_count_match",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s13",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_03_result_id_ordering",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s14",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_04_title_field_match",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s15",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_05_price_numeric_match",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s16",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_06_price_currency_match",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s17",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_07_availability_enum_match",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s18",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_08_locale_tag_match",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s19",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_09_tenant_id_match",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s20",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_10_brand_array_match",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s21",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_11_category_array_match",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s22",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_12_score_boost_presence",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s23",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_13_score_rule_multiplier",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s24",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_14_effective_alpha_parity",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s25",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_15_retrieval_mode_parity",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s26",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_16_facets_categories_count",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s27",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_17_facets_brands_count",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s28",
+        "layer_id": "l4_routing_and_parity",
+        "name": "parity_18_facets_price_ranges_count",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s29",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_11_multimodal_photo_plus_facet_filter",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l4_s30",
+        "layer_id": "l4_routing_and_parity",
+        "name": "pharma_07_packaging_and_hygiene_departments",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s31",
+        "layer_id": "l4_routing_and_parity",
+        "name": "req_44_similar_substitutes_coviewed_modes",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "FAIL",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D7"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l5_s01",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_01_serving_live_health",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l5_s02",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_02_vertex_argon_models",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l5_s03",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_03_spanner_eval_run_persisted",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l5_s04",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_04_firestore_compliance_persisted",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l5_s05",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_05_gcs_snapshot_persisted",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l5_s06",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_06_spanner_conversation_turns_stream",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l5_s07",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_07_catalog_20535_scale_and_v2_coverage",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l5_s08",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "req_43_47_51_closed_loop_telemetry_and_diagram",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      }
+    ]
+  },
+  "after_suite_rebuilt": {
+    "suite_name": "after_rebuilt_probe_78",
+    "total_scenarios": 78,
+    "scenarios_failing_at_least_one_defect": 57,
+    "scenarios_never_failing_d1_d8_count": 21,
+    "scenarios_never_failing_d1_d8": [
+      {
+        "scenario_id": "l2_s01",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_01_tenant_isolation_acme"
+      },
+      {
+        "scenario_id": "l2_s05",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_05_locale_es_mx_strict"
+      },
+      {
+        "scenario_id": "l2_s12",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_12_cep_invalid_rejection"
+      },
+      {
+        "scenario_id": "l2_s14",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_14_pricing_negative_validation"
+      },
+      {
+        "scenario_id": "l2_s15",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_15_read_only_endpoint_protection"
+      },
+      {
+        "scenario_id": "l2_s17",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_33_visual_multimodal_search"
+      },
+      {
+        "scenario_id": "l3_s01",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_01_sql_injection_union_select"
+      },
+      {
+        "scenario_id": "l3_s02",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_02_sql_injection_tautology"
+      },
+      {
+        "scenario_id": "l3_s03",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_03_prompt_injection_ignore_instructions"
+      },
+      {
+        "scenario_id": "l3_s04",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_04_fake_system_xml_tags"
+      },
+      {
+        "scenario_id": "l3_s05",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_05_fake_role_injection"
+      },
+      {
+        "scenario_id": "l3_s06",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_06_markdown_xss_payload"
+      },
+      {
+        "scenario_id": "l3_s07",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_07_unicode_homoglyph_obfuscation"
+      },
+      {
+        "scenario_id": "l3_s08",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_08_oversized_query_string"
+      },
+      {
+        "scenario_id": "l3_s09",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_09_negative_alpha_clamping"
+      },
+      {
+        "scenario_id": "l3_s10",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_10_oversized_alpha_clamping"
+      },
+      {
+        "scenario_id": "l3_s11",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_11_extreme_limit_clamping"
+      },
+      {
+        "scenario_id": "l3_s12",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_12_negative_limit_handling"
+      },
+      {
+        "scenario_id": "l3_s13",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_13_null_byte_injection"
+      },
+      {
+        "scenario_id": "l3_s15",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_15_malformed_json_body"
+      },
+      {
+        "scenario_id": "l5_s01",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_01_serving_live_health"
+      }
+    ],
+    "per_defect_summary": {
+      "D0": {
+        "description": "Clean baseline (no injected fault)",
+        "failed_scenarios_count": 0,
+        "failed_scenarios": [],
+        "failed_requirements_count": 0,
+        "failed_requirements": [],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D1": {
+        "description": "Shuffle/reverse organic top-10 ranking order (ranking collapse)",
+        "failed_scenarios_count": 43,
+        "failed_scenarios": [
+          "l1_s01",
+          "l1_s02",
+          "l1_s03",
+          "l1_s04",
+          "l1_s05",
+          "l1_s06",
+          "l1_s07",
+          "l1_s08",
+          "l1_s09",
+          "l1_s10",
+          "l1_s11",
+          "l1_s12",
+          "l1_s13",
+          "l1_s14",
+          "l1_s15",
+          "l1_s16",
+          "l1_s17",
+          "l2_s02",
+          "l2_s03",
+          "l2_s04",
+          "l2_s08",
+          "l2_s09",
+          "l2_s10",
+          "l2_s11",
+          "l2_s16",
+          "l2_s18",
+          "l2_s20",
+          "l2_s21",
+          "l2_s22",
+          "l2_s25",
+          "l3_s14",
+          "l3_s16",
+          "l4_s01",
+          "l4_s02",
+          "l4_s03",
+          "l4_s04",
+          "l4_s05",
+          "l4_s06",
+          "l4_s07",
+          "l4_s08",
+          "l4_s09",
+          "l4_s10",
+          "l4_s30"
+        ],
+        "failed_requirements_count": 6,
+        "failed_requirements": [
+          "#7 (4.1.7)",
+          "#21 (4.1.13)",
+          "#22 (4.1.14)",
+          "#32 (4.1.15)",
+          "#40 (4.1.20)",
+          "#45 (4.1.25)"
+        ],
+        "avg_ndcg": 0.479,
+        "avg_mrr": 0.3359
+      },
+      "D2": {
+        "description": "Demote IN_STOCK items behind OUT_OF_STOCK items and invert stock boost (#3/#45 defect)",
+        "failed_scenarios_count": 14,
+        "failed_scenarios": [
+          "l1_s01",
+          "l1_s02",
+          "l1_s05",
+          "l1_s08",
+          "l1_s13",
+          "l1_s14",
+          "l2_s04",
+          "l2_s06",
+          "l2_s07",
+          "l2_s08",
+          "l2_s09",
+          "l2_s10",
+          "l2_s25",
+          "l4_s09"
+        ],
+        "failed_requirements_count": 4,
+        "failed_requirements": [
+          "#3 (4.1.3)",
+          "#22 (4.1.14)",
+          "#35 (4.1.18)",
+          "#45 (4.1.25)"
+        ],
+        "avg_ndcg": 0.8826,
+        "avg_mrr": 0.875
+      },
+      "D3": {
+        "description": "Ignore sort_by=price_asc and invert price ordering (#40 defect)",
+        "failed_scenarios_count": 1,
+        "failed_scenarios": [
+          "l1_s17"
+        ],
+        "failed_requirements_count": 1,
+        "failed_requirements": [
+          "#40 (4.1.20)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D4": {
+        "description": "Leak page=1 item into page=2 and mismatch total_found across pages (#40 defect)",
+        "failed_scenarios_count": 4,
+        "failed_scenarios": [
+          "l1_s12",
+          "l1_s16",
+          "l1_s17",
+          "l5_s07"
+        ],
+        "failed_requirements_count": 2,
+        "failed_requirements": [
+          "#40 (4.1.20)",
+          "#46 (4.1.26)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D5": {
+        "description": "Break disjunctive multi-brand OR filter (brands=Adidas,Nike) and strip facets.attributes (#41/#42 defect)",
+        "failed_scenarios_count": 2,
+        "failed_scenarios": [
+          "l2_s23",
+          "l2_s24"
+        ],
+        "failed_requirements_count": 2,
+        "failed_requirements": [
+          "#41 (4.1.21)",
+          "#42 (4.1.22)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D6": {
+        "description": "Return retail basePrice (119.0 / 134.0) on b2b-corporate and strip cpc_micros/ad_relevance (#22/#35 defect)",
+        "failed_scenarios_count": 4,
+        "failed_scenarios": [
+          "l2_s08",
+          "l2_s13",
+          "l2_s20",
+          "l4_s09"
+        ],
+        "failed_requirements_count": 2,
+        "failed_requirements": [
+          "#22 (4.1.14)",
+          "#35 (4.1.18)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D7": {
+        "description": "Inject OUT_OF_STOCK item into /api/products/:id/similar?mode=substitutes (#44 defect)",
+        "failed_scenarios_count": 1,
+        "failed_scenarios": [
+          "l4_s31"
+        ],
+        "failed_requirements_count": 1,
+        "failed_requirements": [
+          "#44 (4.1.24)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      },
+      "D8": {
+        "description": "Inject forbidden GCP project identifier and project number into /api/info and HTML endpoints (#52 defect)",
+        "failed_scenarios_count": 8,
+        "failed_scenarios": [
+          "l2_s19",
+          "l3_s17",
+          "l3_s18",
+          "l3_s19",
+          "l5_s02",
+          "l5_s03",
+          "l5_s07",
+          "l5_s08"
+        ],
+        "failed_requirements_count": 1,
+        "failed_requirements": [
+          "#52 (4.1.29)"
+        ],
+        "avg_ndcg": 0.9675,
+        "avg_mrr": 1.0
+      }
+    },
+    "scenario_matrix": [
+      {
+        "scenario_id": "l1_s01",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_01_nl_parser_intent_extraction",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l1_s02",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_02_nl_parser_opt_out",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l1_s03",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_03_spell_check_correction",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s04",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_04_spell_check_bypass_when_exact",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s05",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_05_synonym_expansion",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l1_s06",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_06_synonym_weight_discount",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s07",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_07_rrf_lexical_vector_fusion",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s08",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_08_rrf_alpha_weighting",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l1_s09",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_09_ltr_stage2_reranking",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s10",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_10_ltr_score_population",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s11",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_11_session_affinity_boost",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s12",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "stage_12_metadata_envelope_integrity",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "FAIL",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D4"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l1_s13",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "pharma_01_dermocosmetics_hybrid_rrf",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l1_s14",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "pharma_02_compounding_actives_retrieval",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l1_s15",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "pharma_03_pharma_synonym_and_autocomplete",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l1_s16",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "req_39_46_scann_ann_and_two_stage_count",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "FAIL",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D4"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l1_s17",
+        "layer_id": "l1_trajectory_sequence",
+        "name": "req_40_pagination_and_sort_non_overlap",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "FAIL",
+          "D4": "FAIL",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D3",
+          "D4"
+        ],
+        "failures_count": 3
+      },
+      {
+        "scenario_id": "l2_s01",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_01_tenant_isolation_acme",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s02",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_02_tenant_default_isolation",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s03",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_03_locale_pt_br_strict",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s04",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_04_locale_en_us_strict",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l2_s05",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_05_locale_es_mx_strict",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s06",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_06_stock_precedence_in_stock_first",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D2"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s07",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_07_out_of_stock_demotion_tail",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D2"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s08",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_08_b2b_price_table_corporate",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "FAIL",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2",
+          "D6"
+        ],
+        "failures_count": 3
+      },
+      {
+        "scenario_id": "l2_s09",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_09_b2b_price_table_isolation",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l2_s10",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_10_b2b_unauthorized_table_fallback",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l2_s11",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_11_cep_regional_cd_sla",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s12",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_12_cep_invalid_rejection",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s13",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_13_merchandising_boost_cap",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "FAIL",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D6"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s14",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_14_pricing_negative_validation",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s15",
+        "layer_id": "l2_policy_guardrails",
+        "name": "guardrail_15_read_only_endpoint_protection",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s16",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_32_variant_grouping_collapse",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s17",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_33_visual_multimodal_search",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l2_s18",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_34_clickable_facets_category_brand_price",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s19",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_34_clickable_facets_dom_chips_and_a11y",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "FAIL"
+        },
+        "failed_on_defects": [
+          "D8"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s20",
+        "layer_id": "l2_policy_guardrails",
+        "name": "pharma_04_otc_medicamentos_and_b2b_contract",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "FAIL",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D6"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l2_s21",
+        "layer_id": "l2_policy_guardrails",
+        "name": "pharma_05_pharma_cep_regional_sla_delivery",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s22",
+        "layer_id": "l2_policy_guardrails",
+        "name": "pharma_06_pharma_department_and_brand_facets",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s23",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_41_disjunctive_multiselect_facets",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "FAIL",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D5"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s24",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_42_dynamic_schema_free_attributes",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "FAIL",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D5"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l2_s25",
+        "layer_id": "l2_policy_guardrails",
+        "name": "req_45_oos_reachability_in_hybrid_search",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l3_s01",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_01_sql_injection_union_select",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s02",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_02_sql_injection_tautology",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s03",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_03_prompt_injection_ignore_instructions",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s04",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_04_fake_system_xml_tags",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s05",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_05_fake_role_injection",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s06",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_06_markdown_xss_payload",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s07",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_07_unicode_homoglyph_obfuscation",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s08",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_08_oversized_query_string",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s09",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_09_negative_alpha_clamping",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s10",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_10_oversized_alpha_clamping",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s11",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_11_extreme_limit_clamping",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s12",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_12_negative_limit_handling",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s13",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_13_null_byte_injection",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s14",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_14_concurrent_burst_invariance",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l3_s15",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_15_malformed_json_body",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l3_s16",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_16_state_immutability_idempotency",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l3_s17",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_17_multimodal_ssrf_inline_only",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "FAIL"
+        },
+        "failed_on_defects": [
+          "D8"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l3_s18",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "redteam_18_facet_xss_textcontent_isolation",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "FAIL"
+        },
+        "failed_on_defects": [
+          "D8"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l3_s19",
+        "layer_id": "l3_adversarial_redteam",
+        "name": "req_52_53_redaction_and_theme_removal_guard",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "FAIL"
+        },
+        "failed_on_defects": [
+          "D8"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s01",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_01_pure_fts_alpha_0",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s02",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_02_pure_vector_alpha_1",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s03",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_03_balanced_hybrid_alpha_05",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s04",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_04_vector_heavy_alpha_065",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s05",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_05_ltr_active_rerank",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s06",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_06_ltr_disabled_passthrough",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s07",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_07_nl_intent_parsed_mode",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s08",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_08_spelling_auto_correct_mode",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s09",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_09_b2b_contract_pricing_mode",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "FAIL",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "FAIL",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1",
+          "D2",
+          "D6"
+        ],
+        "failures_count": 3
+      },
+      {
+        "scenario_id": "l4_s10",
+        "layer_id": "l4_routing_and_parity",
+        "name": "mode_10_session_personalized_mode",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s30",
+        "layer_id": "l4_routing_and_parity",
+        "name": "pharma_07_packaging_and_hygiene_departments",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "FAIL",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D1"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l4_s31",
+        "layer_id": "l4_routing_and_parity",
+        "name": "req_44_similar_substitutes_coviewed_modes",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "FAIL",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [
+          "D7"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l5_s01",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_01_serving_live_health",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "PASS"
+        },
+        "failed_on_defects": [],
+        "failures_count": 0
+      },
+      {
+        "scenario_id": "l5_s02",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_02_vertex_argon_models",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "FAIL"
+        },
+        "failed_on_defects": [
+          "D8"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l5_s03",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_03_spanner_eval_run_persisted",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "FAIL"
+        },
+        "failed_on_defects": [
+          "D8"
+        ],
+        "failures_count": 1
+      },
+      {
+        "scenario_id": "l5_s07",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "telemetry_07_catalog_20535_scale_and_v2_coverage",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "FAIL",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "FAIL"
+        },
+        "failed_on_defects": [
+          "D4",
+          "D8"
+        ],
+        "failures_count": 2
+      },
+      {
+        "scenario_id": "l5_s08",
+        "layer_id": "l5_live_vertex_and_telemetry",
+        "name": "req_43_47_51_closed_loop_telemetry_and_diagram",
+        "d0_clean": "PASS",
+        "outcomes": {
+          "D1": "PASS",
+          "D2": "PASS",
+          "D3": "PASS",
+          "D4": "PASS",
+          "D5": "PASS",
+          "D6": "PASS",
+          "D7": "PASS",
+          "D8": "FAIL"
+        },
+        "failed_on_defects": [
+          "D8"
+        ],
+        "failures_count": 1
+      }
+    ]
+  }
+}
