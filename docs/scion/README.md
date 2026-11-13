@@ -63,6 +63,33 @@ Most of the work was not building the factory but keeping it from stopping. The 
 9. **Narrow escalation**: the PO decides IAM, cost and scope; leads decide the rest and keep going.
 10. **Grant identities up front**: an IAM question waiting on the PO stalled a rollout for 10 hours.
 
+## What it costs today
+
+Snapshot of 2026-11-13, with every agent idle. These are estimates: the billing export is not enabled, so the real
+invoice was not read.
+
+| Item | State | Cost per day | Basis |
+|---|---|---|---|
+| Hub VM | running 24 h | about $3.30 | list price from memory |
+| Spanner | 100 processing units | about $3.30 | list price from memory |
+| `lead` | idle, heartbeat every 4 h | about $1.50 | tokens measured that day, reference price |
+| `deployer` | idle, no heartbeat | $0 | no model calls that day |
+| Eval factory (5 agents) | idle, no heartbeat | $0 | no model calls that day |
+| `backend`, `frontend`, `reviewer` | idle | $0 | no recent activity seen |
+| Cloud Run (search, dashboard) | scaled to zero, no traffic | near $0 | settings checked |
+| BigQuery and log sink | 105 MB stored | near $0 | measured size |
+| **Total** | | **about $8** (about $245 a month) | |
+
+- The `lead` figure is a partial day (11 calls) projected to 24 h, at the reference price of $5 per million
+  input-token equivalents used in the [cost controller design](specs/2026-11-06-lead-cost-controller-design.md). It
+  is not the contract price.
+- The `lead` heartbeat rewrites the whole context each time, so this line grows with the context size: about $1.50 a
+  day at 23k tokens, about $7.50 a day just under the 200k ceiling.
+- Work adds to this: about $1 to $3 per lead wake and about $4 per deployer task (reference price). The cost of the
+  Gemini workers on a build issue has not been measured.
+- A 15-minute heartbeat on an idle lead cost about $367 a day (reference price) before the controller. Do not turn
+  one back on.
+
 ## Status
 
 | Part | State |
@@ -70,7 +97,8 @@ Most of the work was not building the factory but keeping it from stopping. The 
 | Shared-workspace factory (this protocol, these templates) | running; templates here are the improved version of what the agents run |
 | Heartbeats, agent-status sync, Antigravity hook patch, sandbox setup | running and verified |
 | Watchdog daemon (`factory-watchdog.py`), backup cron (`backup-hub.sh`) | installed on Hub VM cron, running and verified |
-| Lead cost controller (`lead-controller.py`) | installed on Hub VM cron (`--apply-compact` live, activity gate in 24 h shadow dry-run before `--apply-wake`) |
+| Lead cost controller (`lead-controller.py`) | installed on Hub VM cron with `--apply-compact --apply-wake` since 2026-11-11; the `psearch` lead heartbeat runs every 4 h; the eval lead heartbeat is paused and the eval factory is woken by message |
+| Transcript export (`trajectory-export.py`) | first load done by hand on 2026-11-13 (Claude Code and Antigravity agents, Hub messages); no cron yet; OpenCode and Hermes not exported |
 | Session handoff ([`handoffs/2026-11-11-jetski-session-handoff.md`](handoffs/2026-11-11-jetski-session-handoff.md)) | active handoff for Jetski Hub resumption (Stage 1 audit & Task 8 pending) |
 | End-to-End Telemetry (`setup-telemetry.sh`, `patch-sciontool-telemetry.sh`) | active and verified: 10/10 containers listening on 4317/4318, Cloud Logging, Cloud Monitoring, Cloud Trace, and Hub metrics API active |
 | Alerts & budgets (`setup-alerts-and-budgets.sh`) | Cloud Monitoring email alert policy and $150/mo billing budgets active |
