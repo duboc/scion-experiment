@@ -292,6 +292,39 @@ scripts/run-on-hub.sh scripts/scion-admin.py schedule update --project <project>
 
 Fifteen minutes balances reaction time against cost: each heartbeat is at least one model turn per lead.
 
+## Lead cost controller
+
+`scripts/lead-controller.py` runs every 5 minutes from the Hub OS user's crontab to keep Claude Opus costs bounded without changing models or agent prompts (design in [`specs/2026-11-06-lead-cost-controller-design.md`](specs/2026-11-06-lead-cost-controller-design.md)):
+
+1. **Context ceiling (`--apply-compact`):** when `lead` or `deployer` is idle and its last context exceeds `200,000` tokens (with at least 30 min since the last compaction and no active heartbeat due within 2 min), it types `/compact <role instructions>` into `scion:agent` and waits for a new `compact_boundary` in the transcript.
+2. **Activity gate (`--apply-wake`):** wakes `lead` with one `GATE (automated, not the PO): ...` message only when a deterministic rule fires (**R1** new open issue, **R2** issue activity > 10 min after the lead's last turn, **R3** team request unanswered > 30 min up to 2 wakes, **R5** safety wake starting at 1 h and backing off to 4 h while open issues sit idle). Once `--apply-wake` is active, the `psearch-lead-heartbeat` schedule moves to `0 */4 * * *` as an independent safety net.
+
+```bash
+# Dry-run one pass (prints JSON decision, never types or messages)
+scripts/run-on-hub.sh scripts/lead-controller.py
+
+# Stage 1: install 5-min cron with context ceiling live and gate in shadow dry-run
+scripts/run-on-hub.sh scripts/lead-controller.py --install-cron --apply-compact
+
+# Stage 2 (after 24 h dry-run check): enable gate wakes and move heartbeat to every 4 h
+scripts/run-on-hub.sh scripts/lead-controller.py --install-cron --apply-compact --apply-wake
+scripts/run-on-hub.sh scripts/scion-admin.py schedule update --project psearch --name psearch-lead-heartbeat --cron "0 */4 * * *"
+```
+
+**Files on the Hub VM (`~/.scion/`):**
+- `lead-controller.py` (mode `0700`) and `lead-controller.env` (mode `0600`).
+- `lead-controller-state.json` (mode `0600`): known issues, per-rule cooldowns, R3 streaks, R5 backoff, signal failure counters.
+- `lead-controller.log`: one JSON line per 5-min run (`result`, `lead_context_tokens`, `deployer_context_tokens`, `compacted`, `would_compact`, `compact_failed`, `duration_s`, `woke`, `would_wake`, `failures`, `alerted`). A `compact_failed` entry means `/compact` was typed but no new `compact_boundary` appeared (Claude Code refused or took more than 7 min); the next attempt for that agent waits the same 30 min cooldown, and a `WARNING` entry goes to Cloud Logging. `duration_s` should stay at a few seconds except on a tick that compacts; `{"result": "locked"}` means the previous tick was still running. Applied compactions and wakes also emit `INFO` entries to Cloud Logging (`scion-factory-alerts`); 3 consecutive unreadable-signal runs emit an `ERROR` alert that emails the PO.
+- `lead-controller.disabled` (**kill switch**): `touch ~/.scion/lead-controller.disabled` makes every run exit immediately with `{"result": "disabled"}`.
+
+**Rollback to 15-minute heartbeats (minutes):**
+```bash
+gcloud compute ssh "$HUB_VM" --project "$HUB_PROJECT" --zone "$HUB_ZONE" \
+  --command="sudo -u $HUB_OS_USER touch ~/.scion/lead-controller.disabled"
+scripts/run-on-hub.sh scripts/scion-admin.py schedule resume --project psearch --name psearch-lead-heartbeat
+scripts/run-on-hub.sh scripts/scion-admin.py schedule update --project psearch --name psearch-lead-heartbeat --cron "*/15 * * * *"
+```
+
 ## Pause and resume the factory
 
 - **Pause:** `schedule pause` for both heartbeats, then tell each lead: "PO -> lead: pause. Finish or park the current
