@@ -2,12 +2,16 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"psearch/serving-go/internal/config"
@@ -1452,6 +1456,144 @@ func TestOOSProductReachableInUnfilteredHybridSearchAfterVectorFill(t *testing.T
 	}
 	if oosCount == 0 {
 		t.Fatal("expected OOS running footwear items to be reachable at the end of the broad query window")
+	}
+}
+
+// Issue #66 Phase A: Per-search deadline cancels a slow Spanner query and returns HTTP 504
+// without falling through to memoryHybridSearch / memory_fallback.
+func TestSearchDeadlineCancelsSlowSearchWithoutMemoryFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Port:                   8080,
+		Environment:            "test",
+		ProjectID:              "test-project",
+		DefaultAlpha:           0.5,
+		DefaultLimit:           10,
+		UseMemoryStore:         true,
+		ActiveEmbeddingVersion: "v1",
+		SearchTimeout:          35 * time.Millisecond,
+		SearchMaxInflight:      8,
+		SearchQueueWait:        250 * time.Millisecond,
+	}
+	ctrl, err := NewController(cfg)
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+	var ctxCancelled atomic.Bool
+	ctrl.spannerSvc = services.NewBlockingSpannerServiceForTest(cfg, func(ctx context.Context) ([]models.SearchResult, error) {
+		select {
+		case <-ctx.Done():
+			ctxCancelled.Store(true)
+			return nil, ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+			return []models.SearchResult{{ID: "prod-001", Title: "Should Not Return"}}, nil
+		}
+	})
+
+	r := gin.New()
+	r.GET("/api/search", ctrl.Search)
+	r.GET("/api/info", ctrl.Info)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/search?q=running+shoes", nil))
+	if w.Code != http.StatusGatewayTimeout {
+		t.Fatalf("slow search status = %d, want 504 (body=%s)", w.Code, w.Body.String())
+	}
+	if !ctxCancelled.Load() {
+		t.Fatal("expected downstream Spanner context to be cancelled by SEARCH_TIMEOUT")
+	}
+	if strings.Contains(w.Body.String(), "memory_fallback") || strings.Contains(w.Body.String(), "prod-001") {
+		t.Fatalf("timed-out search must NOT fall through to memory_fallback: %s", w.Body.String())
+	}
+	if ctrl.timedOutSearches.Load() != 1 {
+		t.Fatalf("timedOutSearches = %d, want 1", ctrl.timedOutSearches.Load())
+	}
+}
+
+// Issue #66 Phase A: In-flight admission control semaphore rejects requests beyond
+// SEARCH_MAX_INFLIGHT after SEARCH_QUEUE_WAIT with HTTP 503 + Retry-After: 1 + JSON error,
+// while normal requests within capacity succeed with HTTP 200.
+func TestSearchAdmissionControlSemaphoreRejectsWith503AndRetryAfter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{
+		Port:                   8080,
+		Environment:            "test",
+		ProjectID:              "test-project",
+		DefaultAlpha:           0.5,
+		DefaultLimit:           10,
+		UseMemoryStore:         true,
+		ActiveEmbeddingVersion: "v1",
+		SearchTimeout:          5 * time.Second,
+		SearchMaxInflight:      2,
+		SearchQueueWait:        25 * time.Millisecond,
+		SearchQueueWaitSet:     true,
+	}
+	ctrl, err := NewController(cfg)
+	if err != nil {
+		t.Fatalf("NewController: %v", err)
+	}
+
+	enteredCh := make(chan struct{}, 4)
+	releaseBarrier := make(chan struct{})
+	ctrl.spannerSvc = services.NewBlockingSpannerServiceForTest(cfg, func(ctx context.Context) ([]models.SearchResult, error) {
+		enteredCh <- struct{}{}
+		select {
+		case <-releaseBarrier:
+			return []models.SearchResult{{ID: "prod-001", Title: "Shoe"}}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	})
+
+	r := gin.New()
+	r.GET("/api/search", ctrl.Search)
+
+	var wg sync.WaitGroup
+	codes := make([]int, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/search?q=shoes&ads=false", nil))
+			codes[idx] = w.Code
+		}(i)
+	}
+
+	// Wait until both in-flight slots are occupied.
+	<-enteredCh
+	<-enteredCh
+
+	// 3rd request arrives while all 2 slots are occupied and must be rejected with 503 + Retry-After: 1.
+	w3 := httptest.NewRecorder()
+	r.ServeHTTP(w3, httptest.NewRequest(http.MethodGet, "/api/search?q=shoes&ads=false", nil))
+	if w3.Code != http.StatusServiceUnavailable {
+		t.Fatalf("overloaded 3rd request status = %d, want 503 (body=%s)", w3.Code, w3.Body.String())
+	}
+	if got := w3.Header().Get("Retry-After"); got != "1" {
+		t.Fatalf("Retry-After header = %q, want \"1\"", got)
+	}
+	if !strings.Contains(w3.Body.String(), `"status":"overloaded"`) {
+		t.Fatalf("expected JSON overloaded error body, got: %s", w3.Body.String())
+	}
+	if ctrl.rejectedSearches.Load() != 1 {
+		t.Fatalf("rejectedSearches = %d, want 1", ctrl.rejectedSearches.Load())
+	}
+
+	// Release the 2 in-flight searches and verify they complete with HTTP 200.
+	close(releaseBarrier)
+	wg.Wait()
+	for i, code := range codes {
+		if code != http.StatusOK {
+			t.Fatalf("admitted request %d status = %d, want 200", i, code)
+		}
+	}
+
+	// Subsequent request after slot release succeeds normally with HTTP 200.
+	w4 := httptest.NewRecorder()
+	r.ServeHTTP(w4, httptest.NewRequest(http.MethodGet, "/api/search?q=shoes&ads=false", nil))
+	if w4.Code != http.StatusOK {
+		t.Fatalf("post-release request status = %d, want 200", w4.Code)
 	}
 }
 

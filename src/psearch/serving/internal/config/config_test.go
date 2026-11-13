@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNormalizeModelID(t *testing.T) {
@@ -107,6 +108,47 @@ func TestConfigProjectIDDefaultEmptyAndSpannerValidation(t *testing.T) {
 	cfg.UseMemoryStore = true
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() must succeed in memory mode without ProjectID: %v", err)
+	}
+}
+
+func TestConfigSearchTimeoutAndAdmissionDefaults(t *testing.T) {
+	os.Unsetenv("SEARCH_TIMEOUT")
+	os.Unsetenv("SEARCH_MAX_INFLIGHT")
+	os.Unsetenv("SEARCH_QUEUE_WAIT")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.EffectiveSearchTimeout() != 10*time.Second {
+		t.Errorf("default EffectiveSearchTimeout() = %v, want 10s", cfg.EffectiveSearchTimeout())
+	}
+	if cfg.EffectiveSearchMaxInflight() != 8 {
+		t.Errorf("default EffectiveSearchMaxInflight() = %d, want 8", cfg.EffectiveSearchMaxInflight())
+	}
+	if cfg.EffectiveSearchQueueWait() != 250*time.Millisecond {
+		t.Errorf("default EffectiveSearchQueueWait() = %v, want 250ms", cfg.EffectiveSearchQueueWait())
+	}
+
+	os.Setenv("SEARCH_TIMEOUT", "3500ms")
+	os.Setenv("SEARCH_MAX_INFLIGHT", "12")
+	os.Setenv("SEARCH_QUEUE_WAIT", "0s")
+	defer os.Unsetenv("SEARCH_TIMEOUT")
+	defer os.Unsetenv("SEARCH_MAX_INFLIGHT")
+	defer os.Unsetenv("SEARCH_QUEUE_WAIT")
+
+	cfg2, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg2.EffectiveSearchTimeout() != 3500*time.Millisecond {
+		t.Errorf("EffectiveSearchTimeout() = %v, want 3.5s", cfg2.EffectiveSearchTimeout())
+	}
+	if cfg2.EffectiveSearchMaxInflight() != 12 {
+		t.Errorf("EffectiveSearchMaxInflight() = %d, want 12", cfg2.EffectiveSearchMaxInflight())
+	}
+	if cfg2.EffectiveSearchQueueWait() != 0 {
+		t.Errorf("EffectiveSearchQueueWait() = %v, want 0", cfg2.EffectiveSearchQueueWait())
 	}
 }
 

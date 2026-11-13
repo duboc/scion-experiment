@@ -119,7 +119,9 @@ func (c *EmbeddingCache) EmbedQueryWithMeta(ctx context.Context, text string) ([
 		c.pendingWrites.Add(1)
 		go func() {
 			defer c.pendingWrites.Done()
-			wctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			// Detached context with a short 2s timeout so async cache writes never keep
+			// the request context alive or pile up on Spanner (Issue #66).
+			wctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 			if err := c.store.Put(wctx, key, c.model, c.dims, vec); err != nil {
 				log.Printf("WARN: embedding cache store write failed: %v", err)

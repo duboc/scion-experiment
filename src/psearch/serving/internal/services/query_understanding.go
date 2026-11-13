@@ -211,7 +211,7 @@ func (q *QueryUnderstandingService) Understand(ctx context.Context, tenant, quer
 	q.remember(key, g)
 	if q.store != nil {
 		go func() {
-			wctx, c2 := context.WithTimeout(context.Background(), 5*time.Second)
+			wctx, c2 := context.WithTimeout(context.Background(), 2*time.Second)
 			defer c2()
 			if err := q.store.Put(wctx, key, query, g); err != nil {
 				log.Printf("WARN: query_intent_cache write failed: %v", err)

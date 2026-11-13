@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,20 +18,24 @@ import (
 )
 
 type Controller struct {
-	config       *config.Config
-	spannerSvc   *services.SpannerService
-	embeddingSvc *services.EmbeddingService
-	cache        *services.EmbeddingCache // nil when the embedding service is unavailable
-	synonyms     *services.SynonymService
-	rules        *services.RuleService
-	ads          *services.AdService
-	autocomplete *services.AutocompleteService
-	ltrModel     *services.LTRModel
-	intent       *services.QueryUnderstandingService
-	spell        *services.SpellCheckService
-	session      *services.SessionService
-	analytics    *services.AnalyticsService // ADR-015 (#43): closed-loop search telemetry & attribution
-	images       imageEmbedder              // ADR-010 (#33); nil when the embedding service is unavailable
+	config           *config.Config
+	spannerSvc       *services.SpannerService
+	embeddingSvc     *services.EmbeddingService
+	cache            *services.EmbeddingCache // nil when the embedding service is unavailable
+	synonyms         *services.SynonymService
+	rules            *services.RuleService
+	ads              *services.AdService
+	autocomplete     *services.AutocompleteService
+	ltrModel         *services.LTRModel
+	intent           *services.QueryUnderstandingService
+	spell            *services.SpellCheckService
+	session          *services.SessionService
+	analytics        *services.AnalyticsService // ADR-015 (#43): closed-loop search telemetry & attribution
+	images           imageEmbedder              // ADR-010 (#33); nil when the embedding service is unavailable
+	searchSem        chan struct{}              // Issue #66: per-instance admission semaphore on in-flight searches
+	inFlightSearches atomic.Int64               // Issue #66: current in-flight /api/search count
+	rejectedSearches atomic.Int64               // Issue #66: total searches rejected with 503 due to admission limit
+	timedOutSearches atomic.Int64               // Issue #66: total searches cancelled due to SEARCH_TIMEOUT deadline
 }
 
 // imageEmbedder is satisfied by services.ImageEmbeddingCache (fakeable in tests).
@@ -142,7 +147,43 @@ func NewController(cfg *config.Config) (*Controller, error) {
 		spell:        spell,
 		session:      session,
 		analytics:    analytics,
+		searchSem:    make(chan struct{}, cfg.EffectiveSearchMaxInflight()),
 	}, nil
+}
+
+// acquireSearchSlot enforces per-instance admission control (SEARCH_MAX_INFLIGHT,
+// waiting up to SEARCH_QUEUE_WAIT before rejecting with 503; Issue #66).
+func (c *Controller) acquireSearchSlot(reqCtx context.Context) (func(), bool) {
+	if c.searchSem == nil {
+		return func() {}, true
+	}
+	select {
+	case c.searchSem <- struct{}{}:
+		c.inFlightSearches.Add(1)
+		return func() {
+			c.inFlightSearches.Add(-1)
+			<-c.searchSem
+		}, true
+	default:
+	}
+	wait := c.config.EffectiveSearchQueueWait()
+	if wait <= 0 {
+		return nil, false
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case c.searchSem <- struct{}{}:
+		c.inFlightSearches.Add(1)
+		return func() {
+			c.inFlightSearches.Add(-1)
+			<-c.searchSem
+		}, true
+	case <-reqCtx.Done():
+		return nil, false
+	case <-timer.C:
+		return nil, false
+	}
 }
 
 func (c *Controller) HealthCheck(ctx *gin.Context) {
@@ -178,6 +219,14 @@ func (c *Controller) Info(ctx *gin.Context) {
 		"use_vector_index":         c.config.EffectiveUseVectorIndex(),
 		"vector_index":             "products_embedding_v2_idx",
 		"ann_num_leaves_to_search": c.config.EffectiveANNNumLeaves(),
+		"search_admission": gin.H{
+			"max_inflight":    c.config.EffectiveSearchMaxInflight(),
+			"in_flight":       c.inFlightSearches.Load(),
+			"queue_wait_ms":   c.config.EffectiveSearchQueueWait().Milliseconds(),
+			"timeout_ms":      c.config.EffectiveSearchTimeout().Milliseconds(),
+			"rejected_total":  c.rejectedSearches.Load(),
+			"timed_out_total": c.timedOutSearches.Load(),
+		},
 		"default_alpha":            c.config.DefaultAlpha,
 		"orchestrator":             "lead",
 	})
@@ -185,6 +234,31 @@ func (c *Controller) Info(ctx *gin.Context) {
 
 func (c *Controller) Search(ctx *gin.Context) {
 	start := time.Now()
+	releaseSlot, admitted := c.acquireSearchSlot(ctx.Request.Context())
+	if !admitted {
+		if ctx.Request.Context().Err() != nil {
+			n := c.timedOutSearches.Add(1)
+			log.Printf("WARN: search canceled while waiting for admission slot: timed_out_total=%d", n)
+			ctx.JSON(http.StatusGatewayTimeout, gin.H{"error": "search deadline exceeded", "status": "timeout", "timed_out_total": n})
+			return
+		}
+		n := c.rejectedSearches.Add(1)
+		log.Printf("WARN: search admission control rejected request: in_flight=%d max_inflight=%d queue_wait=%s rejected_total=%d",
+			c.inFlightSearches.Load(), c.config.EffectiveSearchMaxInflight(), c.config.EffectiveSearchQueueWait(), n)
+		ctx.Header("Retry-After", "1")
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":               "search server busy; retry after 1s",
+			"status":              "overloaded",
+			"retry_after_seconds": 1,
+			"rejected_total":      n,
+		})
+		return
+	}
+	defer releaseSlot()
+
+	searchCtx, searchCancel := context.WithTimeout(ctx.Request.Context(), c.config.EffectiveSearchTimeout())
+	defer searchCancel()
+
 	var req models.SearchRequest
 
 	if ctx.Request.Method == http.MethodGet {
@@ -425,8 +499,13 @@ func (c *Controller) Search(ctx *gin.Context) {
 			ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "image search requires gemini-embedding-2 (ACTIVE_EMBEDDING_VERSION=v2)"})
 			return
 		}
-		vec, hit, eerr := c.images.EmbedImageWithMeta(ctx.Request.Context(), data, mime)
+		vec, hit, eerr := c.images.EmbedImageWithMeta(searchCtx, data, mime)
 		switch {
+		case eerr != nil && (errors.Is(eerr, context.DeadlineExceeded) || errors.Is(eerr, context.Canceled) || searchCtx.Err() != nil):
+			n := c.timedOutSearches.Add(1)
+			log.Printf("WARN: image embedding deadline exceeded (%s): timed_out_total=%d err=%v", c.config.EffectiveSearchTimeout(), n, eerr)
+			ctx.JSON(http.StatusGatewayTimeout, gin.H{"error": "search deadline exceeded", "status": "timeout", "timed_out_total": n})
+			return
 		case eerr != nil && strings.TrimSpace(req.Query) == "":
 			log.Printf("WARN: image embedding failed: %v", eerr)
 			ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "image search temporarily unavailable"})
@@ -450,7 +529,7 @@ func (c *Controller) Search(ctx *gin.Context) {
 	// query is left untouched and parsed_query is omitted (unless explicitly requested).
 	explicitIntent := req.ParseIntent != nil && *req.ParseIntent
 	if (req.ParseIntent == nil || *req.ParseIntent) && strings.TrimSpace(req.Query) != "" {
-		in, source := c.intent.Understand(ctx.Request.Context(), filters.TenantID, req.Query)
+		in, source := c.intent.Understand(searchCtx, filters.TenantID, req.Query)
 		if !in.HasFilters() && !explicitIntent {
 			goto intentDone
 		}
@@ -481,12 +560,12 @@ intentDone:
 	const facetCandidates = 100
 	const maxSearchWindow = 500
 	candidateLimit := facetCandidates
-	outcome, err := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), searchQuery, candidateLimit, minScore, alpha, filters)
+	outcome, err := c.spannerSvc.HybridSearchDetailed(searchCtx, searchQuery, candidateLimit, minScore, alpha, filters)
 	// ADR-008 (Issue #21): zero-results recovery when the lexical leg found nothing.
 	var didYouMean string
 	var autoCorrected, relaxed bool
-	if err == nil && !services.IsBrowseQuery(searchQuery) && services.LexicalHits(outcome.Results) == 0 {
-		if corrected, changed := c.spell.Correct(ctx.Request.Context(), filters.TenantID, searchQuery); changed {
+	if err == nil && searchCtx.Err() == nil && !services.IsBrowseQuery(searchQuery) && services.LexicalHits(outcome.Results) == 0 {
+		if corrected, changed := c.spell.Correct(searchCtx, filters.TenantID, searchQuery); changed {
 			didYouMean = corrected
 			// The corrected token may be an entity that is only indexed as a structured
 			// column (e.g. brand "samsung"), not in title/description tokens. Re-parse
@@ -496,15 +575,15 @@ intentDone:
 			if in := c.intent.Parse(corrected); in.Brand != "" || in.Category != "" {
 				altQuery, altFilters, entity = in.CleanQuery, services.ApplyIntent(filters, in), true
 			}
-			if alt, aerr := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), altQuery, candidateLimit, minScore, alpha, altFilters); aerr == nil &&
+			if alt, aerr := c.spannerSvc.HybridSearchDetailed(searchCtx, altQuery, candidateLimit, minScore, alpha, altFilters); aerr == nil &&
 				(services.LexicalHits(alt.Results) > 0 || (entity && len(alt.Results) > 0)) {
 				outcome, searchQuery, filters, autoCorrected = alt, altQuery, altFilters, true
 			}
 		}
-		if !autoCorrected && len(strings.Fields(searchQuery)) > 1 {
+		if !autoCorrected && searchCtx.Err() == nil && len(strings.Fields(searchQuery)) > 1 {
 			rf := filters
 			rf.RelaxText = true
-			if alt, aerr := c.spannerSvc.HybridSearchDetailed(ctx.Request.Context(), searchQuery, candidateLimit, minScore, alpha, rf); aerr == nil && services.LexicalHits(alt.Results) > 0 {
+			if alt, aerr := c.spannerSvc.HybridSearchDetailed(searchCtx, searchQuery, candidateLimit, minScore, alpha, rf); aerr == nil && services.LexicalHits(alt.Results) > 0 {
 				outcome, relaxed = alt, true
 			}
 		}
@@ -513,7 +592,19 @@ intentDone:
 	if results == nil {
 		results = []models.SearchResult{} // always serialize as [] (never null)
 	}
-	if err != nil {
+	if err != nil || searchCtx.Err() != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(searchCtx.Err(), context.DeadlineExceeded) ||
+			errors.Is(err, context.Canceled) || errors.Is(searchCtx.Err(), context.Canceled) {
+			n := c.timedOutSearches.Add(1)
+			log.Printf("WARN: search deadline exceeded (%s): timed_out_total=%d q=%q err=%v", c.config.EffectiveSearchTimeout(), n, req.Query, err)
+			ctx.JSON(http.StatusGatewayTimeout, gin.H{
+				"error":           "search deadline exceeded",
+				"status":          "timeout",
+				"timeout_ms":      c.config.EffectiveSearchTimeout().Milliseconds(),
+				"timed_out_total": n,
+			})
+			return
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -538,7 +629,7 @@ intentDone:
 		facetIDs = facetIDs[:facetCandidates]
 	}
 	facetStart := time.Now()
-	facets, ferr := c.spannerSvc.DisjunctiveFacets(ctx.Request.Context(), searchQuery, minScore, alpha, filters, facetIDs)
+	facets, ferr := c.spannerSvc.DisjunctiveFacets(searchCtx, searchQuery, minScore, alpha, filters, facetIDs)
 	facetsMs := float64(time.Since(facetStart).Microseconds()) / 1000.0
 	if ferr != nil {
 		log.Printf("WARN: facets unavailable: %v", ferr)
@@ -559,7 +650,7 @@ intentDone:
 				pageIDs = append(pageIDs, r.ID)
 			}
 		}
-		if promises, err := c.spannerSvc.DeliveryPromises(ctx.Request.Context(), pageIDs, zip5, req.MaxSLAHours); err != nil {
+		if promises, err := c.spannerSvc.DeliveryPromises(searchCtx, pageIDs, zip5, req.MaxSLAHours); err != nil {
 			log.Printf("WARN: delivery promises unavailable: %v", err)
 		} else {
 			for i := range target {
@@ -589,7 +680,7 @@ intentDone:
 	explicitNonRelSort := req.SortBy == "price_asc" || req.SortBy == "price_desc" || req.SortBy == "popularity" || req.SortBy == "rating_desc"
 	if req.LTR && len(results) > 0 && !explicitNonRelSort { // an explicit sort wins over LTR
 		// ADR-006 stage 2: in-memory re-ranking of the stage-1 candidate window.
-		signals, err := c.spannerSvc.CandidateSignals(ctx.Request.Context(), ids)
+		signals, err := c.spannerSvc.CandidateSignals(searchCtx, ids)
 		if err != nil {
 			log.Printf("WARN: ltr signals unavailable (re-ranking on relevance features only): %v", err)
 		}
@@ -600,7 +691,7 @@ intentDone:
 	if req.SessionID != "" || len(req.SessionProductIDs) > 0 {
 		var events []services.SessionEvent
 		if req.SessionID != "" && services.ValidSessionID(req.SessionID) {
-			if ev, err := c.session.Recent(ctx.Request.Context(), filters.TenantID, req.SessionID); err != nil {
+			if ev, err := c.session.Recent(searchCtx, filters.TenantID, req.SessionID); err != nil {
 				log.Printf("WARN: session events unavailable: %v", err)
 			} else {
 				events = ev
@@ -614,7 +705,7 @@ intentDone:
 				events = append(events, services.SessionEvent{ProductID: id, EventType: "click"})
 			}
 		}
-		personalized = c.session.Personalize(ctx.Request.Context(), filters.TenantID, events, results, outcome.Pins, outcome.Buries, req.SortBy, ltrRes.ModelVersion != "")
+		personalized = c.session.Personalize(searchCtx, filters.TenantID, events, results, outcome.Pins, outcome.Buries, req.SortBy, ltrRes.ModelVersion != "")
 	}
 	// ADR-012 (Issue #40 fix-2): results is already truncated to the fixed per-query
 	// window W = min(max(lexical_count, 100), 500). Reachable window is min(total_found, 500),
@@ -664,7 +755,18 @@ intentDone:
 		}
 	}
 	// Enrich the final returned page (including any injected sponsored items) with DynamicAttributes (#46 fix).
-	c.spannerSvc.EnrichResultsWithAttributes(ctx.Request.Context(), results)
+	c.spannerSvc.EnrichResultsWithAttributes(searchCtx, results)
+	if searchCtx.Err() != nil {
+		n := c.timedOutSearches.Add(1)
+		log.Printf("WARN: search deadline exceeded (%s): timed_out_total=%d q=%q", c.config.EffectiveSearchTimeout(), n, req.Query)
+		ctx.JSON(http.StatusGatewayTimeout, gin.H{
+			"error":           "search deadline exceeded",
+			"status":          "timeout",
+			"timeout_ms":      c.config.EffectiveSearchTimeout().Milliseconds(),
+			"timed_out_total": n,
+		})
+		return
+	}
 	tenant := strings.TrimSpace(req.TenantID)
 	if tenant == "" {
 		tenant = "default"

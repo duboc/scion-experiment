@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -39,9 +40,13 @@ type Config struct {
 	AdSlots                  []int   // ADR-011 (#35): 1-based slot positions for sponsored products (default [1,4,8])
 	AdMax                    int     // ADR-011 (#35): max sponsored products per response (default 3)
 	AdMinSimilarity          float64 // ADR-011 (#35): minimum cosine similarity for vector ad match (default 0.55)
-	UseVectorIndex           bool    // ADR-012 (#39): use ScaNN VECTOR INDEX (APPROX_COSINE_DISTANCE) when v2 is active
-	useVectorIndexExplicit   bool    // true when USE_VECTOR_INDEX was explicitly set in env
-	ANNNumLeavesToSearch     int     // ADR-012 (#39): ScaNN num_leaves_to_search option (default 20)
+	UseVectorIndex           bool          // ADR-012 (#39): use ScaNN VECTOR INDEX (APPROX_COSINE_DISTANCE) when v2 is active
+	useVectorIndexExplicit   bool          // true when USE_VECTOR_INDEX was explicitly set in env
+	ANNNumLeavesToSearch     int           // ADR-012 (#39): ScaNN num_leaves_to_search option (default 20)
+	SearchTimeout            time.Duration // Issue #66: per-search deadline (default 10s, must stay < 15s WriteTimeout)
+	SearchMaxInflight        int           // Issue #66: per-instance in-flight search semaphore capacity (default 8)
+	SearchQueueWait          time.Duration // Issue #66: max wait for an in-flight search slot before 503 (default 250ms)
+	SearchQueueWaitSet       bool          // true when SearchQueueWait was explicitly configured (allows 0ms wait)
 }
 
 // NormalizeModelID normalizes model aliases (e.g. gemini-4-pro / gemini-4.0-pro -> gemini-4-argon).
@@ -85,6 +90,20 @@ func Load() (*Config, error) {
 		AdMax:                    3,
 		AdMinSimilarity:          0.55,
 		ANNNumLeavesToSearch:     20,
+		SearchTimeout:            10 * time.Second,
+		SearchMaxInflight:        8,
+		SearchQueueWait:          250 * time.Millisecond,
+	}
+
+	if d, ok := parseEnvDuration("SEARCH_TIMEOUT"); ok && d > 0 && d <= 14*time.Second {
+		cfg.SearchTimeout = d
+	}
+	if maxInf, err := strconv.Atoi(getEnv("SEARCH_MAX_INFLIGHT", "8")); err == nil && maxInf > 0 && maxInf <= 256 {
+		cfg.SearchMaxInflight = maxInf
+	}
+	if d, ok := parseEnvDuration("SEARCH_QUEUE_WAIT"); ok && d >= 0 && d <= 5*time.Second {
+		cfg.SearchQueueWait = d
+		cfg.SearchQueueWaitSet = true
 	}
 
 	rawVecIdx := strings.ToLower(strings.TrimSpace(os.Getenv("USE_VECTOR_INDEX")))
@@ -254,5 +273,59 @@ func (c *Config) EffectiveAdMinSimilarity() float64 {
 		return c.AdMinSimilarity
 	}
 	return 0.55
+}
+
+func parseEnvDuration(key string) (time.Duration, bool) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return 0, false
+	}
+	if d, err := time.ParseDuration(raw); err == nil {
+		return d, true
+	}
+	if ms, err := strconv.Atoi(raw); err == nil {
+		return time.Duration(ms) * time.Millisecond, true
+	}
+	return 0, false
+}
+
+// EffectiveSearchTimeout returns the per-search context deadline (default 10s, capped at 14s
+// so it always stays below the 15s HTTP WriteTimeout in cmd/server/main.go; Issue #66).
+func (c *Config) EffectiveSearchTimeout() time.Duration {
+	if c != nil && c.SearchTimeout > 0 {
+		if c.SearchTimeout > 14*time.Second {
+			return 14 * time.Second
+		}
+		return c.SearchTimeout
+	}
+	return 10 * time.Second
+}
+
+// EffectiveSearchMaxInflight returns the per-instance in-flight search semaphore limit (default 8; Issue #66).
+func (c *Config) EffectiveSearchMaxInflight() int {
+	if c != nil && c.SearchMaxInflight > 0 && c.SearchMaxInflight <= 256 {
+		return c.SearchMaxInflight
+	}
+	return 8
+}
+
+// EffectiveSearchQueueWait returns the max wait duration for a search admission slot before returning 503 (default 250ms; Issue #66).
+func (c *Config) EffectiveSearchQueueWait() time.Duration {
+	if c != nil && c.SearchQueueWaitSet {
+		if c.SearchQueueWait < 0 {
+			return 0
+		}
+		if c.SearchQueueWait > 5*time.Second {
+			return 5 * time.Second
+		}
+		return c.SearchQueueWait
+	}
+	if c != nil && c.SearchQueueWait > 0 {
+		if c.SearchQueueWait > 5*time.Second {
+			return 5 * time.Second
+		}
+		return c.SearchQueueWait
+	}
+	return 250 * time.Millisecond
 }
 

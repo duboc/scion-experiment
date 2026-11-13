@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"
+	"google.golang.org/grpc/codes"
 	"psearch/serving-go/internal/config"
 	"psearch/serving-go/internal/models"
 )
@@ -199,6 +201,26 @@ func NewMemorySpannerServiceForTest(cfg *config.Config, products []models.Search
 	}
 }
 
+// NewBlockingSpannerServiceForTest constructs a SpannerService whose hybridQueryRunner
+// invokes fn(ctx) to test per-search deadline cancellation and admission control (Issue #66).
+func NewBlockingSpannerServiceForTest(cfg *config.Config, fn func(ctx context.Context) ([]models.SearchResult, error)) *SpannerService {
+	return &SpannerService{
+		config:       cfg,
+		seedProducts: DefaultSeedProductsForProject(cfg.ProjectID),
+		backendMode:  "spanner",
+		lexicalCountRunner: func(ctx context.Context, _ string, _ map[string]interface{}) (int, error) {
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
+			return 10, nil
+		},
+		hybridQueryRunner: func(ctx context.Context, _ string, _ map[string]interface{}, _, _ float64, _ vectorPlan, _ models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error) {
+			res, err := fn(ctx)
+			return res, nil, err
+		},
+	}
+}
+
 // NewSpannerRunnerServiceForTest constructs a SpannerService with lexicalCountRunner and
 // hybridQueryRunner hooks that simulate RRF rank shifting whenever params["limit"] != wantWindow,
 // verifying that Stage-1 retrieval always uses the page-independent fixed window W (#40 fix-3).
@@ -366,8 +388,46 @@ func (s *SpannerService) HybridSearch(ctx context.Context, query string, limit i
 	return out.Results, err
 }
 
+func isContextCancelledOrTimedOut(ctx context.Context, err error) bool {
+	if ctx != nil && ctx.Err() != nil {
+		return true
+	}
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	code := spanner.ErrCode(err)
+	if code == codes.DeadlineExceeded || code == codes.Canceled {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "context deadline exceeded") || strings.Contains(msg, "context canceled") || strings.Contains(msg, "deadlineexceeded")
+}
+
+func firstContextErr(ctx context.Context, errs ...error) error {
+	for _, err := range errs {
+		if err != nil && (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) {
+			return err
+		}
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	for _, err := range errs {
+		if err != nil {
+			return context.DeadlineExceeded
+		}
+	}
+	return context.DeadlineExceeded
+}
+
 // HybridSearchDetailed is HybridSearch plus the retrieval mode that served the query.
 func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string, limit int, minScore float64, alpha float64, filters models.SearchFilters) (SearchOutcome, error) {
+	if err := ctx.Err(); err != nil {
+		return SearchOutcome{}, err
+	}
 	if limit <= 0 {
 		limit = s.config.DefaultLimit
 	}
@@ -383,6 +443,9 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 	if IsBrowseQuery(query) && len(filters.ImageVector) == 0 {
 		if s.client != nil || s.lexicalCountRunner != nil {
 			cappedCnt, cappedErr := s.spannerCappedBrowseCount(ctx, filters)
+			if isContextCancelledOrTimedOut(ctx, cappedErr) {
+				return SearchOutcome{}, firstContextErr(ctx, cappedErr)
+			}
 			w := fixedSearchWindow(cappedCnt)
 			queryLimit := limit
 			if limit >= 100 {
@@ -409,6 +472,9 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 					})
 				}
 				_ = g.Wait()
+				if isContextCancelledOrTimedOut(ctx, browseErr) {
+					return SearchOutcome{}, firstContextErr(ctx, browseErr)
+				}
 				if browseErr == nil {
 					if len(res) > w {
 						res = res[:w]
@@ -424,6 +490,9 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 				}
 				log.Printf("WARN: Spanner catalog browse fallback triggered: %v", browseErr)
 			}
+		}
+		if err := ctx.Err(); err != nil {
+			return SearchOutcome{}, err
 		}
 		res, total := s.memoryHybridSearchExpandedWithTotal("", limit, minScore, alpha, filters, Expansion{}, RuleSet{})
 		return SearchOutcome{Results: res, TotalFound: total, RetrievalMode: RetrievalMemory}, nil
@@ -447,6 +516,9 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			})
 		}
 		_ = g.Wait()
+		if isContextCancelledOrTimedOut(ctx, plan.ctxErr) || isContextCancelledOrTimedOut(ctx, cappedErr) {
+			return SearchOutcome{}, firstContextErr(ctx, plan.ctxErr, cappedErr)
+		}
 		plan.expansion = expansion
 		plan.rules = ruleSet
 		w := fixedSearchWindow(cappedCnt)
@@ -475,6 +547,9 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			})
 		}
 		_ = g2.Wait()
+		if isContextCancelledOrTimedOut(ctx, searchErr) {
+			return SearchOutcome{}, firstContextErr(ctx, searchErr)
+		}
 		if searchErr == nil {
 			if len(res) > w {
 				res = res[:w]
@@ -516,6 +591,9 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			})
 		}
 		_ = g.Wait()
+		if isContextCancelledOrTimedOut(ctx, plan.ctxErr) || isContextCancelledOrTimedOut(ctx, nil) {
+			return SearchOutcome{}, firstContextErr(ctx, plan.ctxErr, cappedErr)
+		}
 		plan.expansion = expansion
 		plan.rules = ruleSet
 		w := fixedSearchWindow(cappedCnt)
@@ -547,6 +625,11 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 			})
 		}
 		_ = g2.Wait()
+		// Issue #66: Never fall through to memoryHybridSearch / memory_fallback when the
+		// search context timed out or was cancelled.
+		if isContextCancelledOrTimedOut(ctx, err) {
+			return SearchOutcome{}, firstContextErr(ctx, err)
+		}
 		if len(res) > w {
 			res = res[:w]
 		}
@@ -577,6 +660,9 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return SearchOutcome{}, err
+	}
 	org, total := s.memoryHybridSearchExpandedWithTotal(query, limit, minScore, alpha, filters, expansion, ruleSet)
 	sponsored := s.memorySponsoredMatches(ctx, query, alpha, filters)
 	return SearchOutcome{Results: org, TotalFound: total, Sponsored: sponsored, RetrievalMode: RetrievalMemory, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
@@ -592,6 +678,7 @@ type vectorPlan struct {
 	multimodal  bool        // a query image contributed to the vector (ADR-010, #33)
 	expansion   Expansion   // synonym expansion for the text leg
 	rules       RuleSet     // merchandising rules matching the query
+	ctxErr      error       // non-nil when embedding failed due to context timeout/cancellation (#66)
 }
 
 // metaEmbedder is implemented by EmbeddingCache.
@@ -607,7 +694,8 @@ const (
 // planVectorQuery selects the vector column / query embedding for the active
 // embedding version (ADR-001 Blue/Green). v1 keeps the legacy 768-d deterministic
 // embedding; v2 uses gemini-embedding-2 via the Gen AI SDK. Any embedding failure
-// degrades to lexical-only retrieval instead of failing the request (Issue #11).
+// degrades to lexical-only retrieval instead of failing the request (Issue #11),
+// except when the request context itself timed out or was cancelled (Issue #66).
 func (s *SpannerService) planVectorQuery(ctx context.Context, query string) vectorPlan {
 	if !s.config.UseGeminiEmbeddings() {
 		return vectorPlan{column: vectorColumnV1, embedding: DeterministicEmbedding(query, config.LegacyEmbeddingDimension)}
@@ -625,6 +713,9 @@ func (s *SpannerService) planVectorQuery(ctx context.Context, query string) vect
 		emb, err = s.embeddings.EmbedQuery(ctx, query)
 	}
 	if err != nil {
+		if isContextCancelledOrTimedOut(ctx, err) {
+			return vectorPlan{column: vectorColumnV2, ctxErr: firstContextErr(ctx, err)}
+		}
 		log.Printf("WARN: query embedding failed (%v); lexical-only search", err)
 		return vectorPlan{column: vectorColumnV2, lexicalOnly: true}
 	}
@@ -1105,6 +1196,9 @@ func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query s
 	sql := optimizerHint + buildHybridSQLANN(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, useANN, numLeaves)
 	sql = specializeSQLForFilters(injectDynamicAttrClauses(sql, f.Attrs, params), f)
 	results, sponsored, err := s.executeHybridStatement(ctx, sql, params, minScore, alpha, plan, f)
+	if err != nil && isContextCancelledOrTimedOut(ctx, err) {
+		return nil, nil, false, firstContextErr(ctx, err)
+	}
 	if err != nil && useANN && isANNIndexError(err) {
 		log.Printf("WARN: ScaNN vector index unavailable (%v); cooling down ANN for %s and falling back to exact COSINE_DISTANCE", err, annCooldownDuration)
 		s.lastANNSucceeded.Store(false)
