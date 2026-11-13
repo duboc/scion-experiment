@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00043-p87`** (100% traffic, follows latest): #53 demo theme picker removed (storefront back to the default dark theme), deployed from a clean `git archive` of `014b6df`. Rollback target: `psearch-serving-00042-mbh`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00044-8r5`** (100% traffic, follows latest): #66 Phase A per-search deadline (10s) and in-flight admission control (8 per instance, 250ms queue wait), deployed from a clean `git archive` of `aa90182` (code `598fc1f`). Rollback target: `psearch-serving-00043-p87`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -123,7 +123,8 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00040-r2j`** | `3de4d36` | #50 | theme picker gains a "Países" optgroup (27 `pais-*` flag-colour themes) next to "Times do Brasileirão" (15); storefront only |
 | **`00041-x6r`** | `8a25c90` | #51 | embedded `diagram.html` + `GET /diagram` route (8-view stepped Google Cloud architecture diagram); API unchanged |
 | **`00042-mbh`** | `4f6d4a7` | #52 | real project identifiers removed from tracked files, the storefront badge and `/api/info`; config fails fast without `PROJECT_ID` in Spanner mode; Dockerfile no longer sets `PROJECT_ID` |
-| **`00043-p87`** | `014b6df` | #53 (+ #54 docs, #52 test guard) | storefront theme picker, `?theme=` handling and theme CSS removed (#49/#50 reverted in the UI); default dark storefront. **current** |
+| **`00043-p87`** | `014b6df` | #53 (+ #54 docs, #52 test guard) | storefront theme picker, `?theme=` handling and theme CSS removed (#49/#50 reverted in the UI); default dark storefront |
+| **`00044-8r5`** | `aa90182` (code `598fc1f`) | #66 Phase A | per-search context deadline (`SEARCH_TIMEOUT` 10s, below the 15s `WriteTimeout`; no in-memory fallback when it fires), per-instance admission control (`SEARCH_MAX_INFLIGHT` 8, `SEARCH_QUEUE_WAIT` 250ms), `/api/info.search_admission`; all three env vars left unset (code defaults). **current** |
 
 ---
 
@@ -1034,3 +1035,38 @@ Source: clean `git archive` of **`014b6df`** in `/tmp/deploy-014` (#53 `ed578f3`
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00042-mbh=100` (would bring the theme picker back).
 
 **Status:** #53 **closed** (deployed), #54 **closed** (docs).
+
+## #66 Phase A, per-search deadline and admission control: DEPLOYED 2026-11-13
+
+Source: clean `git archive` of **`aa90182`** in `/tmp/deploy-66` (code commit `598fc1f`, merged on top of upstream docs commits; review `d2ec8a3`). Serving changes since `014b6df`: `handlers.go`, `config.go`, `spanner_service.go`, `embedding_cache.go`, `query_understanding.go` and tests. **No SQL text changes, no DDL.** Cloud Run settings (concurrency 80, max 100 instances, 1 vCPU / 512 MiB, timeout 300s, startup boost), env vars and Spanner PU (100) were **unchanged**; the new `SEARCH_TIMEOUT` / `SEARCH_MAX_INFLIGHT` / `SEARCH_QUEUE_WAIT` are **not set** (code defaults 10s / 8 / 250ms).
+
+| Step | Result |
+|---|---|
+| sqlcheck gate (real Spanner, production env) | ✅ **63 OK / 0 FAIL** |
+| `go vet ./...`, `go test ./...` | ✅ api, config, services ok |
+| Deploy → **`psearch-serving-00044-8r5`** | ✅ 100%, follows latest |
+| Service config diff before/after (env, resources, concurrency, timeout, SA, annotations) | ✅ identical; no `SEARCH_*` env vars |
+
+| Check (1 request at a time) | Result |
+|---|---|
+| `GET /api/health` | ✅ 200 |
+| `GET /api/info` → `search_admission` | ✅ `max_inflight 8`, `queue_wait_ms 250`, `timeout_ms 10000`, `in_flight 0`, `rejected_total 0`, `timed_out_total 0` |
+| `/api/search` × 6 queries (`running shoes`, `protetor solar`, `po`, `wireless headphones`, `dipirona 500mg`, `touca sanfonada verde`) | ✅ all 200, `retrieval_mode=hybrid_v2` (same as 00043), 20 results each |
+| `POST /api/analytics/rollup` without token | ✅ 403 |
+| `/api/search` p50 A/B vs 00043 (no-traffic tag, n=7 each) | ✅ no drift: `running shoes` 235 vs 421 ms, `protetor solar` 205 vs 418, `po` 895 vs 903. Tag removed; 100% on 00044 |
+
+**2 rps check** (PO limit; open loop, 120 requests over 60s, 15:17:45–15:18:46Z, 12 rotating queries, `alpha=0.5`):
+
+| Metric | 00044-8r5 (this run) | 00043-p87 (eval run 2026-11-12, 2 rps) |
+|---|---|---|
+| Status codes | **120 × 200, 0 × 503, 0 × 504** | 120 × 200 |
+| Client p50 / p95 / p99 / max | 0.435 / 2.54 / 3.49 / 4.39 s | — |
+| Server (Cloud Run log) p50 / p95 / p99 | 0.394 / 2.51 / 3.45 s | 0.23 / 1.28 / 2.2 s |
+| Instances | 1 (no cold start) | 1 |
+| Admission counters after run | `rejected_total 0`, `timed_out_total 0` | n/a |
+
+The 2 rps tail is wider than in the eval's run. The cause is Spanner-side queueing, not the new code: the hybrid RRF query averaged **0.59 s** (CPU about 0.09–0.14 s per execution) against 0.10–0.21 s in the eval's minute, and Phase A changes no SQL. Phase A does not add capacity; 100 PU still degrades from about 2 rps, as diagnosed on #66 (Phase B). No 5xx and no deadline or admission trips, so **no rollback**.
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00043-p87=100`.
+
+**Status:** #66 **open** (PO decides on closing and on Phase B).
