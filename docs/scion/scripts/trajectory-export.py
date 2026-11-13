@@ -129,7 +129,7 @@ def make_rows(meta: dict, lines: list[bytes], first_line: int, ingested_at: str)
             "project_slug": meta["project_slug"], "agent_name": meta["agent_name"], "harness": meta["harness"],
             "source_path": meta["path"], "source_kind": meta["kind"], "session_id": meta["session_id"],
             "seq": first_line + i + 1, "event_ts": ts, "event_type": etype, "role": role,
-            "raw": json.dumps(obj, ensure_ascii=False), "ingested_at": ingested_at, "exporter_version": VERSION,
+            "raw": obj, "ingested_at": ingested_at, "exporter_version": VERSION,
         })
     return rows, invalid
 
@@ -311,7 +311,7 @@ def export_hub_messages(deps: Deps, cfg: dict, apply: bool, cursor: dict) -> int
         if apply:
             now = _iso(deps.now())
             rows = [{"message_rowid": m["_rowid"], "project_slug": m["_project"],
-                     "raw": json.dumps(m, ensure_ascii=False, default=str), "ingested_at": now,
+                     "raw": m, "ingested_at": now,
                      "exporter_version": VERSION} for m in msgs]
             load_rows(deps.run, cfg, cfg["messages_table"], MESSAGES_SCHEMA, rows, job_id("hub_messages", after, last))
         total += len(msgs)

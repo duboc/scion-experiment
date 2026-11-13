@@ -66,7 +66,7 @@ class PureTest(unittest.TestCase):
         self.assertEqual([r["seq"] for r in rows], [11, 13])
         self.assertEqual((rows[1]["event_type"], rows[1]["role"], rows[1]["event_ts"]),
                          ("assistant", "assistant", "2026-11-09T12:00:05.000Z"))
-        self.assertEqual(json.loads(rows[0]["raw"]), json.loads(CLAUDE_LINES[0]))
+        self.assertEqual(rows[0]["raw"], json.loads(CLAUDE_LINES[0]))  # an object, not text
 
     def test_event_fields_antigravity_and_bad_timestamp(self):
         self.assertEqual(te.event_fields("antigravity", json.loads(AGY_LINE)),
