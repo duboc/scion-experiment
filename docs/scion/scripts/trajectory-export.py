@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, List, Tuple
 
-VERSION = "1"
+VERSION = "2"
 READ_BYTES = 32 * 1024 * 1024
 MAX_LINE_BYTES = 512 * 1024 * 1024
 HEAD_BYTES = 256
@@ -136,7 +136,9 @@ def make_rows(meta: dict, lines: list[bytes], first_line: int, ingested_at: str)
 
 def job_id(source_key: str, start: int, end: int) -> str:
     """Same source and range always give the same load job id, so a repeated load is refused by BigQuery."""
-    return "traj_%s_%d_%d" % (hashlib.sha1(source_key.encode()).hexdigest()[:16], start, end)
+    # The exporter version is part of the id: BigQuery never reuses a job id, so a reload after a format change
+    # needs new ids.
+    return "traj_v%s_%s_%d_%d" % (VERSION, hashlib.sha1(source_key.encode()).hexdigest()[:16], start, end)
 
 
 # ---------------------------------------------------------------------------
