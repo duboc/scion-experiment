@@ -222,8 +222,9 @@ def load_rows(run: Runner, cfg: dict, table: str, schema: str, rows: list[dict],
 
 def _default_runner(argv: list[str], timeout: int) -> tuple[int, bytes]:
     try:
-        res = subprocess.run(argv, capture_output=True, timeout=timeout)
-        return res.returncode, res.stdout
+        res = subprocess.run(argv, capture_output=True, timeout=timeout, stdin=subprocess.DEVNULL)
+        # On failure the caller only uses the output as an error message, so include stderr there.
+        return res.returncode, res.stdout + (res.stderr if res.returncode else b"")
     except Exception as err:  # noqa: BLE001
         print(f"WARNING: command {argv[:3]} failed: {err}", file=sys.stderr)
         return 1, b""
