@@ -6,8 +6,8 @@ Design: docs/scion/specs/2026-11-12-trajectory-export-to-bigquery-design.md
 Dry-run by default: reads the sources and prints counts; loads nothing and saves no cursor.
 With --apply it appends every new record, unchanged, to BigQuery and saves the cursor after each batch.
 
-v1 reads the JSONL transcripts (Claude Code, Antigravity) and the Hub message table. The SQLite stores of
-OpenCode and Hermes are not read yet. Stdlib only, single file.
+It reads the JSONL transcripts (Claude Code, Antigravity), the message tables that OpenCode and Hermes keep in
+SQLite, and the Hub message table. Stdlib only, single file.
 """
 from __future__ import annotations
 
@@ -39,6 +39,23 @@ EVENTS_SCHEMA = ("project_slug:STRING,agent_name:STRING,harness:STRING,source_pa
                  "session_id:STRING,seq:INTEGER,event_ts:TIMESTAMP,event_type:STRING,role:STRING,raw:JSON,"
                  "ingested_at:TIMESTAMP,exporter_version:STRING")
 MESSAGES_SCHEMA = "message_rowid:INTEGER,project_slug:STRING,raw:JSON,ingested_at:TIMESTAMP,exporter_version:STRING"
+
+# Conversation tables kept in SQLite by the other two harnesses. `cursor` is the column a row is resumed by.
+DB_SOURCES = (
+    {"harness": "opencode", "db": "/home/scion/.local/share/opencode/opencode.db", "table": "message",
+     "cursor": "time_updated", "ts": "time_created", "ts_unit": 1000.0, "parse": ("data",)},
+    {"harness": "opencode", "db": "/home/scion/.local/share/opencode/opencode.db", "table": "part",
+     "cursor": "time_updated", "ts": "time_created", "ts_unit": 1000.0, "parse": ("data",)},
+    {"harness": "hermes", "db": "/home/scion/.hermes/state.db", "table": "messages",
+     "cursor": "id", "ts": "timestamp", "ts_unit": 1.0, "parse": ("tool_calls",)},
+)
+DB_READER = (
+    "import json,sqlite3,sys\n"
+    "db,table,col,after,limit=sys.argv[1:6]\n"
+    "c=sqlite3.connect('file:'+db+'?mode=ro',uri=True); c.row_factory=sqlite3.Row\n"
+    "q='SELECT rowid AS _rowid, * FROM '+table+' WHERE '+col+' > ? ORDER BY '+col+', rowid LIMIT ?'\n"
+    "for r in c.execute(q,(float(after),int(limit))): print(json.dumps(dict(r),default=str))\n"
+)
 
 # run(argv, timeout_s) -> (returncode, stdout bytes)
 Runner = Callable[[List[str], int], Tuple[int, bytes]]
@@ -322,11 +339,80 @@ def export_hub_messages(deps: Deps, cfg: dict, apply: bool, cursor: dict) -> int
             save_cursor(cfg["cursor_path"], cursor)
 
 
+def read_db_rows(run: Runner, container: str, src: dict, after: float, limit: int = HUB_BATCH) -> list[dict] | None:
+    """Rows of one harness table past the cursor, read-only; None when this agent does not have that database."""
+    rc, _ = run(["docker", "exec", "-u", "scion", container, "test", "-f", src["db"]], 30)
+    if rc != 0:
+        return None
+    rc, out = run(["docker", "exec", "-u", "scion", container, "python3", "-c", DB_READER, src["db"], src["table"],
+                   src["cursor"], repr(float(after)), str(limit)], 300)
+    if rc != 0:
+        raise SourceError(f"cannot read {container}:{src['db']} table {src['table']}")
+    return [json.loads(line) for line in out.decode("utf-8", "replace").splitlines() if line.strip()]
+
+
+def db_row_to_event(meta: dict, src: dict, row: dict, ingested_at: str) -> dict:
+    """One exported row for a database record; JSON text columns are parsed so the record stays queryable."""
+    rec = dict(row)
+    for col in src["parse"]:
+        if isinstance(rec.get(col), str):
+            try:
+                rec[col] = json.loads(rec[col])
+            except ValueError:
+                pass
+    ts = None
+    if isinstance(rec.get(src["ts"]), (int, float)) and rec[src["ts"]] > 0:
+        ts = _iso(datetime.fromtimestamp(rec[src["ts"]] / src["ts_unit"], tz=timezone.utc))
+    data = rec.get("data") if isinstance(rec.get("data"), dict) else {}
+    role = rec.get("role") or data.get("role")
+    return {
+        "project_slug": meta["project_slug"], "agent_name": meta["agent_name"], "harness": src["harness"],
+        "source_path": f"{src['db']}#{src['table']}", "source_kind": f"{src['harness']}_{src['table']}",
+        "session_id": rec.get("session_id"), "seq": rec.get("_rowid"), "event_ts": ts,
+        "event_type": data.get("type") or src["table"], "role": role if isinstance(role, str) else None,
+        "raw": rec, "ingested_at": ingested_at, "exporter_version": VERSION,
+    }
+
+
+def export_db(deps: Deps, cfg: dict, apply: bool, container: str, src: dict, cursor: dict, stats: dict) -> None:
+    """Read one harness table from its cursor; a row that changed later is exported again with the same seq."""
+    key = f"{container}:{src['db']}#{src['table']}"
+    project, agent = container.split("--", 1)
+    meta = {"project_slug": project, "agent_name": agent}
+    seen = False
+    while True:
+        after = float(cursor["tables"].get(key, 0))
+        rows = read_db_rows(deps.run, container, src, after)
+        if rows is None or not rows:
+            if rows is not None and not seen:
+                stats["harness"], stats["files"] = src["harness"], stats["files"] + 1
+            return
+        if not seen:
+            stats["harness"], stats["files"], seen = src["harness"], stats["files"] + 1, True
+        events = [db_row_to_event(meta, src, r, _iso(deps.now())) for r in rows]
+        last = float(rows[-1][src["cursor"]])
+        if apply:
+            load_rows(deps.run, cfg, cfg["events_table"], EVENTS_SCHEMA, events, job_id(key, int(after), int(last)),
+                      partition_field="event_ts")
+            stats["loaded_rows"] += len(events)
+        stats["records"] += len(events)
+        for ev in events:
+            if ev["event_ts"]:
+                stats["first_ts"] = min(stats["first_ts"] or ev["event_ts"], ev["event_ts"])
+                stats["last_ts"] = max(stats["last_ts"] or ev["event_ts"], ev["event_ts"])
+        cursor["tables"][key] = last
+        if apply:
+            save_cursor(cfg["cursor_path"], cursor)
+        if len(rows) < HUB_BATCH:
+            return
+
+
 def run_once(deps: Deps, cfg: dict, apply: bool) -> dict:
     """One pass over every source. Dry-run counts only; nothing is loaded and no cursor is saved."""
     started = deps.now()
     cursor = load_cursor(cfg["cursor_path"])
     cursor.setdefault("files", {})
+    cursor.setdefault("tables", {})
     agents: dict[str, dict] = {}
     failures: list[str] = []
     try:
@@ -341,6 +427,8 @@ def run_once(deps: Deps, cfg: dict, apply: bool) -> dict:
             for src in select_sources(list_files(deps.run, container)):
                 stats["harness"] = src["harness"]
                 export_file(deps, cfg, apply, container, src, cursor, stats)
+            for src in DB_SOURCES:
+                export_db(deps, cfg, apply, container, src, cursor, stats)
         except SourceError as err:
             failures.append(str(err))
     hub_messages = 0

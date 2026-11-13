@@ -74,6 +74,22 @@ class PureTest(unittest.TestCase):
         self.assertEqual(te.event_fields("claude", {"timestamp": "yesterday", "type": "user"}), (None, "user", None))
         self.assertEqual(te.event_fields("claude", ["a", "list"]), (None, None, None))
 
+    def test_db_row_to_event_opencode_and_hermes(self):
+        meta = {"project_slug": "p", "agent_name": "backend"}
+        oc = te.DB_SOURCES[1]
+        ev = te.db_row_to_event(meta, oc, {"_rowid": 7, "id": "prt_1", "session_id": "ses_1",
+                                           "time_created": 1791568679799, "time_updated": 1791568679803,
+                                           "data": json.dumps({"type": "text", "text": "hi"})}, "2026-11-09T14:00:00Z")
+        self.assertEqual((ev["harness"], ev["seq"], ev["session_id"], ev["event_type"]), ("opencode", 7, "ses_1", "text"))
+        self.assertEqual(ev["raw"]["data"], {"type": "text", "text": "hi"})
+        self.assertTrue(ev["event_ts"].startswith("2026-10-09T"))
+        hm = te.DB_SOURCES[2]
+        ev = te.db_row_to_event(meta, hm, {"_rowid": 3, "id": 3, "session_id": "s", "role": "assistant",
+                                           "content": "FAIL", "tool_calls": "not json", "timestamp": 1791568653.4},
+                                "2026-11-09T14:00:00Z")
+        self.assertEqual((ev["harness"], ev["role"], ev["event_type"], ev["raw"]["tool_calls"]),
+                         ("hermes", "assistant", "messages", "not json"))
+
     def test_job_id_is_deterministic(self):
         self.assertEqual(te.job_id("c:/p", 0, 10), te.job_id("c:/p", 0, 10))
         self.assertNotEqual(te.job_id("c:/p", 0, 10), te.job_id("c:/p", 10, 20))
