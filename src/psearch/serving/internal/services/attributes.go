@@ -459,6 +459,7 @@ func (s *SpannerService) queryDynamicFacets(ctx context.Context, ids []string) (
 // discoverDynamicFacets ranks and builds the top MAX_DYNAMIC_FACET_GROUPS dynamic attribute
 // facets with exclude-own-dimension counts when `filters.Attrs[attrName]` is active (ADR-014, #42).
 func (s *SpannerService) discoverDynamicFacets(ctx context.Context, query string, minScore, alpha float64, filters models.SearchFilters, filteredIDs []string) ([]models.DynamicFacet, error) {
+	s.dynamicFacetDiscoveryCalls.Add(1)
 	baseBuckets, prodPresence, err := s.queryDynamicFacets(ctx, filteredIDs)
 	if err != nil {
 		return nil, err
@@ -468,6 +469,7 @@ func (s *SpannerService) discoverDynamicFacets(ctx context.Context, query string
 	for activeKey := range filters.Attrs {
 		lk := strings.ToLower(activeKey)
 		without := filters
+		without.SkipAds = true
 		cpAttrs := make(map[string][]string, len(filters.Attrs))
 		for k, vs := range filters.Attrs {
 			if !strings.EqualFold(k, lk) {
@@ -650,6 +652,7 @@ func (s *SpannerService) UpsertProductAttributes(ctx context.Context, tenantID, 
 	}
 	mem[productID] = cp
 	s.attrMu.Unlock()
+	s.InvalidateFacetCache()
 
 	return normalized, nil
 }

@@ -98,6 +98,7 @@ func main() {
 		{"notebook", 0.5, models.SearchFilters{Categories: []string{"Computers", "Audio"}, PriceRanges: []string{"100-500", "500-1500"}}}, // #41 disjunctive categories + price_ranges
 		{"notebook", 0.5, models.SearchFilters{Attrs: map[string][]string{"ram": {"16GB", "32GB"}}}},      // #42 dynamic attribute EXISTS filter
 		{"urban sneaker", 0.5, models.SearchFilters{}},                                                    // #45 OOS lexical match reachable after ANN fill
+		{"running shoes", 0.5, models.SearchFilters{SkipAds: true}},                                       // #66 Phase B skipAds=true omits sponsored_matches CTE
 	}
 	failed := false
 	for _, c := range cases {

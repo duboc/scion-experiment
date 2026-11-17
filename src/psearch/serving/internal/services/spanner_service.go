@@ -29,31 +29,44 @@ type countCacheEntry struct {
 	expiresAt time.Time
 }
 
+type facetCacheEntry struct {
+	facets    *models.Facets
+	expiresAt time.Time
+}
+
 type SpannerService struct {
-	client             *spanner.Client
-	config             *config.Config
-	embeddings         QueryEmbedder
-	seedProducts       []models.SearchResult
-	backendMode        string
-	synonyms           *SynonymService // optional query expansion (Issue #7)
-	rules              *RuleService    // optional merchandising rules (Issue #6)
-	ads                *AdService      // optional sponsored campaigns (Issue #35, ADR-011)
-	inventory          []InventoryRow  // memory-mode regional inventory (Issue #8), lazily built
-	invOnce            sync.Once
-	pricing            *memoryPricing                 // memory-mode contract prices (Issue #22)
-	variants           map[string][]models.Variant    // memory-mode SKU variants (Issue #32)
-	varOnce            sync.Once
-	attrs              map[string]map[string][]string // memory-mode dynamic product attributes (Issue #42)
-	attrOnce           sync.Once
-	attrMu             sync.RWMutex
-	nullVectorIDs      map[string]bool // memory-mode NULL vector override for ADR-016 fallback tests
-	priceOnce          sync.Once
-	countMu            sync.RWMutex
-	countCache         map[string]countCacheEntry
-	annCooldownUntil   atomic.Int64 // ADR-012 (#39): UnixNano timestamp until which ScaNN ANN is cooled down after index error
-	lastANNSucceeded   atomic.Bool  // ADR-012 (#39): true when the most recent ScaNN ANN query succeeded
-	hybridQueryRunner  func(ctx context.Context, sql string, params map[string]interface{}, minScore, alpha float64, plan vectorPlan, f models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error)
-	lexicalCountRunner func(ctx context.Context, sql string, params map[string]interface{}) (int, error)
+	client                     *spanner.Client
+	config                     *config.Config
+	embeddings                 QueryEmbedder
+	seedProducts               []models.SearchResult
+	backendMode                string
+	synonyms                   *SynonymService // optional query expansion (Issue #7)
+	rules                      *RuleService    // optional merchandising rules (Issue #6)
+	ads                        *AdService      // optional sponsored campaigns (Issue #35, ADR-011)
+	inventory                  []InventoryRow  // memory-mode regional inventory (Issue #8), lazily built
+	invOnce                    sync.Once
+	pricing                    *memoryPricing                 // memory-mode contract prices (Issue #22)
+	variants                   map[string][]models.Variant    // memory-mode SKU variants (Issue #32)
+	varOnce                    sync.Once
+	attrs                      map[string]map[string][]string // memory-mode dynamic product attributes (Issue #42)
+	attrOnce                   sync.Once
+	attrMu                     sync.RWMutex
+	nullVectorIDs              map[string]bool // memory-mode NULL vector override for ADR-016 fallback tests
+	priceOnce                  sync.Once
+	countMu                    sync.RWMutex
+	countCache                 map[string]countCacheEntry
+	facetCacheMu               sync.RWMutex
+	facetCache                 map[string]facetCacheEntry
+	dynamicFacetDiscoveryCalls atomic.Int64 // Issue #66 Phase B: tracks discoverDynamicFacets calls per service
+	annCooldownUntil           atomic.Int64 // ADR-012 (#39): UnixNano timestamp until which ScaNN ANN is cooled down after index error
+	lastANNSucceeded           atomic.Bool  // ADR-012 (#39): true when the most recent ScaNN ANN query succeeded
+	hybridQueryRunner          func(ctx context.Context, sql string, params map[string]interface{}, minScore, alpha float64, plan vectorPlan, f models.SearchFilters) ([]models.SearchResult, []models.SearchResult, error)
+	lexicalCountRunner         func(ctx context.Context, sql string, params map[string]interface{}) (int, error)
+}
+
+// DynamicFacetDiscoveryCalls returns the number of discoverDynamicFacets executions (Issue #66 Phase B).
+func (s *SpannerService) DynamicFacetDiscoveryCalls() int64 {
+	return s.dynamicFacetDiscoveryCalls.Load()
 }
 
 const annCooldownDuration = 60 * time.Second
@@ -664,7 +677,10 @@ func (s *SpannerService) HybridSearchDetailed(ctx context.Context, query string,
 		return SearchOutcome{}, err
 	}
 	org, total := s.memoryHybridSearchExpandedWithTotal(query, limit, minScore, alpha, filters, expansion, ruleSet)
-	sponsored := s.memorySponsoredMatches(ctx, query, alpha, filters)
+	var sponsored []models.SearchResult
+	if !filters.SkipAds {
+		sponsored = s.memorySponsoredMatches(ctx, query, alpha, filters)
+	}
 	return SearchOutcome{Results: org, TotalFound: total, Sponsored: sponsored, RetrievalMode: RetrievalMemory, ExpandedTerms: expansion.Terms, AppliedRules: ruleSet.Applied, Pins: ruleSet.Pins, Buries: ruleSet.Buries}, nil
 }
 
@@ -818,6 +834,14 @@ func buildHybridSQLMode(column string, lexicalOnly, vectorOnly, folded bool) str
 // VECTOR INDEX (`products_embedding_v2_idx` + `APPROX_COSINE_DISTANCE`, ADR-012 #39)
 // when useANN is true on embedding_v2, or exact `COSINE_DISTANCE` otherwise.
 func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bool, numLeaves int) string {
+	return buildHybridSQLWithOptions(column, lexicalOnly, vectorOnly, folded, useANN, numLeaves, false)
+}
+
+// buildHybridSQLWithOptions renders the hybrid RRF SQL and optionally omits the
+// sponsored_matches CTE when skipAds is true (ads=false or offset > 0; Issue #66 Phase B).
+// When sponsored_matches is included, adVecBranch restricts candidates to products in active
+// ad_campaigns FIRST before computing COSINE_DISTANCE so it never scans all 20.5k products (#66 Phase B).
+func buildHybridSQLWithOptions(column string, lexicalOnly, vectorOnly, folded, useANN bool, numLeaves int, skipAds bool) string {
 	if numLeaves <= 0 {
 		numLeaves = 20
 	}
@@ -877,11 +901,20 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 						SELECT product_id, 1.0 AS relevance
 						FROM products
 						WHERE SEARCH(` + titleTok + `, @query_text) OR SEARCH(` + descTok + `, @query_text)`
+	// Issue #66 Phase B: restrict vector ad candidates to active ad_campaigns FIRST via
+	// JOIN ad_campaigns AS ac_cand before computing COSINE_DISTANCE so Spanner only
+	// evaluates vector distance on the ~5 campaign products instead of ~20.5k products.
 	adVecBranch := `
-						SELECT product_id, (1.0 - COSINE_DISTANCE(` + column + `, @query_embedding)) AS relevance
-						FROM products
-						WHERE ` + column + ` IS NOT NULL
-							AND (1.0 - COSINE_DISTANCE(` + column + `, @query_embedding)) >= @ad_min_similarity`
+						SELECT products.product_id AS product_id, (1.0 - COSINE_DISTANCE(products.` + column + `, @query_embedding)) AS relevance
+						FROM ad_campaigns AS ac_cand
+						JOIN products ON products.product_id = ac_cand.product_id
+						WHERE ac_cand.tenant_id = @tenant_id
+							AND ac_cand.status = 'active'
+							AND ac_cand.spent_micros + ac_cand.cpc_micros <= ac_cand.budget_micros
+							AND (ac_cand.start_at IS NULL OR ac_cand.start_at <= CURRENT_TIMESTAMP())
+							AND (ac_cand.end_at IS NULL OR ac_cand.end_at >= CURRENT_TIMESTAMP())
+							AND products.` + column + ` IS NOT NULL
+							AND (1.0 - COSINE_DISTANCE(products.` + column + `, @query_embedding)) >= @ad_min_similarity`
 	adUnion := adVecBranch + `
 						UNION ALL` + adTextBranch
 	if vectorOnly && !lexicalOnly {
@@ -936,6 +969,17 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 			) AS sm
 			JOIN products AS p ON p.product_id = sm.product_id
 		)`
+	sponsoredUnion := `
+			UNION ALL
+			SELECT relevance AS rrf_score, relevance AS vector_score, relevance AS text_score, product_id, title, product_data, is_available, stock,
+				0.0 AS boost_score, 1.0 AS rule_mult, effective_price, variants,
+				TRUE AS is_sponsored, campaign_id, cpc_micros,
+				1000 AS pin_rank, 0 AS buried, ad_rank, 0.0 AS popularity_sort, 0.0 AS rating_sort
+			FROM sponsored_matches`
+	if skipAds {
+		sponsoredCTE = ""
+		sponsoredUnion = ""
+	}
 	outerSelectCols := `a.*`
 	outerWhere := ""
 	if useANN && column == vectorColumnV2 && !lexicalOnly {
@@ -997,13 +1041,7 @@ func buildHybridSQLANN(column string, lexicalOnly, vectorOnly, folded, useANN bo
 					rrf_score * rule_mult + boost_score DESC /* final_score */,
 					vector_score DESC, text_score DESC, product_id
 				LIMIT @limit
-			)
-			UNION ALL
-			SELECT relevance AS rrf_score, relevance AS vector_score, relevance AS text_score, product_id, title, product_data, is_available, stock,
-				0.0 AS boost_score, 1.0 AS rule_mult, effective_price, variants,
-				TRUE AS is_sponsored, campaign_id, cpc_micros,
-				1000 AS pin_rank, 0 AS buried, ad_rank, 0.0 AS popularity_sort, 0.0 AS rating_sort
-			FROM sponsored_matches
+			)` + sponsoredUnion + `
 		)
 		ORDER BY is_sponsored, ad_rank,
 			IF(IFNULL(is_available, TRUE) AND IFNULL(stock, 1) > 0, 0, 1) /* unavailable_rank */,
@@ -1193,7 +1231,7 @@ func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query s
 	// the fts leg then requires query optimizer version >= 6, which is newer than the
 	// database default. A statement hint is the least invasive fix (verified by
 	// deployer on psearch-db: sqlcheck 27/27).
-	sql := optimizerHint + buildHybridSQLANN(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, useANN, numLeaves)
+	sql := optimizerHint + buildHybridSQLWithOptions(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, useANN, numLeaves, filters.SkipAds)
 	sql = specializeSQLForFilters(injectDynamicAttrClauses(sql, f.Attrs, params), f)
 	results, sponsored, err := s.executeHybridStatement(ctx, sql, params, minScore, alpha, plan, f)
 	if err != nil && isContextCancelledOrTimedOut(ctx, err) {
@@ -1203,7 +1241,7 @@ func (s *SpannerService) spannerHybridSearchWithAds(ctx context.Context, query s
 		log.Printf("WARN: ScaNN vector index unavailable (%v); cooling down ANN for %s and falling back to exact COSINE_DISTANCE", err, annCooldownDuration)
 		s.lastANNSucceeded.Store(false)
 		s.annCooldownUntil.Store(time.Now().Add(annCooldownDuration).UnixNano())
-		exactSQL := optimizerHint + buildHybridSQLANN(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, false, numLeaves)
+		exactSQL := optimizerHint + buildHybridSQLWithOptions(plan.column, plan.lexicalOnly, plan.vectorOnly, s.config.TextFolding, false, numLeaves, filters.SkipAds)
 		exactSQL = specializeSQLForFilters(injectDynamicAttrClauses(exactSQL, f.Attrs, params), f)
 		results, sponsored, err = s.executeHybridStatement(ctx, exactSQL, params, minScore, alpha, plan, f)
 		if err == nil && s.client != nil && len(results) <= 48 {

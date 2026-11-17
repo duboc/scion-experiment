@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"psearch/serving-go/internal/models"
 )
@@ -62,6 +63,20 @@ func TestFacetSQL(t *testing.T) {
 		sql := facetSQL(expr)
 		if !strings.Contains(sql, "product_id IN UNNEST(@ids)") || !strings.Contains(sql, "GROUP BY value") {
 			t.Errorf("facet SQL malformed: %s", sql)
+		}
+	}
+	comb := combinedFacetSQL()
+	for _, want := range []string{
+		"WITH cand AS (",
+		"WHERE product_id IN UNNEST(@ids)",
+		"SELECT 'category' AS dim",
+		"SELECT 'brand' AS dim",
+		"SELECT 'price_range' AS dim",
+		"SELECT 'availability' AS dim",
+		"ORDER BY dim, count DESC, value",
+	} {
+		if !strings.Contains(comb, want) {
+			t.Errorf("combinedFacetSQL missing %q", want)
 		}
 	}
 }
@@ -150,5 +165,62 @@ func TestDisjunctiveFacets_ExcludeOwnDimensionAndMultiSelect(t *testing.T) {
 	}
 	if !seenBrands["nike"] || !seenBrands["asics"] {
 		t.Fatalf("expected both nike and asics in multi-brand results, got %v", seenBrands)
+	}
+}
+
+// Issue #66 Phase B: DisjunctiveFacets calls discoverDynamicFacets strictly once on the
+// no-filter fast path, serves repeated calls from the FACET_CACHE_TTL cache without
+// re-running discovery, and recomputes after cache expiry or when FACET_CACHE_TTL=0.
+func TestDisjunctiveFacets_SingleDynamicDiscoveryAndTTLCache(t *testing.T) {
+	ctx := context.Background()
+	cfg := testConfig("v1")
+	cfg.FacetCacheTTL = 40 * time.Millisecond
+	cfg.FacetCacheTTLSet = true
+	svc := &SpannerService{config: cfg, seedProducts: DefaultSeedProducts()}
+
+	ids := []string{"prod-005", "prod-006", "prod-007"}
+
+	// 1) First call on no-filter fast path must invoke discoverDynamicFacets strictly ONCE (not twice).
+	before := svc.DynamicFacetDiscoveryCalls()
+	f1, err := svc.DisjunctiveFacets(ctx, "notebook", 0, 0.5, models.SearchFilters{}, ids)
+	if err != nil {
+		t.Fatalf("DisjunctiveFacets #1 error: %v", err)
+	}
+	after1 := svc.DynamicFacetDiscoveryCalls()
+	if got := after1 - before; got != 1 {
+		t.Fatalf("discoverDynamicFacets calls on first fast-path DisjunctiveFacets = %d, want 1", got)
+	}
+
+	// 2) Second immediate call with identical query + filters + ids must hit the TTL cache (0 new discovery calls).
+	f2, err := svc.DisjunctiveFacets(ctx, "notebook", 0, 0.5, models.SearchFilters{}, ids)
+	if err != nil {
+		t.Fatalf("DisjunctiveFacets #2 error: %v", err)
+	}
+	after2 := svc.DynamicFacetDiscoveryCalls()
+	if after2 != after1 {
+		t.Fatalf("expected cache hit (0 new discovery calls), got %d -> %d", after1, after2)
+	}
+	if len(f2.Categories) != len(f1.Categories) || len(f2.Brands) != len(f1.Brands) || len(f2.Attributes) != len(f1.Attributes) {
+		t.Fatalf("cached facets mismatch: f1=%+v f2=%+v", f1, f2)
+	}
+
+	// 3) After TTL expires (40ms), the next call recomputes (1 new discovery call).
+	time.Sleep(55 * time.Millisecond)
+	_, err = svc.DisjunctiveFacets(ctx, "notebook", 0, 0.5, models.SearchFilters{}, ids)
+	if err != nil {
+		t.Fatalf("DisjunctiveFacets #3 error: %v", err)
+	}
+	after3 := svc.DynamicFacetDiscoveryCalls()
+	if got := after3 - after2; got != 1 {
+		t.Fatalf("expected 1 discovery call after cache expiry, got %d", got)
+	}
+
+	// 4) When FACET_CACHE_TTL=0, caching is disabled and every call recomputes.
+	cfg.FacetCacheTTL = 0
+	cfg.FacetCacheTTLSet = true
+	_, _ = svc.DisjunctiveFacets(ctx, "notebook", 0, 0.5, models.SearchFilters{}, ids)
+	_, _ = svc.DisjunctiveFacets(ctx, "notebook", 0, 0.5, models.SearchFilters{}, ids)
+	if got := svc.DynamicFacetDiscoveryCalls() - after3; got != 2 {
+		t.Fatalf("expected 2 discovery calls when FACET_CACHE_TTL=0, got %d", got)
 	}
 }

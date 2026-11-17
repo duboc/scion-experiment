@@ -196,6 +196,8 @@ func TestBuildHybridSQLMode_SponsoredMatchesCTE(t *testing.T) {
 	hybrid := buildHybridSQLMode(vectorColumnV2, false, false, true)
 	for _, want := range []string{
 		"sponsored_matches AS",
+		"FROM ad_campaigns AS ac_cand",
+		"JOIN products ON products.product_id = ac_cand.product_id",
 		"FROM ad_campaigns AS ac",
 		"ac.status = 'active'",
 		"ac.spent_micros + ac.cpc_micros <= ac.budget_micros",
@@ -207,6 +209,27 @@ func TestBuildHybridSQLMode_SponsoredMatchesCTE(t *testing.T) {
 		if !strings.Contains(hybrid, want) {
 			t.Errorf("hybrid SQL missing %q", want)
 		}
+	}
+
+	// Issue #66 Phase B: skipAds=true omits sponsored_matches CTE and ad_campaigns completely.
+	noAdsSQL := buildHybridSQLWithOptions(vectorColumnV2, false, false, true, true, 20, true)
+	for _, forbidden := range []string{"sponsored_matches", "ad_campaigns", "@ad_min_similarity", "@ad_k"} {
+		if strings.Contains(noAdsSQL, forbidden) {
+			t.Errorf("skipAds=true SQL must not contain %q", forbidden)
+		}
+	}
+
+	// Memory mode: SkipAds=true skips sponsored evaluation while SkipAds=false returns sponsored matches unchanged.
+	ctx := context.Background()
+	svc := &SpannerService{config: testConfig("v1"), seedProducts: DefaultSeedProducts()}
+	svc.SetAds(NewAdService(NewMemoryAdStore(), svc.seedProducts))
+	withAds, err := svc.HybridSearchDetailed(ctx, "running shoes", 10, 0, 0.5, models.SearchFilters{SkipAds: false})
+	if err != nil || len(withAds.Sponsored) == 0 {
+		t.Fatalf("expected sponsored matches when SkipAds=false, got len=%d err=%v", len(withAds.Sponsored), err)
+	}
+	withoutAds, err := svc.HybridSearchDetailed(ctx, "running shoes", 10, 0, 0.5, models.SearchFilters{SkipAds: true})
+	if err != nil || len(withoutAds.Sponsored) != 0 {
+		t.Fatalf("expected 0 sponsored matches when SkipAds=true, got len=%d err=%v", len(withoutAds.Sponsored), err)
 	}
 
 	lex := buildHybridSQLMode(vectorColumnV2, true, false, false)

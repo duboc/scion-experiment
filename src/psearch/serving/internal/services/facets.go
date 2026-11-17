@@ -2,9 +2,11 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"golang.org/x/sync/errgroup"
@@ -29,6 +31,10 @@ var facetPriceSQL = strings.ReplaceAll(facetPriceTmpl, "EFF", effectivePriceSQL(
 // Facets aggregates over the candidate IDs; priceTable/tenant select the
 // contract price used for price_ranges (empty = list price).
 func (s *SpannerService) Facets(ctx context.Context, ids []string, priceTable, tenant string) (*models.Facets, error) {
+	return s.facetsWithQuery(ctx, "", ids, priceTable, tenant)
+}
+
+func (s *SpannerService) facetsWithQuery(ctx context.Context, query string, ids []string, priceTable, tenant string) (*models.Facets, error) {
 	if tenant == "" {
 		tenant = "default"
 	}
@@ -42,21 +48,15 @@ func (s *SpannerService) Facets(ctx context.Context, ids []string, priceTable, t
 	if s.client == nil {
 		mf := s.memoryFacets(ids, priceTable)
 		mf.Colors, mf.Sizes, _ = s.variantFacets(ctx, ids)
-		mf.Attributes, _ = s.discoverDynamicFacets(ctx, "", 0, 0.5, models.SearchFilters{PriceTable: priceTable, TenantID: tenant}, ids)
+		mf.Attributes, _ = s.discoverDynamicFacets(ctx, query, 0, 0.5, models.SearchFilters{PriceTable: priceTable, TenantID: tenant}, ids)
 		return mf, nil
 	}
+	// Issue #66 Phase B: merge the 4 products-table GROUP BY facet queries
+	// (category, brand, price_range, availability) into 1 combined Spanner query
+	// and call discoverDynamicFacets strictly once.
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() (err error) {
-		f.Categories, err = s.queryFacet(gctx, facetCategorySQL, ids, priceTable, tenant)
-		return
-	})
-	g.Go(func() (err error) { f.Brands, err = s.queryFacet(gctx, facetBrandSQL, ids, priceTable, tenant); return })
-	g.Go(func() (err error) {
-		f.PriceRanges, err = s.queryFacet(gctx, facetPriceSQL, ids, priceTable, tenant)
-		return
-	})
-	g.Go(func() (err error) {
-		f.Availability, err = s.queryFacet(gctx, facetAvailabilitySQL, ids, priceTable, tenant)
+		f.Categories, f.Brands, f.PriceRanges, f.Availability, err = s.queryCombinedFacets(gctx, ids, priceTable, tenant)
 		return
 	})
 	g.Go(func() (err error) {
@@ -64,7 +64,7 @@ func (s *SpannerService) Facets(ctx context.Context, ids []string, priceTable, t
 		return
 	})
 	g.Go(func() error {
-		if attrs, aerr := s.discoverDynamicFacets(gctx, "", 0, 0.5, models.SearchFilters{PriceTable: priceTable, TenantID: tenant}, ids); aerr == nil {
+		if attrs, aerr := s.discoverDynamicFacets(gctx, query, 0, 0.5, models.SearchFilters{PriceTable: priceTable, TenantID: tenant}, ids); aerr == nil {
 			f.Attributes = attrs
 		}
 		return nil
@@ -73,6 +73,75 @@ func (s *SpannerService) Facets(ctx context.Context, ids []string, priceTable, t
 		return nil, err
 	}
 	return f, nil
+}
+
+// combinedFacetSQL merges the 4 products-table GROUP BY facet aggregations
+// (category, brand, price_range, availability) into a single Spanner query over
+// product_id IN UNNEST(@ids) to cut Spanner session & CPU overhead by 4x (Issue #66 Phase B).
+func combinedFacetSQL() string {
+	return `WITH cand AS (
+			SELECT
+				` + facetCategorySQL + ` AS category_val,
+				` + facetBrandSQL + ` AS brand_val,
+				` + facetPriceSQL + ` AS price_val,
+				` + facetAvailabilitySQL + ` AS avail_val
+			FROM products
+			WHERE product_id IN UNNEST(@ids)
+		)
+		SELECT 'category' AS dim, category_val AS value, COUNT(*) AS count FROM cand WHERE category_val != '' GROUP BY value
+		UNION ALL
+		SELECT 'brand' AS dim, brand_val AS value, COUNT(*) AS count FROM cand WHERE brand_val != '' GROUP BY value
+		UNION ALL
+		SELECT 'price_range' AS dim, price_val AS value, COUNT(*) AS count FROM cand WHERE price_val != '' GROUP BY value
+		UNION ALL
+		SELECT 'availability' AS dim, avail_val AS value, COUNT(*) AS count FROM cand WHERE avail_val != '' GROUP BY value
+		ORDER BY dim, count DESC, value`
+}
+
+func (s *SpannerService) queryCombinedFacets(ctx context.Context, ids []string, priceTable, tenant string) (cats, brands, prices, avail []models.FacetBucket, err error) {
+	cats = []models.FacetBucket{}
+	brands = []models.FacetBucket{}
+	prices = []models.FacetBucket{}
+	avail = []models.FacetBucket{}
+	if len(ids) == 0 {
+		return cats, brands, prices, avail, nil
+	}
+	sql := specializeSQLForFilters(combinedFacetSQL(), models.SearchFilters{PriceTable: priceTable})
+	params := map[string]interface{}{"ids": ids}
+	if strings.Contains(sql, "@price_table") {
+		params["price_table"], params["tenant_id"] = priceTable, tenant
+	}
+	iter := s.client.Single().Query(ctx, spanner.Statement{SQL: sql, Params: params})
+	defer iter.Stop()
+	for {
+		row, rerr := iter.Next()
+		if rerr == iterator.Done {
+			return cats, brands, prices, avail, nil
+		}
+		if rerr != nil {
+			return nil, nil, nil, nil, rerr
+		}
+		var dim string
+		var value spanner.NullString
+		var count int64
+		if err := row.Columns(&dim, &value, &count); err != nil {
+			return nil, nil, nil, nil, err
+		}
+		if value.StringVal == "" {
+			continue
+		}
+		b := models.FacetBucket{Value: value.StringVal, Count: count}
+		switch dim {
+		case "category":
+			cats = append(cats, b)
+		case "brand":
+			brands = append(brands, b)
+		case "price_range":
+			prices = append(prices, b)
+		case "availability":
+			avail = append(avail, b)
+		}
+	}
 }
 
 // facetSQL renders a GROUP BY facet query; expr is always a package constant.
@@ -85,11 +154,12 @@ func facetSQL(expr string) string {
 }
 
 func (s *SpannerService) queryFacet(ctx context.Context, expr string, ids []string, priceTable, tenant string) ([]models.FacetBucket, error) {
+	sql := specializeSQLForFilters(facetSQL(expr), models.SearchFilters{PriceTable: priceTable})
 	params := map[string]interface{}{"ids": ids}
-	if strings.Contains(expr, "@price_table") {
+	if strings.Contains(sql, "@price_table") {
 		params["price_table"], params["tenant_id"] = priceTable, tenant
 	}
-	iter := s.client.Single().Query(ctx, spanner.Statement{SQL: facetSQL(expr), Params: params})
+	iter := s.client.Single().Query(ctx, spanner.Statement{SQL: sql, Params: params})
 	defer iter.Stop()
 	out := []models.FacetBucket{}
 	for {
@@ -270,6 +340,7 @@ func isDimensionActive(f models.SearchFilters, dim facetDimension) bool {
 
 func withoutDimension(f models.SearchFilters, dim facetDimension) models.SearchFilters {
 	cp := f
+	cp.SkipAds = true
 	switch dim {
 	case dimCategory:
 		cp.Category = ""
@@ -352,18 +423,122 @@ func markSelectedBuckets(b []models.FacetBucket, selected []string) []models.Fac
 	return b
 }
 
+const maxFacetCacheEntries = 512
+
+func cloneFacets(in *models.Facets) *models.Facets {
+	if in == nil {
+		return nil
+	}
+	out := &models.Facets{
+		Categories:   append([]models.FacetBucket(nil), in.Categories...),
+		Brands:       append([]models.FacetBucket(nil), in.Brands...),
+		PriceRanges:  append([]models.FacetBucket(nil), in.PriceRanges...),
+		Availability: append([]models.FacetBucket(nil), in.Availability...),
+	}
+	if in.Colors != nil {
+		out.Colors = append([]models.FacetBucket(nil), in.Colors...)
+	}
+	if in.Sizes != nil {
+		out.Sizes = append([]models.FacetBucket(nil), in.Sizes...)
+	}
+	if len(in.Attributes) > 0 {
+		out.Attributes = make([]models.DynamicFacet, len(in.Attributes))
+		for i, df := range in.Attributes {
+			out.Attributes[i] = models.DynamicFacet{
+				Name:    df.Name,
+				Label:   df.Label,
+				Buckets: append([]models.FacetBucket(nil), df.Buckets...),
+			}
+		}
+	}
+	return out
+}
+
+func (s *SpannerService) facetCacheKey(query string, f models.SearchFilters, ids []string) string {
+	base := s.countCacheKey(query, Expansion{}, f)
+	idBytes, _ := json.Marshal(ids)
+	return base + "|ids:" + string(idBytes)
+}
+
+func (s *SpannerService) getCachedFacets(key string) (*models.Facets, bool) {
+	if s == nil || s.config == nil || s.config.EffectiveFacetCacheTTL() <= 0 {
+		return nil, false
+	}
+	s.facetCacheMu.RLock()
+	defer s.facetCacheMu.RUnlock()
+	if s.facetCache == nil {
+		return nil, false
+	}
+	e, ok := s.facetCache[key]
+	if !ok || time.Now().After(e.expiresAt) {
+		return nil, false
+	}
+	return cloneFacets(e.facets), true
+}
+
+func (s *SpannerService) setCachedFacets(key string, f *models.Facets) {
+	if s == nil || s.config == nil || f == nil {
+		return
+	}
+	ttl := s.config.EffectiveFacetCacheTTL()
+	if ttl <= 0 {
+		return
+	}
+	cp := cloneFacets(f)
+	now := time.Now()
+	s.facetCacheMu.Lock()
+	defer s.facetCacheMu.Unlock()
+	if s.facetCache == nil {
+		s.facetCache = map[string]facetCacheEntry{}
+	}
+	if _, exists := s.facetCache[key]; !exists && len(s.facetCache) >= maxFacetCacheEntries {
+		var oldestKey string
+		var oldestExp time.Time
+		for k, v := range s.facetCache {
+			if now.After(v.expiresAt) {
+				delete(s.facetCache, k)
+				continue
+			}
+			if oldestKey == "" || v.expiresAt.Before(oldestExp) {
+				oldestKey = k
+				oldestExp = v.expiresAt
+			}
+		}
+		if len(s.facetCache) >= maxFacetCacheEntries && oldestKey != "" {
+			delete(s.facetCache, oldestKey)
+		}
+	}
+	s.facetCache[key] = facetCacheEntry{
+		facets:    cp,
+		expiresAt: now.Add(ttl),
+	}
+}
+
+// InvalidateFacetCache clears the per-instance facet TTL cache (called when attributes change; #66 Phase B).
+func (s *SpannerService) InvalidateFacetCache() {
+	if s == nil {
+		return
+	}
+	s.facetCacheMu.Lock()
+	s.facetCache = nil
+	s.facetCacheMu.Unlock()
+}
+
 // DisjunctiveFacets computes exclude-own-dimension facet counts (ADR-013, Issue #41).
 // When no facet dimension filter is active, it uses the zero-overhead fast path over filteredIDs.
 // When dimension D is active, counts for D are aggregated over candidates matching the query
 // and all active filters EXCEPT D, so sibling options retain their true counts.
+// Results are cached per instance for FACET_CACHE_TTL (default 30s; Issue #66 Phase B).
 func (s *SpannerService) DisjunctiveFacets(ctx context.Context, query string, minScore, alpha float64, filters models.SearchFilters, filteredIDs []string) (*models.Facets, error) {
 	nf := normalizeFilters(filters)
+	cacheKey := s.facetCacheKey(query, nf, filteredIDs)
+	if cached, ok := s.getCachedFacets(cacheKey); ok {
+		return cached, nil
+	}
 	if !hasActiveFacetFilters(nf) {
-		f, err := s.Facets(ctx, filteredIDs, nf.PriceTable, nf.TenantID)
-		if err == nil && f != nil && len(filteredIDs) > 0 {
-			if attrs, aerr := s.discoverDynamicFacets(ctx, query, minScore, alpha, nf, filteredIDs); aerr == nil {
-				f.Attributes = attrs
-			}
+		f, err := s.facetsWithQuery(ctx, query, filteredIDs, nf.PriceTable, nf.TenantID)
+		if err == nil && f != nil {
+			s.setCachedFacets(cacheKey, f)
 		}
 		return f, err
 	}
@@ -483,5 +658,6 @@ func (s *SpannerService) DisjunctiveFacets(ctx context.Context, query string, mi
 	if attrs, aerr := s.discoverDynamicFacets(ctx, query, minScore, alpha, nf, filteredIDs); aerr == nil {
 		out.Attributes = attrs
 	}
+	s.setCachedFacets(cacheKey, out)
 	return out, nil
 }

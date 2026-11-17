@@ -150,6 +150,19 @@ func TestConfigSearchTimeoutAndAdmissionDefaults(t *testing.T) {
 	if cfg2.EffectiveSearchQueueWait() != 0 {
 		t.Errorf("EffectiveSearchQueueWait() = %v, want 0", cfg2.EffectiveSearchQueueWait())
 	}
+	if cfg.EffectiveFacetCacheTTL() != 30*time.Second {
+		t.Errorf("default EffectiveFacetCacheTTL() = %v, want 30s", cfg.EffectiveFacetCacheTTL())
+	}
+
+	os.Setenv("FACET_CACHE_TTL", "0")
+	defer os.Unsetenv("FACET_CACHE_TTL")
+	cfg3, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg3.EffectiveFacetCacheTTL() != 0 {
+		t.Errorf("EffectiveFacetCacheTTL() with FACET_CACHE_TTL=0 = %v, want 0", cfg3.EffectiveFacetCacheTTL())
+	}
 }
 
 func TestTrackedSourceContainsNoForbiddenIDPattern(t *testing.T) {

@@ -66,6 +66,7 @@ type SearchFilters struct {
 	// rides along so recovery/relaxation re-runs keep the image.
 	ImageVector []float32
 	ImageWeight float64
+	SkipAds     bool // Issue #66 Phase B: true when ads=false or offset > 0 (omits sponsored_matches CTE)
 }
 
 type SearchResponse struct {

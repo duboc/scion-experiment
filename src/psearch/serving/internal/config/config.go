@@ -47,6 +47,8 @@ type Config struct {
 	SearchMaxInflight        int           // Issue #66: per-instance in-flight search semaphore capacity (default 8)
 	SearchQueueWait          time.Duration // Issue #66: max wait for an in-flight search slot before 503 (default 250ms)
 	SearchQueueWaitSet       bool          // true when SearchQueueWait was explicitly configured (allows 0ms wait)
+	FacetCacheTTL            time.Duration // Issue #66 Phase B: per-instance facet cache TTL (default 30s; 0 disables)
+	FacetCacheTTLSet         bool          // true when FacetCacheTTL was explicitly configured (allows 0s disable)
 }
 
 // NormalizeModelID normalizes model aliases (e.g. gemini-4-pro / gemini-4.0-pro -> gemini-4-argon).
@@ -93,6 +95,16 @@ func Load() (*Config, error) {
 		SearchTimeout:            10 * time.Second,
 		SearchMaxInflight:        8,
 		SearchQueueWait:          250 * time.Millisecond,
+		FacetCacheTTL:            30 * time.Second,
+	}
+
+	if d, ok := parseEnvDuration("FACET_CACHE_TTL"); ok {
+		if d <= 0 {
+			cfg.FacetCacheTTL = 0
+		} else {
+			cfg.FacetCacheTTL = d
+		}
+		cfg.FacetCacheTTLSet = true
 	}
 
 	if d, ok := parseEnvDuration("SEARCH_TIMEOUT"); ok && d > 0 && d <= 14*time.Second {
@@ -327,5 +339,25 @@ func (c *Config) EffectiveSearchQueueWait() time.Duration {
 		return c.SearchQueueWait
 	}
 	return 250 * time.Millisecond
+}
+
+// EffectiveFacetCacheTTL returns the per-instance facet cache TTL (default 30s; 0 disables when FacetCacheTTLSet is true; Issue #66 Phase B).
+func (c *Config) EffectiveFacetCacheTTL() time.Duration {
+	if c != nil && c.FacetCacheTTLSet {
+		if c.FacetCacheTTL <= 0 {
+			return 0
+		}
+		if c.FacetCacheTTL > 10*time.Minute {
+			return 10 * time.Minute
+		}
+		return c.FacetCacheTTL
+	}
+	if c != nil && c.FacetCacheTTL > 0 {
+		if c.FacetCacheTTL > 10*time.Minute {
+			return 10 * time.Minute
+		}
+		return c.FacetCacheTTL
+	}
+	return 30 * time.Second
 }
 

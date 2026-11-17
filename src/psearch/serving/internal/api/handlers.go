@@ -455,6 +455,8 @@ func (c *Controller) Search(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	adsEnabled := req.Ads == nil || *req.Ads
+	isFirstPage := effectiveOffset == 0
 	filters := models.SearchFilters{
 		Color:       req.Color,
 		Colors:      colors,
@@ -476,6 +478,7 @@ func (c *Controller) Search(ctx *gin.Context) {
 		Brands:      brands,
 		TenantID:    req.TenantID,
 		Locale:      req.Locale,
+		SkipAds:     !adsEnabled || !isFirstPage,
 	}
 	// ADR-010 (Issue #33): visual search. The photo is embedded with
 	// gemini-embedding-2 into the embedding_v2 space; the optional text refines it.
@@ -742,8 +745,6 @@ intentDone:
 	// Controller.Search, after LTR, session re-rank, and pagination.
 	// Ads are kept out of facets, total_found, LTR features, and the session centroid.
 	// Zero organic results => zero ads; page 1 (effectiveOffset == 0) only; non-browse queries only; ads=false disables.
-	adsEnabled := req.Ads == nil || *req.Ads
-	isFirstPage := effectiveOffset == 0
 	hasQuery := !services.IsBrowseQuery(searchQuery) || imageQuery
 	sponsoredCount := 0
 	if adsEnabled && isFirstPage && hasQuery && len(results) > 0 && len(outcome.Sponsored) > 0 {
