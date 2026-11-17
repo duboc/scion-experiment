@@ -268,12 +268,14 @@ func main() {
 			}
 		}
 	}
-	// Facet queries (Issue #5) over the full catalog.
-	if f, err := svc.Facets(ctx, []string{"prod-001", "prod-002", "prod-004", "prod-012"}, "b2b-gold", "default"); err != nil {
-		failed = true
-		log.Printf("FAIL facets: %v", err)
-	} else {
-		log.Printf("OK   facets categories=%v price_ranges=%v availability=%v", f.Categories, f.PriceRanges, f.Availability)
+	// Facet queries (Issue #5 & #66 Phase B combinedFacetSQL) over both empty price_table and b2b-gold contract price_table.
+	for _, pt := range []string{"", "b2b-gold"} {
+		if f, err := svc.Facets(ctx, []string{"prod-001", "prod-002", "prod-004", "prod-012"}, pt, "default"); err != nil {
+			failed = true
+			log.Printf("FAIL facets price_table=%q: %v", pt, err)
+		} else {
+			log.Printf("OK   facets price_table=%q categories=%v price_ranges=%v availability=%v", pt, f.Categories, f.PriceRanges, f.Availability)
+		}
 	}
 	if failed {
 		os.Exit(1)

@@ -1,7 +1,9 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -222,5 +224,70 @@ func TestDisjunctiveFacets_SingleDynamicDiscoveryAndTTLCache(t *testing.T) {
 	_, _ = svc.DisjunctiveFacets(ctx, "notebook", 0, 0.5, models.SearchFilters{}, ids)
 	if got := svc.DynamicFacetDiscoveryCalls() - after3; got != 2 {
 		t.Fatalf("expected 2 discovery calls when FACET_CACHE_TTL=0, got %d", got)
+	}
+}
+
+// Issue #66 Phase B fix: For both zero-result (e.g. tenant_id=acme, empty ids) and normal
+// searches, the JSON marshaling of a facet cache hit must be byte-identical to the JSON of
+// the cache miss AND to the JSON produced when FACET_CACHE_TTL=0 (no [] -> null regression).
+func TestFacetCacheHitJSONByteIdenticalToMissAndDisabledCache(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct {
+		name    string
+		query   string
+		filters models.SearchFilters
+		ids     []string
+	}{
+		{"zero_result_acme_tenant", "shoes", models.SearchFilters{TenantID: "acme"}, []string{}},
+		{"zero_result_with_active_filters", "shoes", models.SearchFilters{TenantID: "acme", Brands: []string{"Nike"}}, []string{}},
+		{"normal_unfiltered", "shoes", models.SearchFilters{TenantID: "default"}, []string{"prod-001", "prod-002", "prod-003", "prod-005"}},
+		{"normal_disjunctive_filtered", "shoes", models.SearchFilters{TenantID: "default", Brands: []string{"Nike", "Adidas"}, Colors: []string{"azul"}}, []string{"prod-001", "prod-003"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Baseline with FACET_CACHE_TTL=0 (cache disabled).
+			cfgNoCache := testConfig("v1")
+			cfgNoCache.FacetCacheTTL = 0
+			cfgNoCache.FacetCacheTTLSet = true
+			svcNoCache := &SpannerService{config: cfgNoCache, seedProducts: DefaultSeedProducts()}
+			fNoCache, err := svcNoCache.DisjunctiveFacets(ctx, tc.query, 0, 0.5, tc.filters, tc.ids)
+			if err != nil {
+				t.Fatalf("no-cache DisjunctiveFacets error: %v", err)
+			}
+			jsonNoCache, err := json.Marshal(fNoCache)
+			if err != nil {
+				t.Fatalf("marshal fNoCache: %v", err)
+			}
+			if bytes.Contains(jsonNoCache, []byte(`:null`)) {
+				t.Fatalf("fNoCache JSON contains null slice: %s", string(jsonNoCache))
+			}
+
+			// Service with FACET_CACHE_TTL=30s: compare 1st call (miss) and 2nd call (hit).
+			cfgCache := testConfig("v1")
+			cfgCache.FacetCacheTTL = 30 * time.Second
+			cfgCache.FacetCacheTTLSet = true
+			svcCache := &SpannerService{config: cfgCache, seedProducts: DefaultSeedProducts()}
+
+			fMiss, err := svcCache.DisjunctiveFacets(ctx, tc.query, 0, 0.5, tc.filters, tc.ids)
+			if err != nil {
+				t.Fatalf("cache-miss DisjunctiveFacets error: %v", err)
+			}
+			jsonMiss, _ := json.Marshal(fMiss)
+
+			fHit, err := svcCache.DisjunctiveFacets(ctx, tc.query, 0, 0.5, tc.filters, tc.ids)
+			if err != nil {
+				t.Fatalf("cache-hit DisjunctiveFacets error: %v", err)
+			}
+			jsonHit, _ := json.Marshal(fHit)
+
+			if !bytes.Equal(jsonMiss, jsonNoCache) {
+				t.Fatalf("cache miss JSON != FACET_CACHE_TTL=0 JSON:\nmiss:    %s\nnocache: %s", string(jsonMiss), string(jsonNoCache))
+			}
+			if !bytes.Equal(jsonHit, jsonMiss) {
+				t.Fatalf("cache hit JSON != cache miss JSON:\nhit:  %s\nmiss: %s", string(jsonHit), string(jsonMiss))
+			}
+		})
 	}
 }

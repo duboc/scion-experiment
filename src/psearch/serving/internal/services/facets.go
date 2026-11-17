@@ -425,29 +425,37 @@ func markSelectedBuckets(b []models.FacetBucket, selected []string) []models.Fac
 
 const maxFacetCacheEntries = 512
 
+func cloneBucketSlice(s []models.FacetBucket, nonNilIfNil bool) []models.FacetBucket {
+	if s == nil {
+		if nonNilIfNil {
+			return []models.FacetBucket{}
+		}
+		return nil
+	}
+	cp := make([]models.FacetBucket, len(s))
+	copy(cp, s)
+	return cp
+}
+
 func cloneFacets(in *models.Facets) *models.Facets {
 	if in == nil {
 		return nil
 	}
 	out := &models.Facets{
-		Categories:   append([]models.FacetBucket(nil), in.Categories...),
-		Brands:       append([]models.FacetBucket(nil), in.Brands...),
-		PriceRanges:  append([]models.FacetBucket(nil), in.PriceRanges...),
-		Availability: append([]models.FacetBucket(nil), in.Availability...),
+		Categories:   cloneBucketSlice(in.Categories, true),
+		Brands:       cloneBucketSlice(in.Brands, true),
+		PriceRanges:  cloneBucketSlice(in.PriceRanges, true),
+		Availability: cloneBucketSlice(in.Availability, true),
+		Colors:       cloneBucketSlice(in.Colors, false),
+		Sizes:        cloneBucketSlice(in.Sizes, false),
 	}
-	if in.Colors != nil {
-		out.Colors = append([]models.FacetBucket(nil), in.Colors...)
-	}
-	if in.Sizes != nil {
-		out.Sizes = append([]models.FacetBucket(nil), in.Sizes...)
-	}
-	if len(in.Attributes) > 0 {
+	if in.Attributes != nil {
 		out.Attributes = make([]models.DynamicFacet, len(in.Attributes))
 		for i, df := range in.Attributes {
 			out.Attributes[i] = models.DynamicFacet{
 				Name:    df.Name,
 				Label:   df.Label,
-				Buckets: append([]models.FacetBucket(nil), df.Buckets...),
+				Buckets: cloneBucketSlice(df.Buckets, true),
 			}
 		}
 	}

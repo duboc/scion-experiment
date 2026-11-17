@@ -1595,5 +1595,24 @@ func TestSearchAdmissionControlSemaphoreRejectsWith503AndRetryAfter(t *testing.T
 	if w4.Code != http.StatusOK {
 		t.Fatalf("post-release request status = %d, want 200", w4.Code)
 	}
+
+	// Issue #66 Phase B fix: Verify that zero-result tenant=acme and normal tenant=default
+	// searches produce byte-identical facets JSON on cache miss vs cache hit (no [] -> null).
+	rDefault := newTestRouter()
+	for _, queryStr := range []string{
+		"q=shoes&tenant_id=acme&ads=false",
+		"q=shoes&tenant_id=default&ads=false",
+	} {
+		respMiss := doSearch(t, rDefault, queryStr)
+		respHit := doSearch(t, rDefault, queryStr)
+		bMiss, _ := json.Marshal(respMiss.Facets)
+		bHit, _ := json.Marshal(respHit.Facets)
+		if !bytes.Equal(bMiss, bHit) {
+			t.Fatalf("query %q facets JSON changed on cache hit:\nmiss: %s\nhit:  %s", queryStr, string(bMiss), string(bHit))
+		}
+		if bytes.Contains(bHit, []byte(`:null`)) {
+			t.Fatalf("query %q facets JSON contains null slice: %s", queryStr, string(bHit))
+		}
+	}
 }
 
