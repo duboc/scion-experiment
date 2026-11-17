@@ -28,7 +28,7 @@ You can interact with PSearch through the embedded storefront (`GET /`), the int
    curl -s "$SERVICE_URL/api/health" | jq .
    ```
 
-3. Inspect the active configuration, embedding model, and ScaNN vector index state (`sandbox` reports the environment name; `#52`):
+3. Inspect the active configuration, embedding model, ScaNN index state, and `search_admission` counters (`#52`, `#66`):
 
    ```bash
    curl -s "$SERVICE_URL/api/info" | jq .
@@ -79,6 +79,7 @@ Stage-1 selects candidates by relevance and places out-of-stock items last over 
 
 Within a single facet dimension, multiple values combine with `OR`.
 Across different facet dimensions, filters combine with `AND`, and each dimension reports exclude-own-dimension sibling counts ([ADR-013](../knowledge-plane/adr/ADR-013-disjunctive-facets.md)).
+The server combines the 4 `products` `GROUP BY` facet queries into one statement and caches facet results for `FACET_CACHE_TTL` (default `30s`; `#66`).
 
 1. Compare multiple brands (`Nike` or `Asics`) for in-stock size `42`:
 
@@ -225,6 +226,8 @@ If `ADMIN_TOKEN` is unset on the server, admin writes return `HTTP 403 Forbidden
 | `403 Forbidden` | Missing or invalid `X-Admin-Token` header, or `ADMIN_TOKEN` is unset on the server. | Set `ADMIN_TOKEN` on the server and pass `-H "X-Admin-Token: $ADMIN_TOKEN"`. |
 | `404 Not Found` | Seed `product_id` on `/api/products/:id/similar` or `/attributes` does not exist in `tenant_id`. | Verify that the `product_id` exists and is visible in the requested `tenant_id`. |
 | `413 Payload Too Large` | Request body on `POST /api/search` exceeds 8 MB. | Resize the query image to 4 MB or smaller before base64 encoding. |
+| `503 Service Unavailable` | Concurrent searches exceeded `SEARCH_MAX_INFLIGHT` (default `8`) beyond `SEARCH_QUEUE_WAIT` (default `250ms`; `#66`). | Honor the `Retry-After: 1` response header and retry after 1 second. |
+| `504 Gateway Timeout` | The search exceeded `SEARCH_TIMEOUT` (default `10s`) and cancelled downstream calls without memory fallback (`#66`). | Retry the request or narrow the query filters. |
 
 ## What's next
 

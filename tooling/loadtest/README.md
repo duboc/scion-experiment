@@ -1,23 +1,27 @@
 # Load test the PSearch Serving API
 
 This directory contains Locust load tests for the PSearch Serving API (`psearch-serving`).
-This document follows the Google Developer documentation style and the ASD-STE100 Simplified Technical English standard.
+This document follows the Google developer documentation style guide and the ASD-STE100 Simplified Technical English standard.
 
 > [!IMPORTANT]
 > Do not commit real Cloud Run URLs or project IDs to tracked files.
-> Replace `SERVICE_URL` with your target endpoint (for example, `http://localhost:8080`).
+> Replace `SERVICE_URL` with your target endpoint (`http://localhost:8080` for local testing).
+> Keep load tests against the live Cloud Run service at **2 requests per second (rps) or less** unless you have Product Owner (PO) approval.
 
 ## Overview
 
 The Locust test suite (`locustfile.py`) simulates concurrent shoppers calling the PSearch Serving API:
 
 - **Health probe task (`weight=1`):** Sends `GET /health` requests and verifies that `"status": "healthy"` is returned.
-- **Product search task (`weight=5`):** Sends `POST /search` requests with realistic queries and limits from `search_queries.py` and validates that `results` and `total_found` exist in every `HTTP 200` response.
+- **Product search task (`weight=5`):** Sends `POST /search` requests with queries and limits from `search_queries.py` and verifies that `results` and `total_found` exist in every `HTTP 200` response.
+
+The serving API enforces per-instance admission control (`SEARCH_MAX_INFLIGHT`, default `8`, and `SEARCH_QUEUE_WAIT`, default `250ms`) and a per-search deadline (`SEARCH_TIMEOUT`, default `10s`; `#66`).
+When overloaded, the server returns `HTTP 503 Service Unavailable` with `Retry-After: 1`; when a query exceeds its deadline, the server returns `HTTP 504 Gateway Timeout`.
 
 ## Before you begin
 
 1. Install Python 3.11 or later and `pip`.
-2. Start a local `psearch-serving` instance (`USE_MEMORY_STORE=true go run ./cmd/server`) or obtain the URL of your deployed Cloud Run service.
+2. Start a local `psearch-serving` instance (`USE_MEMORY_STORE=true go run ./cmd/server`) or get the URL of your deployed Cloud Run service.
 
 ## Quickstart
 
@@ -33,10 +37,10 @@ The Locust test suite (`locustfile.py`) simulates concurrent shoppers calling th
    python3 -m pip install -r requirements.txt
    ```
 
-3. Run a 1-minute headless smoke load test against a local server:
+3. Run a 1-minute headless smoke test against a local server:
 
    ```bash
-   locust -f locustfile.py --headless -u 20 -r 5 --run-time 1m --host=http://localhost:8080
+   locust -f locustfile.py --headless -u 6 -r 2 --run-time 1m --host=http://localhost:8080
    ```
 
 ## Configure the load test
@@ -71,16 +75,16 @@ You can configure the target host and user wait time in a `.env` file or with en
 2. Open `http://localhost:8089` in your browser.
 3. Enter the number of concurrent users and the spawn rate (users per second), then click **Start swarming**.
 
-### Export CSV and HTML reports in headless mode
+### Run a 2 rps headless benchmark with CSV and HTML reports
 
-Run Locust with `--headless`, `--csv`, and `--html` for automated CI benchmarks:
+Against the live Cloud Run service, keep throughput at **2 rps or less** (for example, 6 users with a 1–5s wait time averages 2 rps) unless you have PO approval:
 
 ```bash
 locust -f locustfile.py \
   --headless \
-  -u 100 \
-  -r 10 \
-  --run-time 5m \
+  -u 6 \
+  -r 2 \
+  --run-time 2m \
   --host="$SERVICE_URL" \
   --csv=results \
   --html=report.html
@@ -107,10 +111,11 @@ This command writes four output files:
 
 | Symptom | Cause | Solution |
 |---|---|---|
-| High `HTTP 429` or `HTTP 503` rate on Cloud Run | Concurrency exceeds the Cloud Run max-instances setting or Vertex AI quota on uncached queries. | Enable the two-tier `EmbeddingCache` on `psearch-serving` or increase Cloud Run max instances. |
+| `HTTP 503 Service Unavailable` with `Retry-After: 1` | Concurrent searches exceeded `SEARCH_MAX_INFLIGHT` (default `8`) for longer than `SEARCH_QUEUE_WAIT` (`250ms`; `#66`). | Reduce Locust user count (`-u`) to stay within 2 rps, or increase `SEARCH_MAX_INFLIGHT` on the server. |
+| `HTTP 504 Gateway Timeout` | A search exceeded `SEARCH_TIMEOUT` (default `10s`; `#66`). | Check Cloud Spanner CPU utilization and verify that `FACET_CACHE_TTL` (`30s`) and `USE_VECTOR_INDEX` (`true`) are enabled. |
 | Connection refused on `localhost:8080` | The local `psearch-serving` process is not running. | Start the server in `src/psearch/serving` with `USE_MEMORY_STORE=true go run ./cmd/server`. |
 
 ## What's next
 
-- Review the API endpoints and parameters in [`../../docs/USAGE.md`](../../docs/USAGE.md).
-- Check the production deployment guide in [`../../DEPLOYMENT.md`](../../DEPLOYMENT.md).
+- Review the API endpoints and parameters in the [PSearch usage guide](../../docs/USAGE.md).
+- Check the production deployment guide in [`DEPLOYMENT.md`](../../DEPLOYMENT.md).

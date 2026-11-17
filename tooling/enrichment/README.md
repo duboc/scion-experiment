@@ -1,7 +1,7 @@
 # Enrich catalog products with Vertex AI
 
 This batch tool generates product images and descriptions from BigQuery rows using Vertex AI Gemini, Cloud Storage, and Firestore.
-This document follows the Google Developer documentation style and the ASD-STE100 Simplified Technical English standard.
+This document follows the Google developer documentation style guide and the ASD-STE100 Simplified Technical English standard.
 
 > [!IMPORTANT]
 > Do not commit real project IDs, bucket names, or service account emails to version control.
@@ -50,6 +50,7 @@ You can run `./setup_permissions.sh` to grant these roles to your service accoun
    | `project_id` | `PROJECT_ID` | Google Cloud project ID (`main.py`, `consolidate_results.py`, `deploy.sh`). |
    | `bq_dataset` | `psearch_dataset` | Source BigQuery dataset ID (`main.py`, `consolidate_results.py`, `deploy.sh`). |
    | `bq_table` | `products_raw` | Source BigQuery table name (`main.py`, `consolidate_results.py`, `deploy.sh`). |
+   | `bq_enriched_table` | `products_enriched` | Optional BigQuery table name read by `consolidate_results.py`. |
    | `psearch_img_bucket` | `BUCKET_NAME` | Cloud Storage bucket for generated images and CSV reports (`main.py`, `consolidate_results.py`, `deploy.sh`). |
    | `firestore_collection` | `product_enrichment` | Firestore collection that stores per-product job state (`main.py`, `consolidate_results.py`, `deploy.sh`). |
    | `service_account` | `SA_NAME@PROJECT_ID.iam.gserviceaccount.com` | Service account granted IAM roles by `setup_permissions.sh`. |

@@ -60,8 +60,8 @@ graph TD
 
 ### Complete feature matrix
 
-All capabilities across Waves 1 through 6 and recent platform updates (`#1`–`#48`, `#51`–`#52`, and `#54`, plus migrations `011`–`027`) are active.
-For full architectural decisions, see [`knowledge-plane/INDEX.md`](knowledge-plane/INDEX.md).
+All capabilities across Waves 1 through 6 and recent platform updates (`#1`–`#48`, `#51`–`#52`, `#54`, and `#66`, plus migrations `011`–`027`) are active.
+For full architectural decisions, see the [Knowledge Plane index](knowledge-plane/INDEX.md).
 
 | Feature | Issue(s) | ADR | Endpoint / parameter |
 |---|---|---|---|
@@ -95,7 +95,8 @@ For full architectural decisions, see [`knowledge-plane/INDEX.md`](knowledge-pla
 | Google Developer style and ASD-STE100 documentation | `#28`, `#29`, `#31`, `#48`, `#54` | — | `README.md`, `docs/USAGE.md`, `src/application/ui/README.md`, `tooling/*/README.md` |
 | Interactive cloud architecture diagram | `#51` | — | `GET /diagram` |
 | Public-repo identifier redaction, Spanner `PROJECT_ID` fail-fast validation, and `FORBIDDEN_ID_PATTERN` guard | `#52` | — | `GET /api/info` (`sandbox` = environment name), `PROJECT_ID`, `FORBIDDEN_ID_PATTERN` |
-| 5-layer evaluation pyramid (`L1`–`L5`) and FinOps observability workbench (`psearch-eval-dashboard`) | `#18`, `#26`, `#36`, `#37` | — | [`docs/scion/verification-and-eval.md`](docs/scion/verification-and-eval.md) |
+| Per-search deadline (`504`), in-flight admission control (`503` + `Retry-After: 1`), ad vector pre-filter, combined facet SQL, and facet TTL cache | `#66` | [ADR-012](knowledge-plane/adr/ADR-012-scann-ann-and-pagination.md), [ADR-013](knowledge-plane/adr/ADR-013-disjunctive-facets.md) | `GET/POST /api/search`, `GET /api/info` (`search_admission`), `SEARCH_TIMEOUT`, `SEARCH_MAX_INFLIGHT`, `SEARCH_QUEUE_WAIT`, `FACET_CACHE_TTL` |
+| 5-layer evaluation pyramid (`L1`–`L5`) and FinOps observability workbench (`psearch-eval-dashboard`) | `#18`, `#26`, `#36`, `#37` | — | [Verification and evaluation guide](docs/scion/verification-and-eval.md) |
 
 ## Before you begin
 
@@ -169,6 +170,10 @@ The Search API reads its configuration from environment variables (`src/psearch/
 | `AD_SLOTS` | `1,4,8` | Comma-separated 1-based rank positions for sponsored product injection on page 1. |
 | `AD_MAX` | `3` | Maximum sponsored products injected per search response (`1`–`10`). |
 | `AD_MIN_SIMILARITY` | `0.55` | Minimum cosine similarity required for vector-matched sponsored ads (`0, 1]`). |
+| `SEARCH_TIMEOUT` | `10s` | Per-search context deadline (`(0, 14s]`, below the `15s` HTTP `WriteTimeout`); returns `HTTP 504` on timeout without memory fallback (`#66`). |
+| `SEARCH_MAX_INFLIGHT` | `8` | Per-instance semaphore limit on concurrent in-flight `/api/search` requests (`1`–`256`; `#66`). |
+| `SEARCH_QUEUE_WAIT` | `250ms` | Maximum wait time for an admission slot (`[0, 5s]`) before returning `HTTP 503` with `Retry-After: 1` (`#66`). |
+| `FACET_CACHE_TTL` | `30s` | Per-instance TTL for the bounded 512-entry facet cache (`0` disables caching; `#66`). |
 | `ADMIN_TOKEN` | `""` | Secret token required in the `X-Admin-Token` header for admin write endpoints. |
 
 ## Use the API
@@ -183,7 +188,7 @@ For step-by-step curl examples, see [`docs/USAGE.md`](docs/USAGE.md).
 | `GET /` | Public | Serves the zero-dependency embedded storefront. |
 | `GET /diagram` | Public | Serves the interactive cloud architecture diagram (`#51`). |
 | `GET /health`, `GET /healthz`, `GET /api/health` | Public | Returns service health and `backend_mode` (`spanner` or `memory`). |
-| `GET /api/info` | Public | Returns service metadata (`sandbox` = environment name, `#52`), active embedding version, `vector_index_used`, and cache stats. |
+| `GET /api/info` | Public | Returns service metadata (`sandbox` = environment name), active embedding version, `vector_index_used`, `search_admission`, and cache stats. |
 | `GET /api/search`, `POST /api/search` (also `/search`) | Public | Executes hybrid RRF search, disjunctive and dynamic faceting, pagination, LTR, session boost, and ad injection. |
 | `GET /api/autocomplete` | Public | Returns n-gram (`SEARCH_NGRAMS`) and prefix autocomplete suggestions. |
 | `GET /api/products/:id/similar` (also `/products/:id/similar`) | Public | Returns item-to-item `similar`, in-stock `substitutes`, or `co_viewed` recommendations ([ADR-016](knowledge-plane/adr/ADR-016-similar-items-and-substitutes.md)). |
@@ -250,6 +255,8 @@ For complete Terraform, DDL migration (`011`–`027`), and rollout steps, see [`
 | Startup fails with `PROJECT_ID is required when USE_MEMORY_STORE is false` | `PROJECT_ID` is unset in Spanner mode (`#52`). | Set `PROJECT_ID` on the Cloud Run service or set `USE_MEMORY_STORE=true` for local memory mode. |
 | `retrieval_mode` is `lexical_only_degraded` | Query embedding call failed or Vertex AI permissions are missing. | Grant `roles/aiplatform.user` to the service account and keep `GENAI_LOCATION=global`. |
 | `vector_index_used` is `false` when `v2` is active | `products_embedding_v2_idx` is absent, still building, or in its 60s cooldown window. | Apply migration `024_products_vector_index.sql` and verify with `go run ./cmd/sqlcheck`. |
+| `/api/search` returns `HTTP 503` with `Retry-After: 1` | Concurrent searches exceeded `SEARCH_MAX_INFLIGHT` for longer than `SEARCH_QUEUE_WAIT` (`#66`). | Retry after 1 second, or tune `SEARCH_MAX_INFLIGHT` and `SEARCH_QUEUE_WAIT` for your instance size. |
+| `/api/search` returns `HTTP 504 Gateway Timeout` | A search exceeded `SEARCH_TIMEOUT` and cancelled its Spanner and Vertex AI calls (`#66`). | Inspect slow queries with `go run ./cmd/sqlcheck` or increase `SEARCH_TIMEOUT` (up to `14s`). |
 | Admin endpoints return `HTTP 403 Forbidden` | `ADMIN_TOKEN` is unset or the `X-Admin-Token` header does not match. | Configure `ADMIN_TOKEN` on the service and pass `-H "X-Admin-Token: ADMIN_TOKEN"`. |
 
 ## Autonomous software factory (Scion)
