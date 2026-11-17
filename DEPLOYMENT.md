@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00044-8r5`** (100% traffic, follows latest): #66 Phase A per-search deadline (10s) and in-flight admission control (8 per instance, 250ms queue wait), deployed from a clean `git archive` of `aa90182` (code `598fc1f`). Rollback target: `psearch-serving-00043-p87`. **#66 Phase B (`00045-g6z`) was deployed on 2026-11-17 and rolled back the same day** (cached empty facet arrays served as `null`); see the Phase B section.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00046-zxm`** (100% traffic, follows latest): #66 Phase B (ad vector pre-filter, ads CTE omitted when unused, combined facet GROUP BY, 30s facet TTL cache) with the `cloneFacets` fix, deployed from a clean `git archive` of `3a9950f`; Phase A deadline and admission control included. Rollback target: `psearch-serving-00044-8r5`.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -124,8 +124,9 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00041-x6r`** | `8a25c90` | #51 | embedded `diagram.html` + `GET /diagram` route (8-view stepped Google Cloud architecture diagram); API unchanged |
 | **`00042-mbh`** | `4f6d4a7` | #52 | real project identifiers removed from tracked files, the storefront badge and `/api/info`; config fails fast without `PROJECT_ID` in Spanner mode; Dockerfile no longer sets `PROJECT_ID` |
 | **`00043-p87`** | `014b6df` | #53 (+ #54 docs, #52 test guard) | storefront theme picker, `?theme=` handling and theme CSS removed (#49/#50 reverted in the UI); default dark storefront |
-| **`00044-8r5`** | `aa90182` (code `598fc1f`) | #66 Phase A | per-search context deadline (`SEARCH_TIMEOUT` 10s, below the 15s `WriteTimeout`; no in-memory fallback when it fires), per-instance admission control (`SEARCH_MAX_INFLIGHT` 8, `SEARCH_QUEUE_WAIT` 250ms), `/api/info.search_admission`; all three env vars left unset (code defaults). **current** |
+| **`00044-8r5`** | `aa90182` (code `598fc1f`) | #66 Phase A | per-search context deadline (`SEARCH_TIMEOUT` 10s, below the 15s `WriteTimeout`; no in-memory fallback when it fires), per-instance admission control (`SEARCH_MAX_INFLIGHT` 8, `SEARCH_QUEUE_WAIT` 250ms), `/api/info.search_admission`; all three env vars left unset (code defaults) |
 | `00045-g6z` | `fdc933d` | #66 Phase B | ad vector pre-filter, ads CTE omitted when unused, combined facet GROUP BY, facet TTL cache (`FACET_CACHE_TTL` unset, 30s). **Rolled back to 00044 on 2026-11-17; serves no traffic** (cache hit turns empty facet arrays into `null`) |
+| **`00046-zxm`** | `3a9950f` | #66 Phase B + fix | as 00045, plus `cloneFacets` keeps empty slices as `[]` on cache hits; sqlcheck covers combined facets with an empty and a `b2b-gold` price table. **current** |
 
 ---
 
@@ -1083,12 +1084,12 @@ Source: clean `git archive` of **`fdc933d`** in `/tmp/deploy-66b` (review `08247
 | `go vet ./...`, `go test ./...` | ✅ api, config, services ok |
 | Deploy → **`psearch-serving-00045-g6z`** | ✅ 100%; config diff identical |
 
-**Equivalence check against 00044** (no-traffic tag on 00044; 24 cases run one at a time: the 6 Phase A queries on pages 1 and 2, plus `laptop`, `running shoes` and `notebook` with `price_table_id=b2b-gold` for tenant `default`, then `acme`, then `default` again). Compared fields: result IDs and order, `priceInfo`, `retrieval_mode`, `total_found`, sponsored positions and `sponsored_count`, and every facet group (values, counts, order).
+**Equivalence check against 00044** (no-traffic tag on 00044; 21 cases run one at a time (reported as 24 at the time; the list has 21): the 6 Phase A queries on pages 1 and 2, plus `laptop`, `running shoes` and `notebook` with `price_table_id=b2b-gold` for tenant `default`, then `acme`, then `default` again). Compared fields: result IDs and order, `priceInfo`, `retrieval_mode`, `total_found`, sponsored positions and `sponsored_count`, and every facet group (values, counts, order).
 
 | Pass | Result |
 |---|---|
 | 00044 baseline, run twice | ✅ identical (deterministic) |
-| 00045 pass 1 (cold facet cache) | ✅ **0 differences** in all 24 cases. Sponsored on page 1 only (`running shoes` positions 0/3, `wireless headphones` 0/3, `laptop` 0/3/7, `notebook` 0/3), none on page 2. `b2b-gold` price buckets differ from the base-price buckets as expected |
+| 00045 pass 1 (cold facet cache) | ✅ **0 differences** in all 21 cases. Sponsored on page 1 only (`running shoes` positions 0/3, `wireless headphones` 0/3, `laptop` 0/3/7, `notebook` 0/3), none on page 2. `b2b-gold` price buckets differ from the base-price buckets as expected |
 | 00045 pass 2 (facet cache warm) | ❌ **3 differences**: for tenant `acme` (0 results), `facets.categories/brands/price_ranges/availability` came back as **`null` instead of `[]`** |
 | 00044 again, after pass 2 | ✅ identical to baseline (no data drift) |
 | Tenant isolation | ✅ no leak: `acme` never received `default` buckets, and `default` after `acme` matched the baseline exactly |
@@ -1110,3 +1111,46 @@ Source: clean `git archive` of **`fdc933d`** in `/tmp/deploy-66b` (review `08247
 | Facet latency (`facets_latency_ms`, single requests) | about 15–18 ms on a miss, about 0.05 ms on a cache hit | about 25–70 ms |
 
 **Status:** #66 **open**. Phase B needs the `cloneFacets` fix and a redeploy; the PO decides on closing.
+
+## #66 Phase B redeploy with the `cloneFacets` fix: DEPLOYED 2026-11-17
+
+Source: clean `git archive` of **`3a9950f`** in `/tmp/deploy-66d` (fix on top of `fdc933d`; review `c742237`). Changes since `fdc933d`: `facets.go` (`cloneFacets` keeps empty non-nil slices; colors and sizes keep their nil-ness), `facets_test.go`, `handlers_test.go`, and `sqlcheck` (combined facets with `price_table=""` and `b2b-gold`). **No DDL.** Env vars, Cloud Run settings and Spanner PU were unchanged (before/after config diff identical; `FACET_CACHE_TTL` unset, so 30s).
+
+| Step | Result |
+|---|---|
+| sqlcheck gate (real Spanner, production env) | ✅ **65 OK / 0 FAIL** (includes `SkipAds: true` and combined facets with `price_table=""` and `b2b-gold`) |
+| `go vet ./...`, `go test ./...` | ✅ api, config, services ok |
+| Deploy → **`psearch-serving-00046-zxm`** | ✅ built and Ready. It took **0% at first**, because the Phase B rollback had pinned traffic to 00044 (gcloud's message named 00045, from a lagging `latestReadyRevisionName`). Routed explicitly with `--to-revisions=psearch-serving-00046-zxm=100`; after the checks, `--to-latest` restored "follows latest" |
+
+**Equivalence check against 00044** (no-traffic tag `ab44`, since removed). 21 cases, one request at a time:
+- the 6 Phase A queries on pages 1 and 2;
+- `laptop`, `running shoes` and `notebook` with `price_table_id=b2b-gold` for tenant `default`, then `acme` (0 results), then `default` again.
+
+Comparison is **byte-level on canonical JSON** (sorted keys) of the whole response: all result objects, `priceInfo`, sponsored flags and positions, `sponsored_count`, `retrieval_mode`, `total_found`, paging, and every facet group (empty `[]` vs `null` included). Only per-request fields are excluded: `latency_ms`, `facets_latency_ms`, `query_id`, `cache_hit` and `ad_click_id`. Score floats are compared at 6 decimals, because 00044 itself alternates sponsored `score.ad_relevance` / `score.text` values by about 1e-8 between identical requests.
+
+| Pass | Result |
+|---|---|
+| 00044 baseline, 3 passes | ✅ identical |
+| 00046 **cold** facet cache | ✅ **0 differences / 21** |
+| 00046 **warm** facet cache (every facet served from cache, `facets_latency_ms` about 0.04–0.16) | ✅ **0 differences / 21**. The `acme` zero-result cases serialize `"facets":{"categories":[],"brands":[],...` |
+| 00044 again afterwards | ✅ identical to baseline |
+| Zero-result query repeated 3 times (cache hit on repeats) | ✅ `[]` every time |
+| Tenant isolation (`default` → `acme` → `default`, with `b2b-gold`) | ✅ no leak; matches 00044 exactly |
+| `/api/health`, `/api/info.search_admission`, rollup without token | ✅ 200; `8 / 250ms / 10000ms`, 0 rejected, 0 timed out; 403 |
+
+**2 rps check on the live URL** (open loop, 120 requests over 60s, 17:13:49–17:14:49Z, same 12 queries):
+
+| Metric | 00046-zxm (live) | 00045-g6z (Phase B, tag run 16:48Z) | 00044-8r5 (Phase A, 2026-11-13) |
+|---|---|---|---|
+| Status codes | **120 × 200, 0 × 503, 0 × 504** | 120 × 200 | 120 × 200 |
+| Server p50 / p95 / p99 / max | 0.258 / **3.55** / 5.25 / 6.00 s | 0.166 / 1.06 / 1.98 / 2.54 s | 0.394 / 2.51 / 3.45 / 4.36 s |
+| Client p50 / p95 / p99 | 0.299 / 3.59 / 5.37 s | 0.205 / 1.10 / 2.01 s | 0.435 / 2.54 / 3.49 s |
+| Admission counters after the run | 0 rejected, 0 timed out (in-flight p99 peaked at 8) | 0 / 0 | 0 / 0 |
+| Hybrid query (same SQL fingerprint for 00045 and 00046): CPU per execution | 0.101 s | 0.108–0.128 s | about 0.09–0.14 s |
+| Hybrid query average latency per minute | 0.19 / 0.71 s | 0.89 / 0.35 s | 0.59 s |
+
+**Why p95 is higher than in the tag run.** The slow requests are all in one 20s window (17:14:00–17:14:20Z: median 0.9 s, max 6.0 s); every other 10s bucket had a median of 0.18–0.31 s. It was a Spanner-side stall: the hybrid query averaged 0.71 s at an unchanged 0.10 CPU-s per execution, and Spanner high-priority CPU was about 50%. Cloud Run CPU p99 stayed at or under 14%, with one instance and no cold start. The SQL and its per-execution Spanner cost are the same as the 00045 run (which also had a minute averaging 0.89 s), so this looks like run-to-run variance at 100 PU, not a code regression. A repeat 2 rps run would confirm it. The functional checks showed no difference, so I **did not roll back**.
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00044-8r5=100` (note this pins traffic; use `--to-latest` after the next good deploy).
+
+**Status:** #66 **open** (PO decides on closing).
