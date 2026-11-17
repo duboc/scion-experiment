@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00044-8r5`** (100% traffic, follows latest): #66 Phase A per-search deadline (10s) and in-flight admission control (8 per instance, 250ms queue wait), deployed from a clean `git archive` of `aa90182` (code `598fc1f`). Rollback target: `psearch-serving-00043-p87`.
+**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00044-8r5`** (100% traffic, follows latest): #66 Phase A per-search deadline (10s) and in-flight admission control (8 per instance, 250ms queue wait), deployed from a clean `git archive` of `aa90182` (code `598fc1f`). Rollback target: `psearch-serving-00043-p87`. **#66 Phase B (`00045-g6z`) was deployed on 2026-11-17 and rolled back the same day** (cached empty facet arrays served as `null`); see the Phase B section.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -125,6 +125,7 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00042-mbh`** | `4f6d4a7` | #52 | real project identifiers removed from tracked files, the storefront badge and `/api/info`; config fails fast without `PROJECT_ID` in Spanner mode; Dockerfile no longer sets `PROJECT_ID` |
 | **`00043-p87`** | `014b6df` | #53 (+ #54 docs, #52 test guard) | storefront theme picker, `?theme=` handling and theme CSS removed (#49/#50 reverted in the UI); default dark storefront |
 | **`00044-8r5`** | `aa90182` (code `598fc1f`) | #66 Phase A | per-search context deadline (`SEARCH_TIMEOUT` 10s, below the 15s `WriteTimeout`; no in-memory fallback when it fires), per-instance admission control (`SEARCH_MAX_INFLIGHT` 8, `SEARCH_QUEUE_WAIT` 250ms), `/api/info.search_admission`; all three env vars left unset (code defaults). **current** |
+| `00045-g6z` | `fdc933d` | #66 Phase B | ad vector pre-filter, ads CTE omitted when unused, combined facet GROUP BY, facet TTL cache (`FACET_CACHE_TTL` unset, 30s). **Rolled back to 00044 on 2026-11-17; serves no traffic** (cache hit turns empty facet arrays into `null`) |
 
 ---
 
@@ -1070,3 +1071,42 @@ The 2 rps tail is wider than in the eval's run. The cause is Spanner-side queuei
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00043-p87=100`.
 
 **Status:** #66 **open** (PO decides on closing and on Phase B).
+
+## #66 Phase B, ad pre-filter, combined facets and facet cache: DEPLOYED and ROLLED BACK 2026-11-17
+
+Source: clean `git archive` of **`fdc933d`** in `/tmp/deploy-66b` (review `08247e9`). Serving changes since `aa90182`: `spanner_service.go` (ad vector candidates pre-filtered; ads CTE omitted when `SkipAds`), `facets.go` (4 products GROUP BY facet queries merged into 1; dynamic-attribute facet query runs once; per-instance facet TTL cache), `config.go` (`FACET_CACHE_TTL`), `handlers.go`, `attributes.go`, `models.go`, `sqlcheck`. **No DDL.** Env vars, Cloud Run settings and Spanner PU were unchanged (before/after diff identical). `FACET_CACHE_TTL` was not set, so the default 30s applied.
+
+| Step | Result |
+|---|---|
+| sqlcheck gate (real Spanner, production env) | ✅ **64 OK / 0 FAIL** (includes `SkipAds: true` and the combined facet SQL with price table `b2b-gold`) |
+| Combined facet SQL **without** a price table (not exercised by sqlcheck; one-off program in a scratch copy of the snapshot, real Spanner) | ✅ OK for price table `""` and `b2b-gold`, tenants `default` and `acme` |
+| `go vet ./...`, `go test ./...` | ✅ api, config, services ok |
+| Deploy → **`psearch-serving-00045-g6z`** | ✅ 100%; config diff identical |
+
+**Equivalence check against 00044** (no-traffic tag on 00044; 24 cases run one at a time: the 6 Phase A queries on pages 1 and 2, plus `laptop`, `running shoes` and `notebook` with `price_table_id=b2b-gold` for tenant `default`, then `acme`, then `default` again). Compared fields: result IDs and order, `priceInfo`, `retrieval_mode`, `total_found`, sponsored positions and `sponsored_count`, and every facet group (values, counts, order).
+
+| Pass | Result |
+|---|---|
+| 00044 baseline, run twice | ✅ identical (deterministic) |
+| 00045 pass 1 (cold facet cache) | ✅ **0 differences** in all 24 cases. Sponsored on page 1 only (`running shoes` positions 0/3, `wireless headphones` 0/3, `laptop` 0/3/7, `notebook` 0/3), none on page 2. `b2b-gold` price buckets differ from the base-price buckets as expected |
+| 00045 pass 2 (facet cache warm) | ❌ **3 differences**: for tenant `acme` (0 results), `facets.categories/brands/price_ranges/availability` came back as **`null` instead of `[]`** |
+| 00044 again, after pass 2 | ✅ identical to baseline (no data drift) |
+| Tenant isolation | ✅ no leak: `acme` never received `default` buckets, and `default` after `acme` matched the baseline exactly |
+
+**Cause** (`internal/services/facets.go`, `cloneFacets`): the copy is `append([]models.FacetBucket(nil), in.X...)`, which turns an empty non-nil slice into `nil`. Every facet **cache hit** therefore serializes empty groups as JSON `null`. Reproduced twice with a zero-result query (`[]` on the first request, `null` on the repeat; 00044 returns `[]` both times). The same pattern applies to `colors`, `sizes` and the dynamic-attribute `buckets` when they are empty. Both bundled UIs tolerate `null` (`|| []` in the React app, `Array.isArray` in the storefront), so storefront users saw no impact. It is still an API contract change, and the deploy rule was to roll back on any difference. **Fix suggestion:** preserve empty non-nil slices in `cloneFacets` (for example `append(make([]models.FacetBucket, 0, len(in.X)), in.X...)`, guarded by `in.X != nil` where nil is meaningful), and add a test that a cache hit serializes to the same JSON as a miss.
+
+**Rollback:** `update-traffic --to-revisions=psearch-serving-00044-8r5=100` at 16:48Z. **00044-8r5 serves 100%** (verified: `hybrid_v2`, 20 results, 2 sponsored on `running shoes`).
+
+**Performance of 00045, measured after the rollback through a no-traffic tag (`ab45`, since removed):** 2 rps open loop, 120 requests over 60s (16:48:36–16:49:36Z), same 12 rotating queries as the Phase A run.
+
+| Metric | 00045-g6z (Phase B) | 00044-8r5 (Phase A, 2026-11-13) |
+|---|---|---|
+| Status codes | **120 × 200, 0 × 503, 0 × 504** | 120 × 200 |
+| Server p50 / p95 / p99 / max | **0.166 / 1.06 / 1.98 / 2.54 s** | 0.394 / 2.51 / 3.45 / 4.36 s |
+| Client p50 / p95 / p99 | 0.205 / 1.10 / 2.01 s | 0.435 / 2.54 / 3.49 s |
+| Admission counters after the run | `rejected_total 0`, `timed_out_total 0` | 0 / 0 |
+| Spanner high-priority CPU, run minutes (above about 3% idle) | 21% / 41% / 31%, sum **0.84 utilization-minutes** | 25% / 67% / 23%, sum **1.07 utilization-minutes** |
+| Spanner CPU per search | **about 21% lower**; about 0.136 CPU-s per search from `QUERY_STATS_TOP_MINUTE` (16.3 CPU-s for 120 searches, cold instance and caches included) | about 0.17 CPU-s per search (scaled by the utilization ratio; minute-level query stats for that run have expired) |
+| Facet latency (`facets_latency_ms`, single requests) | about 15–18 ms on a miss, about 0.05 ms on a cache hit | about 25–70 ms |
+
+**Status:** #66 **open**. Phase B needs the `cloneFacets` fix and a redeploy; the PO decides on closing.
