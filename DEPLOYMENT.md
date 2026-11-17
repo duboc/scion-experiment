@@ -1151,6 +1151,19 @@ Comparison is **byte-level on canonical JSON** (sorted keys) of the whole respon
 
 **Why p95 is higher than in the tag run.** The slow requests are all in one 20s window (17:14:00–17:14:20Z: median 0.9 s, max 6.0 s); every other 10s bucket had a median of 0.18–0.31 s. It was a Spanner-side stall: the hybrid query averaged 0.71 s at an unchanged 0.10 CPU-s per execution, and Spanner high-priority CPU was about 50%. Cloud Run CPU p99 stayed at or under 14%, with one instance and no cold start. The SQL and its per-execution Spanner cost are the same as the 00045 run (which also had a minute averaging 0.89 s), so this looks like run-to-run variance at 100 PU, not a code regression. A repeat 2 rps run would confirm it. The functional checks showed no difference, so I **did not roll back**.
 
+**Repeat 2 rps run (requested by lead), 17:26:11–17:27:12Z, live 00046-zxm, same instance and query mix:**
+
+| Metric | Repeat run | First run (17:13Z) |
+|---|---|---|
+| Status codes | **120 × 200, 0 × 503, 0 × 504** | 120 × 200 |
+| Server p50 / p95 / p99 / max | **0.188 / 0.782 / 1.48 / 2.14 s** | 0.258 / 3.55 / 5.25 / 6.00 s |
+| Client p50 / p95 / p99 | 0.227 / 0.822 / 1.51 s | 0.299 / 3.59 / 5.37 s |
+| Per-10s medians (s) | 0.28, 0.17, 0.18, 0.23, 0.17, 0.18, 0.17 (max in any bucket 2.14) | one bucket at 0.9 (max 6.0), others 0.18–0.31 |
+| Admission counters | 0 rejected, 0 timed out | 0 / 0 |
+| Spanner high-priority CPU, run minutes | 27% / 28% / 9%, about **0.53 utilization-minutes** above idle | about 0.50 / 0.49 / 0.30 (that window also includes the comparison passes) |
+
+p95 is below Phase A's 2.51 s and the 00045 tag run's 1.06 s, which confirms the 17:14Z stall was transient. No rollback.
+
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00044-8r5=100` (note this pins traffic; use `--to-latest` after the next good deploy).
 
 **Status:** #66 **open** (PO decides on closing).
