@@ -1,6 +1,6 @@
 # PSearch — Deployment Guide & Release Log
 
-**Live:** Cloud Run service `psearch-serving`, revision **`psearch-serving-00046-zxm`** (100% traffic, follows latest): #66 Phase B (ad vector pre-filter, ads CTE omitted when unused, combined facet GROUP BY, 30s facet TTL cache) with the `cloneFacets` fix, deployed from a clean `git archive` of `3a9950f`; Phase A deadline and admission control included. Rollback target: `psearch-serving-00044-8r5`.
+**Live:** none. Cloud Run service `psearch-serving` was **deleted on 2026-11-17 at the PO's request (vulnerability concerns)**. Last live revision: `psearch-serving-00046-zxm` (from `3a9950f`). See the last release-log entry for how to recreate it. Spanner, BigQuery, secrets, IAM and Artifact Registry images were not touched.
 
 Real project IDs, service-account emails and service URLs are intentionally replaced with placeholders in this document:
 
@@ -126,7 +126,7 @@ The base schema (`products` with 768-d `embedding`, `title_tokens`, `description
 | **`00043-p87`** | `014b6df` | #53 (+ #54 docs, #52 test guard) | storefront theme picker, `?theme=` handling and theme CSS removed (#49/#50 reverted in the UI); default dark storefront |
 | **`00044-8r5`** | `aa90182` (code `598fc1f`) | #66 Phase A | per-search context deadline (`SEARCH_TIMEOUT` 10s, below the 15s `WriteTimeout`; no in-memory fallback when it fires), per-instance admission control (`SEARCH_MAX_INFLIGHT` 8, `SEARCH_QUEUE_WAIT` 250ms), `/api/info.search_admission`; all three env vars left unset (code defaults) |
 | `00045-g6z` | `fdc933d` | #66 Phase B | ad vector pre-filter, ads CTE omitted when unused, combined facet GROUP BY, facet TTL cache (`FACET_CACHE_TTL` unset, 30s). **Rolled back to 00044 on 2026-11-17; serves no traffic** (cache hit turns empty facet arrays into `null`) |
-| **`00046-zxm`** | `3a9950f` | #66 Phase B + fix | as 00045, plus `cloneFacets` keeps empty slices as `[]` on cache hits; sqlcheck covers combined facets with an empty and a `b2b-gold` price table. **current** |
+| **`00046-zxm`** | `3a9950f` | #66 Phase B + fix | as 00045, plus `cloneFacets` keeps empty slices as `[]` on cache hits; sqlcheck covers combined facets with an empty and a `b2b-gold` price table. **Last live revision; service deleted 2026-11-17** |
 
 ---
 
@@ -1167,3 +1167,30 @@ p95 is below Phase A's 2.51 s and the 00045 tag run's 1.06 s, which confirms the
 **Rollback:** `update-traffic --to-revisions=psearch-serving-00044-8r5=100` (note this pins traffic; use `--to-latest` after the next good deploy).
 
 **Status:** #66 **open** (PO decides on closing).
+
+## Service deleted at PO request (2026-11-17)
+
+**Why:** the PO reported vulnerability issues with the service and asked for the deployment to be removed and deleted.
+
+**Scope:** only the Cloud Run service `psearch-serving` in `us-central1`. Cloud Spanner (`psearch-instance`, `psearch-db` and their data), BigQuery, secrets, IAM, Artifact Registry images and other Cloud Run services (for example `psearch-eval-dashboard`) were not touched.
+
+**Last live state:**
+- Revision `psearch-serving-00046-zxm` (from `3a9950f`, #66 Phase B with the `cloneFacets` fix), 100% traffic, following latest.
+- Image: `us-central1-docker.pkg.dev/<PROJECT_ID>/cloud-run-source-deploy/psearch-serving@sha256:db3591291c09fd0101ab6523a2b47873784333b72129f0fb0ca6a59795403878`
+- Rollback target at deletion: `psearch-serving-00044-8r5` (from `aa90182`).
+
+**Before deletion:** the full service spec (`gcloud run services describe ... --format export`), the JSON describe output, the revision list (table and JSON) and the 00046 revision spec were saved outside the repo, on the deployer container's `/tmp/psearch-serving-final/`. That path is not durable storage.
+
+**Deletion:** `gcloud run services delete psearch-serving --project=<PROJECT_ID> --region=us-central1 --quiet` → `Deleted service [psearch-serving].`
+
+**Verification:**
+- `gcloud run services describe psearch-serving ...` → `Cannot find service [psearch-serving]`.
+- `<SERVICE_URL>/api/health`, `/api/info` and `/api/search?q=running+shoes&alpha=0.5` → **404**.
+- `gcloud run services list` in `us-central1` shows only `psearch-eval-dashboard`.
+- `psearch-db` state is still `READY`.
+
+**How to recreate (only once the vulnerability concerns are resolved and the PO approves):**
+1. From a clean snapshot of the fixed commit, run the pre-deploy gate (§4: `go test ./...`, `go vet`, `go run ./cmd/sqlcheck`).
+2. Deploy: `gcloud run deploy psearch-serving --project=<PROJECT_ID> --region=us-central1 --source=<snapshot> --service-account=<RUNTIME_SA> --allow-unauthenticated --quiet`, with the §2 environment variables.
+3. Alternatively, restore the saved spec with `gcloud run services replace service-export.yaml --project=<PROJECT_ID> --region=us-central1`. This redeploys the **old 00046 image** and so would bring back the reported vulnerabilities; use it only with an image rebuilt from fixed code. Re-apply public access with `gcloud run services add-iam-policy-binding psearch-serving --member=allUsers --role=roles/run.invoker ...` if needed.
+4. A recreated service gets a new revision series and possibly a new `<SERVICE_URL>`. Verify `/api/health`, `/api/info` and `/api/search` as in §4.
