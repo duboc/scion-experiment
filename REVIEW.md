@@ -545,6 +545,18 @@ Process notes: rollouts were stopped before production by the `cmd/sqlcheck` gat
     - **(5) Single `discoverDynamicFacets` execution on fast path & Phase A deadline propagation:** `DisjunctiveFacets` calls `facetsWithQuery` once on the fast path (`TestDisjunctiveFacets_SingleDynamicDiscoveryAndTTLCache` asserts `1` discovery call on cold miss and `0` on cache hit), and `searchCtx` propagates into `queryCombinedFacets`, `variantFacets`, and `discoverDynamicFacets`.
     - **(6) `cmd/sqlcheck`, `routes.go` & redaction:** `cmd/sqlcheck/main.go` covers `SkipAds: false` and `SkipAds: true` (`line 101`) and explicitly loops `for _, pt := range []string{"", "b2b-gold"}` over `svc.Facets` (`lines 272-279`); `routes.go` is untouched and `FORBIDDEN_ID_PATTERN` passes with 0 matches. Issues: none.
 
+## #68 Documentation Update in Google Developer Style (`1dddefb`, `79bc1eb`)
+- **Date:** 2026-11-17
+- **Reviewer:** `reviewer` (Hermes on `google/gemini-4-argon`), isolated `/tmp/review-68` archive & detached worktree (removed)
+- **Status:** PASS (APPROVED)
+- **Checks:**
+    - **(1) Google developer documentation style (`1dddefb`, `79bc1eb`):** Verified across `README.md`, `docs/USAGE.md`, `docs/contributing.md`, `tooling/loadtest/README.md`, `tooling/enrichment/README.md`, and `src/application/ui/README.md`: second person (`you`), active voice, present tense, sentence-case headings, numbered procedures, code font for commands/paths/env vars/API fields, descriptive link text (`Knowledge Plane index`, `Verification and evaluation guide`, `Google Contributor License Agreement portal`, `OpenAPI contract`, `PSearch usage guide`, `HTTP routes handler`, `OpenAPI 3.0.3 serving contract`), and zero occurrences of `please`, `simply`, or Latin abbreviations (`e.g.`, `i.e.`, `etc.`, `viz.`, `cf.`). All relative links resolve.
+    - **(2) Factual accuracy against the backend, tooling & UI code:**
+        - **Backend & tooling (`1dddefb`):** All 32 environment variables in `README.md:145-177` match `internal/config/config.go` with exact defaults and bounds, including the 4 new `#66` variables (`SEARCH_TIMEOUT=10s` capped at `14s`, `SEARCH_MAX_INFLIGHT=8`, `SEARCH_QUEUE_WAIT=250ms`, `FACET_CACHE_TTL=30s` with `0` disabling caching), `GET /api/info` `search_admission`, `HTTP 503` (`Retry-After: 1`), and `HTTP 504` (`Gateway Timeout`). The Locust load test examples (`-u 6 -r 2` with 1–5s wait time -> mean 3s wait -> `6 / 3 = 2.0` rps) respect the 2 rps live ceiling, `bq_enriched_table` matches `tooling/enrichment/consolidate_results.py:29`, and the workspace ownership table in `docs/contributing.md:37-43` matches factory rules.
+        - **UI (`79bc1eb`):** `src/application/ui/README.md` matches the OpenAPI `3.0.3` / `2.6.0` contract (`knowledge-plane/contracts/biggy-search-openapi.yaml`), `src/config.js` (`REACT_APP_API_URL`, `REACT_APP_GEN_AI_URL`, `REACT_APP_INGESTION_SOURCE_API_URL`, `REACT_APP_PROJECT_ID`), `package.json` scripts and ports (`3000` for `start`, `3001` for `start:dev`), `Dockerfile` (`node:24-alpine` build stage, `nginx:alpine` serving stage on port `8080`, and all 4 `ARG` build arguments), client-side routes (`/`, `/product/:productId`, `/source-ingestion`, `/manage`, `/ads`), and components/services.
+    - **(3) Redaction & file scope:** `TestTrackedSourceContainsNoForbiddenIDPattern` with `FORBIDDEN_ID_PATTERN` set passes with 0 matches (zero real project IDs, SA emails, or `.run.app` URLs), `1dddefb` modifies only the 5 backend-owned docs, and `79bc1eb` modifies only `src/application/ui/README.md`. Issues: none.
+
+
 
 
 
