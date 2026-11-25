@@ -28,7 +28,7 @@
 
   function toggleTheme() {
     const docEl = document.documentElement;
-    const current = docEl.getAttribute('data-theme') || 'daylight';
+    const current = docEl.getAttribute('data-theme') || 'carbon';
     const next = current === 'carbon' ? 'daylight' : 'carbon';
     docEl.setAttribute('data-theme', next);
 
@@ -38,7 +38,7 @@
     }
 
     try {
-      localStorage.setItem('psearch-theme', next);
+      localStorage.setItem('psearch-theme-v2', next);
     } catch (_) {
       // Ignore storage restrictions
     }
@@ -2407,18 +2407,17 @@
     }
   }
 
-  // Restore saved theme if any
+  // Restore saved theme (v2 key defaults to 'carbon' dark theme so stale 'daylight' localStorage does not override #69)
   try {
-    const savedTheme = localStorage.getItem('psearch-theme');
-    if (savedTheme === 'carbon' || savedTheme === 'daylight') {
-      document.documentElement.setAttribute('data-theme', savedTheme);
-      const labelEl = document.getElementById('theme-label');
-      if (labelEl) {
-        labelEl.textContent = savedTheme === 'carbon' ? 'Daylight Mode' : 'Carbon Mode';
-      }
+    const savedTheme = localStorage.getItem('psearch-theme-v2');
+    const activeTheme = (savedTheme === 'carbon' || savedTheme === 'daylight') ? savedTheme : 'carbon';
+    document.documentElement.setAttribute('data-theme', activeTheme);
+    const labelEl = document.getElementById('theme-label');
+    if (labelEl) {
+      labelEl.textContent = activeTheme === 'carbon' ? 'Daylight Mode' : 'Carbon Mode';
     }
   } catch (_) {
-    // Ignore storage restrictions
+    document.documentElement.setAttribute('data-theme', 'carbon');
   }
 
   // Export to window for inline HTML event attributes
