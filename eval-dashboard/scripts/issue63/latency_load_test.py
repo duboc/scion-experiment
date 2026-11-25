@@ -28,12 +28,12 @@ Executes:
 """
 
 import argparse
-import base64
 import concurrent.futures
 import datetime
 import json
 import math
 import os
+import re
 import subprocess
 import time
 import urllib.error
@@ -42,14 +42,29 @@ import urllib.request
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-_DEFAULT_PROJ_ID = base64.b64decode("cmlvanVjdS1zYW5kYm94").decode("utf-8")
-_DEFAULT_CR_HASH = base64.b64decode("bWhqdzI0NGJncQ==").decode("utf-8")
-_DEFAULT_PROJ_NUM = base64.b64decode("NjQ3MzI1MDEzNDU0").decode("utf-8")
 
-LIVE_SERVING_URL = os.environ.get(
-    "PSEARCH_SERVING_URL",
-    f"https://psearch-serving-{_DEFAULT_CR_HASH}-uc.a.run.app",
-)
+def resolve_project_id() -> str:
+    proj = (
+        os.environ.get("GCP_PROJECT")
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
+        or os.environ.get("SPANNER_PROJECT_ID")
+    )
+    if proj:
+        return proj.strip()
+    try:
+        out = subprocess.check_output(
+            ["gcloud", "config", "get-value", "project"],
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        ).decode("utf-8").strip()
+        if out and out != "(unset)":
+            return out
+    except Exception:
+        pass
+    raise RuntimeError("GCP_PROJECT environment variable or gcloud default project is required.")
+
+
+LIVE_SERVING_URL = os.environ.get("PSEARCH_SERVING_URL") or os.environ.get("SERVING_URL") or ""
 LOCAL_00029_URL = os.environ.get("LOCAL_REV_00029_URL", "http://127.0.0.1:18090")
 
 # Representative mixed query workload spanning en-US and pt-BR pharmacy/dermocosmetics/compounding
@@ -377,8 +392,7 @@ def run_stage_ablation(base_url: str, label: str, reps: int = 8) -> Dict[str, An
 
 
 def get_deployer_token(project_id: str) -> Optional[str]:
-    sa_dom = base64.b64decode("LmlhbS5nc2VydmljZWFjY291bnQuY29t").decode("utf-8")
-    sa = f"agent-deployer@{project_id}{sa_dom}"
+    sa = f"agent-deployer@{project_id}." + "iam.gserviceaccount.com"
     for cmd in (
         ["gcloud", "auth", "print-access-token", f"--impersonate-service-account={sa}"],
         ["gcloud", "auth", "print-access-token"],
@@ -527,11 +541,13 @@ def query_cloud_trace_samples(project_id: str, trace_ids: List[str]) -> Dict[str
     }
 
 
-def redact_sensitive_strings(obj: Any) -> Any:
+def redact_sensitive_strings(obj: Any, project_id: str = "") -> Any:
     """Ensures zero literal GCP project IDs, project numbers, or SA emails are persisted in output JSON (#52 guard)."""
     raw = json.dumps(obj)
-    raw = raw.replace(_DEFAULT_PROJ_ID, "<SANDBOX_PROJECT>")
-    raw = raw.replace(_DEFAULT_CR_HASH, "<PROJECT_NUMBER>")
+    if project_id:
+        raw = raw.replace(project_id, "<SANDBOX_PROJECT>")
+    raw = re.sub(r"(https://[a-z0-9-]+-)[a-z0-9]{10}(-uc\.a\.run\.app)", r"\1<CLOUD_RUN_HASH>\2", raw)
+    raw = re.sub(r"\b\d{12}\b", "<PROJECT_NUMBER>", raw)
     return json.loads(raw)
 
 
@@ -555,6 +571,12 @@ def main() -> None:
         help="Path to write per-request raw JSONL log",
     )
     args = parser.parse_args()
+
+    if not LIVE_SERVING_URL:
+        raise RuntimeError(
+            "PSEARCH_SERVING_URL or SERVING_URL environment variable is required to run live load tests."
+        )
+    project_id = resolve_project_id()
 
     # Ensure local Option 5B psearch-serving-00029-7ss is running on 127.0.0.1:18090
     rev29_helper = os.path.join(os.path.dirname(__file__), "run_rev_00029.py")
@@ -616,25 +638,25 @@ def main() -> None:
     time.sleep(8)
     log_End = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     cloud_run_logs_2rps = query_cloud_run_request_logs(
-        _DEFAULT_PROJ_ID,
+        project_id,
         "psearch-serving-00043-p87",
         load_00043_2rps["window_start_utc"],
         load_00043_2rps["window_end_utc"],
     )
     cloud_run_logs_5rps = query_cloud_run_request_logs(
-        _DEFAULT_PROJ_ID,
+        project_id,
         "psearch-serving-00043-p87",
         load_00043_5rps["window_start_utc"],
         load_00043_5rps["window_end_utc"],
     )
     cloud_run_logs_overall = query_cloud_run_request_logs(
-        _DEFAULT_PROJ_ID,
+        project_id,
         "psearch-serving-00043-p87",
         overall_start_utc,
         log_End,
     )
     sampled_traces = query_cloud_trace_samples(
-        _DEFAULT_PROJ_ID,
+        project_id,
         load_00043_2rps["sample_trace_ids"][:4] + load_00043_5rps["sample_trace_ids"][:4],
     )
 
@@ -654,7 +676,7 @@ def main() -> None:
             for row in bundle:
                 row_out = dict(row)
                 row_out["phase"] = run_tag
-                jf.write(json.dumps(redact_sensitive_strings(row_out)) + "\n")
+                jf.write(json.dumps(redact_sensitive_strings(row_out, project_id)) + "\n")
 
     total_http_requests += 2 * len(ablation_00043) * args.ablation_reps
 

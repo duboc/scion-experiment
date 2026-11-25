@@ -16,9 +16,21 @@ async function main() {
     process.exit(1);
   }
 
+  const { execSync } = require('child_process');
   const payload = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-  const defaultProject = Buffer.from('cmlvanVjdS1zYW5kYm94', 'base64').toString('utf8');
-  const projectId = process.env.GCP_PROJECT || defaultProject;
+  let projectId = process.env.GCP_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || process.env.SPANNER_PROJECT_ID || '';
+  if (!projectId) {
+    try {
+      projectId = execSync('gcloud config get-value project', { stdio: ['ignore', 'pipe', 'ignore'] }).toString('utf8').trim();
+      if (projectId === '(unset)') projectId = '';
+    } catch (_) {
+      projectId = '';
+    }
+  }
+  if (!projectId) {
+    console.error('Error: GCP_PROJECT environment variable or gcloud default project is required.');
+    process.exit(1);
+  }
   const spannerInstance = process.env.SPANNER_INSTANCE || 'psearch-instance';
   const spannerDatabase = process.env.SPANNER_DATABASE || 'psearch-db';
 

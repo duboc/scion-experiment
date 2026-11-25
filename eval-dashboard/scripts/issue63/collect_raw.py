@@ -23,10 +23,10 @@ plus independent Spanner SQL lexical matches, saving spanner_catalog_pool.jsonl.
 """
 
 import argparse
-import base64
 from datetime import datetime, timezone
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -34,10 +34,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-DEFAULT_LIVE_URL = os.environ.get(
-    "SERVING_URL",
-    base64.b64decode("aHR0cHM6Ly9wc2VhcmNoLXNlcnZpbmctbWhqdzI0NGJncS11Yy5hLnJ1bi5hcHA=").decode("utf-8"),
-)
+DEFAULT_LIVE_URL = os.environ.get("PSEARCH_SERVING_URL") or os.environ.get("SERVING_URL") or ""
 DEFAULT_REV00029_URL = os.environ.get("REV00029_URL", "http://127.0.0.1:18090")
 
 CONFIGS = [
@@ -99,20 +96,34 @@ CONFIGS = [
 
 
 def resolve_project_id() -> str:
-    return (
+    proj = (
         os.environ.get("GCP_PROJECT")
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
         or os.environ.get("SPANNER_PROJECT_ID")
-        or base64.b64decode("cmlvanVjdS1zYW5kYm94").decode("utf-8")
     )
+    if proj:
+        return proj.strip()
+    try:
+        out = subprocess.check_output(
+            ["gcloud", "config", "get-value", "project"],
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        ).decode("utf-8").strip()
+        if out and out != "(unset)":
+            return out
+    except Exception:
+        pass
+    raise RuntimeError("GCP_PROJECT environment variable or gcloud default project is required.")
 
 
 def redact_sensitive(text: str, project_id: str) -> str:
     if not text:
         return text
-    out = text.replace(project_id, "<GCP_PROJECT_ID>")
-    out = out.replace(base64.b64decode("NTc5MzM1NDAzMjg1").decode(), "<GCP_PROJECT_NUMBER>")
-    out = out.replace(base64.b64decode("dTcyNzUzZzM2YQ==").decode(), "<CLOUD_RUN_HASH>")
-    out = out.replace(base64.b64decode("bWhqdzI0NGJncQ==").decode(), "<CLOUD_RUN_HASH>")
+    out = text
+    if project_id:
+        out = out.replace(project_id, "<GCP_PROJECT_ID>")
+    out = re.sub(r"(https://[a-z0-9-]+-)[a-z0-9]{10}(-uc\.a\.run\.app)", r"\1<CLOUD_RUN_HASH>\2", out)
+    out = re.sub(r"\b\d{12}\b", "<GCP_PROJECT_NUMBER>", out)
     return out
 
 
@@ -223,6 +234,7 @@ def fetch_spanner_catalog_pool(pooled_by_query: dict, queries: list, out_path: s
     """
     all_pids = sorted({pid for pids in pooled_by_query.values() for pid in pids})
     req_payload = {
+        "project_id": resolve_project_id(),
         "pooled_product_ids": all_pids,
         "queries": [
             {
@@ -243,12 +255,15 @@ def fetch_spanner_catalog_pool(pooled_by_query: dict, queries: list, out_path: s
 process.env.SPANNER_ENABLE_PROXIED_GCP_METRICS = "false";
 const fs = require("fs");
 const {Spanner} = require("@google-cloud/spanner");
-const projectId = process.env.GCP_PROJECT || Buffer.from("cmlvanVjdS1zYW5kYm94", "base64").toString("utf8");
+const input = JSON.parse(fs.readFileSync("/tmp/issue63_spanner_pool_in.json", "utf8"));
+const projectId = process.env.GCP_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || process.env.SPANNER_PROJECT_ID || input.project_id;
+if (!projectId) {
+  throw new Error("GCP_PROJECT environment variable is required.");
+}
 const spanner = new Spanner({projectId, clientOptions: {quotaProjectId: projectId}});
 const db = spanner.instance("psearch-instance").database("psearch-db");
 
 (async () => {
-  const input = JSON.parse(fs.readFileSync("/tmp/issue63_spanner_pool_in.json", "utf8"));
   const pidSet = new Set(input.pooled_product_ids || []);
   const seedMatchesByQuery = {};
 
@@ -386,6 +401,10 @@ def main() -> None:
                         if pid not in pooled_by_query.get(qid, []):
                             pooled_by_query.setdefault(qid, []).append(pid)
     else:
+        if not args.live_url:
+            raise RuntimeError(
+                "PSEARCH_SERVING_URL / SERVING_URL environment variable or --live-url is required for live collection."
+            )
         # Ensure local 00029-7ss (Option 5B) is running before starting interleaved collection
         subprocess.check_call([sys.executable, "eval-dashboard/scripts/issue63/run_rev_00029.py"])
         print(f"[collect_raw] Loaded {len(queries)} queries from {args.queries}")

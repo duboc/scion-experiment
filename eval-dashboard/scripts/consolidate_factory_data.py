@@ -20,7 +20,6 @@ import time
 import subprocess
 import urllib.request
 import urllib.parse
-import base64
 from datetime import datetime, timezone
 
 def _resolve_sandbox_project():
@@ -30,15 +29,26 @@ def _resolve_sandbox_project():
     base = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("SCION_GCP_PROJECT_ID") or ""
     if base and not base.endswith("-sandbox"):
         return f"{base}-sandbox"
-    return base or "<SANDBOX_PROJECT>"
+    if base:
+        return base
+    try:
+        out = subprocess.check_output(
+            ["gcloud", "config", "get-value", "project"],
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        ).decode("utf-8").strip()
+        if out and out != "(unset)":
+            return out
+    except Exception:
+        pass
+    return "<SANDBOX_PROJECT>"
 
 PROJECT_ID = _resolve_sandbox_project()
 BUCKET_NAME = os.getenv("GCS_BUCKET", f"psearch-eval-data-{PROJECT_ID}")
 SPANNER_INSTANCE = os.getenv("SPANNER_INSTANCE", "psearch-instance")
 SPANNER_DATABASE = os.getenv("SPANNER_DATABASE", "psearch-db")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "duboc/scion-experiment")
-_DEFAULT_CR_HASH = base64.b64decode("bWhqdzI0NGJncQ==").decode("utf-8")
-SERVING_URL = os.getenv("PSEARCH_SERVING_URL", f"https://psearch-serving-{_DEFAULT_CR_HASH}-uc.a.run.app")
+SERVING_URL = os.getenv("PSEARCH_SERVING_URL") or os.getenv("SERVING_URL") or ""
 
 LEAD_COST_CONTROLLER_SUMMARY = {
     "hub_project": "<HUB_PROJECT>",

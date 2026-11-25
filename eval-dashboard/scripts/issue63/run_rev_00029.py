@@ -10,7 +10,6 @@ against today's Spanner database (psearch-instance/psearch-db) to isolate the se
 """
 
 import argparse
-import base64
 import io
 import json
 import os
@@ -28,11 +27,24 @@ DEFAULT_BIN_DIR = "/tmp/psearch-rev-00029"
 
 
 def resolve_project_id() -> str:
-    return (
+    proj = (
         os.environ.get("GCP_PROJECT")
+        or os.environ.get("GOOGLE_CLOUD_PROJECT")
         or os.environ.get("SPANNER_PROJECT_ID")
-        or base64.b64decode("cmlvanVjdS1zYW5kYm94").decode("utf-8")
     )
+    if proj:
+        return proj.strip()
+    try:
+        out = subprocess.check_output(
+            ["gcloud", "config", "get-value", "project"],
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        ).decode("utf-8").strip()
+        if out and out != "(unset)":
+            return out
+    except Exception:
+        pass
+    raise RuntimeError("GCP_PROJECT environment variable or gcloud default project is required.")
 
 
 def get_deployer_token(project_id: str) -> str:
